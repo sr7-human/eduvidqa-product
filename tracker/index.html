@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EduVidQA Product — Project Tracker</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0e1a;--bg2:#111827;--bg3:#1e293b;
+  --text:#e2e8f0;--text2:#94a3b8;--text3:#64748b;
+  --accent:#6366f1;--accent2:#818cf8;--glow:rgba(99,102,241,0.25);
+  --green:#10b981;--amber:#f59e0b;--rose:#f43f5e;--cyan:#06b6d4;
+  --violet:#8b5cf6;--orange:#f97316;
+  --radius:16px;
+}
+html{scroll-behavior:smooth}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);line-height:1.7;overflow-x:hidden}
+a{color:var(--accent2);text-decoration:none}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--accent);border-radius:4px}
+
+/* NAV */
+.nav{position:fixed;top:0;left:0;right:0;z-index:1000;background:rgba(10,14,26,0.9);backdrop-filter:blur(20px);border-bottom:1px solid rgba(99,102,241,0.2);display:flex;align-items:center;justify-content:space-between;padding:0 2rem;height:56px}
+.nav-logo{font-weight:800;font-size:1.1rem;color:var(--accent2)}
+.nav-logo span{color:var(--green)}
+.nav-links{display:flex;gap:1.5rem;list-style:none}
+.nav-links a{color:var(--text2);font-size:0.8rem;font-weight:600;transition:color 0.2s}
+.nav-links a:hover{color:var(--accent2)}
+.container{max-width:1200px;margin:0 auto;padding:0 2rem}
+section{padding:4rem 0}
+
+/* HERO */
+.hero{padding:7rem 0 3rem;text-align:center}
+.hero h1{font-size:3rem;font-weight:900;background:linear-gradient(135deg,#fff,var(--accent2),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:0.5rem}
+.hero p{color:var(--text2);font-size:1.1rem;max-width:700px;margin:0 auto}
+.hero-badges{display:flex;gap:0.8rem;justify-content:center;margin-top:1.5rem;flex-wrap:wrap}
+.badge{padding:0.3rem 1rem;border-radius:50px;font-size:0.75rem;font-weight:700}
+.badge-green{background:rgba(16,185,129,0.15);color:var(--green);border:1px solid rgba(16,185,129,0.3)}
+.badge-amber{background:rgba(245,158,11,0.15);color:var(--amber);border:1px solid rgba(245,158,11,0.3)}
+.badge-rose{background:rgba(244,63,94,0.15);color:var(--rose);border:1px solid rgba(244,63,94,0.3)}
+.badge-accent{background:rgba(99,102,241,0.15);color:var(--accent2);border:1px solid rgba(99,102,241,0.3)}
+.badge-cyan{background:rgba(6,182,212,0.15);color:var(--cyan);border:1px solid rgba(6,182,212,0.3)}
+
+/* SECTION HEADERS */
+.sh{text-transform:uppercase;font-size:0.7rem;font-weight:700;letter-spacing:3px;color:var(--accent);margin-bottom:0.3rem}
+.st{font-size:2rem;font-weight:800;margin-bottom:0.5rem}
+.ss{color:var(--text2);font-size:1rem;max-width:700px;margin-bottom:2rem}
+
+/* PHASE TIMELINE */
+.timeline{position:relative;padding:2rem 0}
+.timeline::before{content:'';position:absolute;left:24px;top:0;bottom:0;width:3px;background:linear-gradient(to bottom,var(--accent),var(--cyan),var(--green));border-radius:3px}
+.phase{position:relative;padding:0 0 2.5rem 4rem}
+.phase:last-child{padding-bottom:0}
+.phase-dot{position:absolute;left:14px;top:4px;width:24px;height:24px;border-radius:50%;border:3px solid var(--bg);z-index:1}
+.phase-dot.done{background:var(--green);box-shadow:0 0 12px rgba(16,185,129,0.4)}
+.phase-dot.active{background:var(--amber);box-shadow:0 0 12px rgba(245,158,11,0.4);animation:pulse 2s infinite}
+.phase-dot.pending{background:var(--bg3);border-color:var(--text3)}
+@keyframes pulse{0%,100%{box-shadow:0 0 12px rgba(245,158,11,0.4)}50%{box-shadow:0 0 24px rgba(245,158,11,0.7)}}
+.phase-header{display:flex;align-items:center;gap:0.8rem;margin-bottom:0.3rem}
+.phase-num{font-size:0.65rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:2px}
+.phase-title{font-size:1.1rem;font-weight:700}
+.phase-desc{color:var(--text2);font-size:0.9rem}
+.phase-sessions{display:flex;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap}
+.phase-tag{padding:0.15rem 0.6rem;border-radius:50px;font-size:0.7rem;font-weight:700;background:rgba(99,102,241,0.12);color:var(--accent2)}
+
+/* SESSION CARDS */
+.session-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1.5rem}
+.session-card{background:var(--bg2);border:1px solid rgba(255,255,255,0.06);border-radius:var(--radius);padding:1.8rem;transition:all 0.3s;position:relative;overflow:hidden}
+.session-card:hover{border-color:var(--accent);transform:translateY(-3px);box-shadow:0 0 30px var(--glow)}
+.session-card .card-status{position:absolute;top:1rem;right:1rem}
+.session-card h3{font-size:1.15rem;margin-bottom:0.3rem}
+.session-card h3 .id{color:var(--accent2);margin-right:0.3rem}
+.session-card .subtitle{color:var(--text2);font-size:0.85rem;margin-bottom:1rem}
+.session-card .builds{margin-bottom:1rem}
+.session-card .builds-label{font-size:0.65rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:0.4rem}
+.session-card .file-list{list-style:none;display:flex;flex-direction:column;gap:0.25rem}
+.session-card .file-list li{font-size:0.8rem;color:var(--text2);padding:0.2rem 0.5rem;background:rgba(255,255,255,0.03);border-radius:6px;font-family:'SF Mono',Monaco,Consolas,monospace}
+.session-card .file-list li::before{content:'📄 '}
+.session-card .deps{margin-top:0.8rem}
+.session-card .deps-label{font-size:0.65rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:0.3rem}
+.session-card .dep-tag{display:inline-block;padding:0.1rem 0.5rem;border-radius:50px;font-size:0.7rem;margin:0.15rem;font-weight:600}
+
+/* ARCH DIAGRAM */
+.arch-box{background:var(--bg2);border:1px solid rgba(255,255,255,0.06);border-radius:var(--radius);padding:2rem;margin:2rem 0}
+.arch-flow{display:flex;align-items:center;justify-content:center;gap:0.5rem;flex-wrap:wrap;margin:1.5rem 0}
+.arch-node{padding:1rem 1.5rem;border-radius:14px;text-align:center;min-width:140px;transition:all 0.3s}
+.arch-node:hover{transform:scale(1.05)}
+.arch-node .node-icon{font-size:1.5rem;display:block;margin-bottom:0.3rem}
+.arch-node .node-name{font-weight:700;font-size:0.85rem}
+.arch-node .node-tech{font-size:0.7rem;color:var(--text2);margin-top:0.15rem}
+.node-fe{background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.3)}
+.node-be{background:rgba(6,182,212,0.12);border:1px solid rgba(6,182,212,0.3)}
+.node-gpu{background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.3)}
+.node-pipe{background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.3)}
+.node-db{background:rgba(139,92,246,0.12);border:1px solid rgba(139,92,246,0.3)}
+.arch-arrow{font-size:1.5rem;color:var(--text3)}
+
+/* DECISIONS */
+.decision-grid{display:grid;grid-template-columns:1fr;gap:1.2rem}
+.decision{background:var(--bg2);border:1px solid rgba(255,255,255,0.06);border-radius:var(--radius);padding:1.5rem;border-left:4px solid var(--accent)}
+.decision:hover{border-left-color:var(--cyan)}
+.decision .q{font-weight:700;font-size:1rem;margin-bottom:0.5rem;color:var(--accent2)}
+.decision .answer{color:var(--text2);font-size:0.9rem;margin-bottom:0.8rem}
+.decision .chosen{display:inline-block;padding:0.2rem 0.8rem;border-radius:50px;background:rgba(16,185,129,0.15);color:var(--green);font-size:0.8rem;font-weight:700}
+.decision .reason{color:var(--text3);font-size:0.8rem;margin-top:0.5rem;font-style:italic}
+
+/* TECH STACK */
+.stack-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1rem}
+.stack-item{background:var(--bg2);border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:1.2rem;display:flex;gap:1rem;align-items:flex-start}
+.stack-item .icon{font-size:1.5rem;flex-shrink:0}
+.stack-item .name{font-weight:700;font-size:0.9rem}
+.stack-item .desc{color:var(--text2);font-size:0.8rem}
+.stack-item .cost{font-size:0.7rem;font-weight:700;color:var(--green)}
+
+/* CHECKLIST */
+.checklist{background:var(--bg2);border:1px solid rgba(255,255,255,0.06);border-radius:var(--radius);padding:2rem;margin:1rem 0}
+.check-group{margin-bottom:1.5rem}
+.check-group h4{font-size:0.9rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem}
+.check-group .pct{font-size:0.75rem;color:var(--text3)}
+.progress-bar{width:100%;height:6px;background:var(--bg3);border-radius:3px;margin-bottom:0.5rem;overflow:hidden}
+.progress-fill{height:100%;border-radius:3px;transition:width 0.8s ease}
+.fill-green{background:var(--green)}
+.fill-amber{background:var(--amber)}
+.fill-rose{background:var(--rose)}
+.check-item{display:flex;align-items:center;gap:0.5rem;padding:0.25rem 0;font-size:0.85rem;color:var(--text2)}
+.check-item.done{color:var(--green);text-decoration:line-through;text-decoration-color:rgba(16,185,129,0.3)}
+.check-item.active{color:var(--amber);font-weight:600}
+.check-item .ci{width:18px;height:18px;border-radius:4px;border:2px solid var(--text3);display:flex;align-items:center;justify-content:center;font-size:0.65rem;flex-shrink:0}
+.check-item.done .ci{background:var(--green);border-color:var(--green);color:#fff}
+.check-item.active .ci{border-color:var(--amber);background:rgba(245,158,11,0.15)}
+
+/* FOOTER */
+.footer{background:var(--bg2);border-top:1px solid rgba(255,255,255,0.06);padding:2rem;text-align:center;color:var(--text3);font-size:0.8rem}
+
+/* RESPONSIVE */
+@media(max-width:768px){
+  .hero h1{font-size:2rem}
+  .nav-links{display:none}
+  .container{padding:0 1rem}
+  .arch-flow{flex-direction:column}
+  .arch-arrow{transform:rotate(90deg)}
+  .session-grid{grid-template-columns:1fr}
+  .stack-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-logo">🔬 EduVidQA <span>Product</span></div>
+  <ul class="nav-links">
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#architecture">Architecture</a></li>
+    <li><a href="#phases">Phases</a></li>
+    <li><a href="#sessions">Sessions</a></li>
+    <li><a href="#decisions">Decisions</a></li>
+    <li><a href="#stack">Stack</a></li>
+    <li><a href="#progress">Progress</a></li>
+  </ul>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="container">
+    <h1>EduVidQA Product Tracker</h1>
+    <p>Building an AI Teaching Assistant for YouTube lectures — free, open-source, from a research paper to a real product.</p>
+    <div class="hero-badges">
+      <span class="badge badge-green">💰 $0 Budget</span>
+      <span class="badge badge-accent">📄 Based on EMNLP 2025 Paper</span>
+      <span class="badge badge-cyan">💻 MacBook Air M2 16GB</span>
+      <span class="badge badge-amber">🔄 5 Parallel Worker Sessions</span>
+      <span class="badge badge-rose">📊 RAG + Qwen2.5-VL Pipeline</span>
+    </div>
+  </div>
+</section>
+
+<!-- OVERVIEW: WHAT & WHY -->
+<section id="overview" style="background:var(--bg2)">
+  <div class="container">
+    <div class="sh">The Mission</div>
+    <div class="st">What Are We Building & Why?</div>
+    <div class="ss">A web app where any student pastes a YouTube lecture URL, types a question with a timestamp, and gets an expert-quality AI answer — for free.</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;margin-bottom:2rem">
+      <div style="background:var(--bg3);border-radius:var(--radius);padding:1.5rem">
+        <h3 style="color:var(--accent2);margin-bottom:0.8rem">📝 What the Paper Did</h3>
+        <ul style="color:var(--text2);font-size:0.9rem;margin-left:1rem;display:flex;flex-direction:column;gap:0.3rem">
+          <li>Built EduVidQA dataset (5,252 QA pairs from CS lectures)</li>
+          <li>Tested 6 models (GPT-4o, Gemini, mPLUG-Owl3, etc.)</li>
+          <li>Found: synthetic fine-tuning lets 8B models match GPT-4o</li>
+          <li>Created Clarity/ECT/UPT evaluation metrics</li>
+          <li>But: no RAG, 256 token cap, CS-only, no product</li>
+        </ul>
+      </div>
+      <div style="background:var(--bg3);border-radius:var(--radius);padding:1.5rem">
+        <h3 style="color:var(--green);margin-bottom:0.8rem">🚀 What We're Building</h3>
+        <ul style="color:var(--text2);font-size:0.9rem;margin-left:1rem;display:flex;flex-direction:column;gap:0.3rem">
+          <li>Full RAG pipeline: embed lectures → retrieve → generate</li>
+          <li>Qwen2.5-VL-7B (free, open-source, runs on M2 Mac)</li>
+          <li>Multimodal: transcript + video frames + slides</li>
+          <li>4096 token answers (not 256)</li>
+          <li>Real web app anyone can use — $0 total cost</li>
+        </ul>
+      </div>
+    </div>
+
+    <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:var(--radius);padding:1.2rem 1.5rem;font-size:0.9rem">
+      <strong style="color:var(--amber)">💡 Why this matters:</strong>
+      <span style="color:var(--text2)">67.9% of students watching lectures WANT to ask questions but can't get answers. We're turning a research paper into a tool that solves this. If it works, any student worldwide can have a free AI TA.</span>
+    </div>
+  </div>
+</section>
+
+<!-- ARCHITECTURE -->
+<section id="architecture">
+  <div class="container">
+    <div class="sh">System Design</div>
+    <div class="st">Architecture (All Free Tier)</div>
+    <div class="ss">5 components, zero dollars. Each component maps to a worker session.</div>
+
+    <div class="arch-box">
+      <h3 style="text-align:center;margin-bottom:1rem;color:var(--text2);font-size:0.9rem">Data Flow: Student Question → AI Answer</h3>
+      <div class="arch-flow">
+        <div class="arch-node node-fe">
+          <span class="node-icon">🖥️</span>
+          <div class="node-name">Frontend</div>
+          <div class="node-tech">React · Vercel (free)</div>
+        </div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node node-be">
+          <span class="node-icon">⚡</span>
+          <div class="node-name">Backend API</div>
+          <div class="node-tech">FastAPI · HF Spaces (free)</div>
+        </div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node node-pipe">
+          <span class="node-icon">🔄</span>
+          <div class="node-name">Pipeline</div>
+          <div class="node-tech">yt-dlp · ffmpeg · ChromaDB</div>
+        </div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node node-gpu">
+          <span class="node-icon">🧠</span>
+          <div class="node-name">Inference</div>
+          <div class="node-tech">Qwen2.5-VL-7B · ZeroGPU</div>
+        </div>
+      </div>
+      <div style="text-align:center;margin-top:1rem">
+        <div class="arch-node node-db" style="display:inline-block">
+          <span class="node-icon">💾</span>
+          <div class="node-name">Vector DB + Cache</div>
+          <div class="node-tech">ChromaDB · SQLite</div>
+        </div>
+      </div>
+
+      <div style="margin-top:2rem;padding:1.5rem;background:var(--bg3);border-radius:12px">
+        <h4 style="font-size:0.85rem;color:var(--cyan);margin-bottom:0.8rem">📋 Request Flow (Step by Step)</h4>
+        <ol style="color:var(--text2);font-size:0.85rem;margin-left:1.2rem;display:flex;flex-direction:column;gap:0.4rem">
+          <li><strong>Student</strong> enters YouTube URL + timestamp + question on the frontend</li>
+          <li><strong>Backend</strong> checks cache — if this video was processed before, skip to step 5</li>
+          <li><strong>Pipeline/Ingest</strong> downloads transcript (youtube-transcript-api) + extracts key frames (yt-dlp + ffmpeg)</li>
+          <li><strong>Pipeline/RAG</strong> chunks transcript into 2-min segments, embeds each chunk (BGE-M3), stores in ChromaDB</li>
+          <li><strong>Pipeline/RAG</strong> embeds the student's question, retrieves top-5 most relevant chunks + their frames</li>
+          <li><strong>Inference</strong> feeds retrieved chunks + frames + question to Qwen2.5-VL-7B → generates answer (max 4096 tokens)</li>
+          <li><strong>Backend</strong> returns answer + quality scores (Clarity/ECT/UPT) to frontend</li>
+          <li><strong>Frontend</strong> displays formatted answer with source timestamps, confidence, and quality badges</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PHASES -->
+<section id="phases" style="background:var(--bg2)">
+  <div class="container">
+    <div class="sh">Execution Plan</div>
+    <div class="st">5 Phases — Manager + Workers</div>
+    <div class="ss">Work is divided across parallel chat sessions. Manager (this tracker) defines interfaces; workers build independently and merge.</div>
+
+    <div class="timeline">
+      <div class="phase">
+        <div class="phase-dot done"></div>
+        <div class="phase-header">
+          <span class="phase-num">Phase 0</span>
+          <span class="phase-title">Planning & Skeleton</span>
+          <span class="badge badge-green" style="font-size:0.65rem">DONE</span>
+        </div>
+        <div class="phase-desc">Project structure, interface contracts, tracker website, GitHub repo, deployment pipeline.</div>
+        <div class="phase-sessions"><span class="phase-tag">Manager Session</span></div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-dot active"></div>
+        <div class="phase-header">
+          <span class="phase-num">Phase 1 — Parallel</span>
+          <span class="phase-title">Ingestion + RAG Pipeline</span>
+          <span class="badge badge-amber" style="font-size:0.65rem">UP NEXT</span>
+        </div>
+        <div class="phase-desc">Download videos, extract transcripts + frames, build embedding index. These two modules have zero dependencies on each other.</div>
+        <div class="phase-sessions">
+          <span class="phase-tag">Session A: Ingest</span>
+          <span class="phase-tag">Session B: RAG</span>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-dot pending"></div>
+        <div class="phase-header">
+          <span class="phase-num">Phase 2</span>
+          <span class="phase-title">Inference Engine</span>
+        </div>
+        <div class="phase-desc">Load Qwen2.5-VL-7B (4-bit quantized), build prompt template, generate educational answers. Depends on output format from Phase 1.</div>
+        <div class="phase-sessions"><span class="phase-tag">Session C: Inference</span></div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-dot pending"></div>
+        <div class="phase-header">
+          <span class="phase-num">Phase 3</span>
+          <span class="phase-title">Frontend UI</span>
+        </div>
+        <div class="phase-desc">React app with URL input, timestamp picker, question box, answer display, quality scores. Depends on API contract from Phase 2.</div>
+        <div class="phase-sessions"><span class="phase-tag">Session D: Frontend</span></div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-dot pending"></div>
+        <div class="phase-header">
+          <span class="phase-num">Phase 4</span>
+          <span class="phase-title">Integration & Deploy</span>
+        </div>
+        <div class="phase-desc">Wire everything together. FastAPI backend, HuggingFace Spaces deployment, Vercel frontend, end-to-end testing.</div>
+        <div class="phase-sessions"><span class="phase-tag">Session E: Integration</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SESSION CARDS -->
+<section id="sessions">
+  <div class="container">
+    <div class="sh">Worker Sessions</div>
+    <div class="st">5 Independent Workers</div>
+    <div class="ss">Each session gets a spec file with exact inputs, outputs, dependencies, and test criteria. Copy-paste the spec into a new chat to start.</div>
+
+    <div class="session-grid">
+      <!-- SESSION A -->
+      <div class="session-card">
+        <div class="card-status"><span class="badge badge-amber">READY</span></div>
+        <h3><span class="id">A</span> Video Ingestion Worker</h3>
+        <div class="subtitle">Downloads video, extracts transcript + frames, chunks into segments</div>
+        <div class="builds">
+          <div class="builds-label">Builds These Files</div>
+          <ul class="file-list">
+            <li>pipeline/ingest.py</li>
+            <li>pipeline/models.py (shared data classes)</li>
+            <li>tests/test_ingest.py</li>
+          </ul>
+        </div>
+        <div class="deps">
+          <div class="deps-label">Dependencies</div>
+          <span class="dep-tag badge-green">None — can start now</span>
+        </div>
+        <div class="deps">
+          <div class="deps-label">Key Libraries</div>
+          <span class="dep-tag badge-accent">youtube-transcript-api</span>
+          <span class="dep-tag badge-accent">yt-dlp</span>
+          <span class="dep-tag badge-accent">ffmpeg-python</span>
+          <span class="dep-tag badge-accent">whisper (fallback)</span>
+        </div>
+      </div>
+
+      <!-- SESSION B -->
+      <div class="session-card">
+        <div class="card-status"><span class="badge badge-amber">READY</span></div>
+        <h3><span class="id">B</span> RAG Pipeline Worker</h3>
+        <div class="subtitle">Embeds transcript chunks, builds vector index, retrieves relevant context</div>
+        <div class="builds">
+          <div class="builds-label">Builds These Files</div>
+          <ul class="file-list">
+            <li>pipeline/rag.py</li>
+            <li>pipeline/embeddings.py</li>
+            <li>tests/test_rag.py</li>
+          </ul>
+        </div>
+        <div class="deps">
+          <div class="deps-label">Dependencies</div>
+          <span class="dep-tag badge-green">None — can start now</span>
+        </div>
+        <div class="deps">
+          <div class="deps-label">Key Libraries</div>
+          <span class="dep-tag badge-accent">sentence-transformers</span>
+          <span class="dep-tag badge-accent">chromadb</span>
+          <span class="dep-tag badge-accent">bge-m3 or all-MiniLM</span>
+        </div>
+      </div>
+
+      <!-- SESSION C -->
+      <div class="session-card">
+        <div class="card-status"><span class="badge badge-rose">BLOCKED</span></div>
+        <h3><span class="id">C</span> Inference Worker</h3>
+        <div class="subtitle">Loads Qwen2.5-VL-7B (4-bit), generates educational answers from retrieved context</div>
+        <div class="builds">
+          <div class="builds-label">Builds These Files</div>
+          <ul class="file-list">
+            <li>pipeline/inference.py</li>
+            <li>pipeline/prompts.py</li>
+            <li>notebooks/inference_kaggle.ipynb</li>
+            <li>tests/test_inference.py</li>
+          </ul>
+        </div>
+        <div class="deps">
+          <div class="deps-label">Dependencies</div>
+          <span class="dep-tag badge-rose">Needs A + B output format</span>
+        </div>
+        <div class="deps">
+          <div class="deps-label">Key Libraries</div>
+          <span class="dep-tag badge-accent">transformers</span>
+          <span class="dep-tag badge-accent">bitsandbytes</span>
+          <span class="dep-tag badge-accent">qwen-vl-utils</span>
+          <span class="dep-tag badge-accent">accelerate</span>
+        </div>
+      </div>
+
+      <!-- SESSION D -->
+      <div class="session-card">
+        <div class="card-status"><span class="badge badge-rose">BLOCKED</span></div>
+        <h3><span class="id">D</span> Frontend Worker</h3>
+        <div class="subtitle">React app — URL input, timestamp picker, question box, answer display with quality scores</div>
+        <div class="builds">
+          <div class="builds-label">Builds These Files</div>
+          <ul class="file-list">
+            <li>frontend/ (React + Vite)</li>
+            <li>frontend/src/components/</li>
+            <li>frontend/src/api/client.ts</li>
+          </ul>
+        </div>
+        <div class="deps">
+          <div class="deps-label">Dependencies</div>
+          <span class="dep-tag badge-rose">Needs API contract from E</span>
+        </div>
+        <div class="deps">
+          <div class="deps-label">Key Libraries</div>
+          <span class="dep-tag badge-accent">React</span>
+          <span class="dep-tag badge-accent">Vite</span>
+          <span class="dep-tag badge-accent">TailwindCSS</span>
+          <span class="dep-tag badge-accent">Framer Motion</span>
+        </div>
+      </div>
+
+      <!-- SESSION E -->
+      <div class="session-card">
+        <div class="card-status"><span class="badge badge-rose">BLOCKED</span></div>
+        <h3><span class="id">E</span> Integration & Deploy Worker</h3>
+        <div class="subtitle">FastAPI backend, wires all modules, deploys to HuggingFace Spaces + Vercel</div>
+        <div class="builds">
+          <div class="builds-label">Builds These Files</div>
+          <ul class="file-list">
+            <li>backend/app.py</li>
+            <li>backend/models.py</li>
+            <li>Dockerfile</li>
+            <li>requirements.txt</li>
+          </ul>
+        </div>
+        <div class="deps">
+          <div class="deps-label">Dependencies</div>
+          <span class="dep-tag badge-rose">Needs A + B + C + D</span>
+        </div>
+        <div class="deps">
+          <div class="deps-label">Key Libraries</div>
+          <span class="dep-tag badge-accent">FastAPI</span>
+          <span class="dep-tag badge-accent">uvicorn</span>
+          <span class="dep-tag badge-accent">gradio (HF Spaces)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- DECISIONS -->
+<section id="decisions" style="background:var(--bg2)">
+  <div class="container">
+    <div class="sh">Decision Log</div>
+    <div class="st">Why We Chose What We Chose</div>
+    <div class="ss">Every technical decision with alternatives considered and reasons documented.</div>
+
+    <div class="decision-grid">
+      <div class="decision">
+        <div class="q">🧠 Which model for answer generation?</div>
+        <div class="answer">Qwen2.5-VL-7B-Instruct. It's the successor to Qwen2-VL (used in the paper), supports hour-long video understanding, dynamic FPS, and runs on M2 16GB with 4-bit quantization (~5GB VRAM).</div>
+        <div class="chosen">✅ Qwen2.5-VL-7B-Instruct (4-bit)</div>
+        <div class="reason">Alternatives considered: LLaVA-OneVision 7B (good but less video support), InternVL3 (heavier), Gemini Flash (free API but rate-limited and closed). Qwen2.5-VL wins on video capability + local deployment + open weights.</div>
+      </div>
+
+      <div class="decision">
+        <div class="q">🔍 Which embedding model for RAG retrieval?</div>
+        <div class="answer">BGE-M3 (568M params) — multilingual, multi-granularity, works great for educational text. Falls back to all-MiniLM-L6-v2 (22M) if memory is tight.</div>
+        <div class="chosen">✅ BGE-M3 (primary) + MiniLM (fallback)</div>
+        <div class="reason">Alternatives: Gemini Embedding 2 (best quality but requires API key + costs money eventually), OpenAI ada-002 (costs money), E5-large (good but monolingual). BGE-M3 is free, local, and top-tier on MTEB.</div>
+      </div>
+
+      <div class="decision">
+        <div class="q">🗄️ Where to store embeddings?</div>
+        <div class="answer">ChromaDB — lightweight, Python-native, stores in SQLite on disk. No server to run, no cloud costs. Perfect for demo-scale (thousands of chunks per lecture).</div>
+        <div class="chosen">✅ ChromaDB (local SQLite)</div>
+        <div class="reason">Alternatives: Qdrant (needs Docker), Pinecone (cloud, paid), FAISS (no metadata filtering), Weaviate (heavy). ChromaDB is the simplest free option.</div>
+      </div>
+
+      <div class="decision">
+        <div class="q">🖥️ Where to run GPU inference for free?</div>
+        <div class="answer">HuggingFace Spaces with ZeroGPU. Gets free A10G/T4 GPU bursts on demand. Auto-sleeps when idle (no cost). Persistent URL — doesn't disconnect like Colab.</div>
+        <div class="chosen">✅ HuggingFace Spaces (ZeroGPU)</div>
+        <div class="reason">Alternatives: Kaggle (30hrs/week but can't expose API), Colab (disconnects after 90min), Local M2 (works for dev but 7B inference is slow on CPU). ZeroGPU is the only free option giving persistent GPU API.</div>
+      </div>
+
+      <div class="decision">
+        <div class="q">🌐 Where to host the frontend?</div>
+        <div class="answer">Vercel free tier — auto-deploys from GitHub, free SSL, edge CDN, perfect for React/Next.js. 100GB bandwidth/month is plenty.</div>
+        <div class="chosen">✅ Vercel (free tier)</div>
+        <div class="reason">Alternatives: GitHub Pages (static only, no SSR), Netlify (similar but Vercel has better React support), Cloudflare Pages (good but less familiar).</div>
+      </div>
+
+      <div class="decision">
+        <div class="q">📝 How to get transcripts?</div>
+        <div class="answer">youtube-transcript-api first (instant, free, no download needed). If no captions available, fall back to yt-dlp audio download + Whisper-small transcription.</div>
+        <div class="chosen">✅ youtube-transcript-api + Whisper fallback</div>
+        <div class="reason">Most educational videos (NPTEL, MIT OCW, Stanford) have captions. Whisper-small runs on M2 CPU in real-time. No API keys needed for either.</div>
+      </div>
+
+      <div class="decision">
+        <div class="q">📏 How to evaluate answer quality?</div>
+        <div class="answer">Use the paper's own Clarity/ECT/UPT Likert scales. Score using a free LLM (Qwen2.5-72B via HF Inference API or Groq free tier). Show scores as badges in the UI.</div>
+        <div class="chosen">✅ Paper's Likert metrics + free LLM scorer</div>
+        <div class="reason">This directly connects our product to the paper's contribution (C3). We validate our answers using the same metrics the paper invented.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TECH STACK -->
+<section id="stack">
+  <div class="container">
+    <div class="sh">Tech Stack</div>
+    <div class="st">Everything We're Using (All Free)</div>
+
+    <div class="stack-grid">
+      <div class="stack-item"><div class="icon">🧠</div><div><div class="name">Qwen2.5-VL-7B-Instruct</div><div class="desc">Main answer generation model. 4-bit quantized. Understands video frames + text.</div><div class="cost">$0 — Open source (Apache 2.0)</div></div></div>
+      <div class="stack-item"><div class="icon">🔍</div><div><div class="name">BGE-M3</div><div class="desc">Text embedding model for RAG retrieval. 568M params, multilingual.</div><div class="cost">$0 — Open source (MIT)</div></div></div>
+      <div class="stack-item"><div class="icon">💾</div><div><div class="name">ChromaDB</div><div class="desc">Vector database. Stores embeddings locally in SQLite. No server needed.</div><div class="cost">$0 — Open source (Apache 2.0)</div></div></div>
+      <div class="stack-item"><div class="icon">📹</div><div><div class="name">yt-dlp + ffmpeg</div><div class="desc">Download videos and extract key frames at specific timestamps.</div><div class="cost">$0 — Open source</div></div></div>
+      <div class="stack-item"><div class="icon">📝</div><div><div class="name">youtube-transcript-api</div><div class="desc">Fetch captions/transcripts from YouTube videos. No download needed.</div><div class="cost">$0 — Open source (MIT)</div></div></div>
+      <div class="stack-item"><div class="icon">🎤</div><div><div class="name">Whisper small</div><div class="desc">Fallback transcription when no captions exist. Runs on CPU.</div><div class="cost">$0 — Open source (MIT)</div></div></div>
+      <div class="stack-item"><div class="icon">⚡</div><div><div class="name">FastAPI</div><div class="desc">Backend API framework. Async, fast, auto-docs. Runs on HF Spaces.</div><div class="cost">$0 — Open source (MIT)</div></div></div>
+      <div class="stack-item"><div class="icon">⚛️</div><div><div class="name">React + Vite</div><div class="desc">Frontend framework. Fast builds, component-based UI.</div><div class="cost">$0 — Open source (MIT)</div></div></div>
+      <div class="stack-item"><div class="icon">🎨</div><div><div class="name">TailwindCSS</div><div class="desc">Utility-first CSS framework for rapid UI development.</div><div class="cost">$0 — Open source (MIT)</div></div></div>
+      <div class="stack-item"><div class="icon">🤗</div><div><div class="name">HuggingFace Spaces</div><div class="desc">Free hosting for ML apps. ZeroGPU for free GPU bursts.</div><div class="cost">$0 — Free tier (2 vCPU, 16GB)</div></div></div>
+      <div class="stack-item"><div class="icon">▲</div><div><div class="name">Vercel</div><div class="desc">Frontend hosting. Auto-deploy from GitHub, edge CDN, free SSL.</div><div class="cost">$0 — Free tier (100GB/mo)</div></div></div>
+      <div class="stack-item"><div class="icon">🐙</div><div><div class="name">GitHub</div><div class="desc">Source code hosting + GitHub Actions CI/CD + GitHub Pages for tracker.</div><div class="cost">$0 — Free for public repos</div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- PROGRESS CHECKLIST -->
+<section id="progress" style="background:var(--bg2)">
+  <div class="container">
+    <div class="sh">Live Progress</div>
+    <div class="st">Module Completion Tracker</div>
+    <div class="ss">Updated after each worker session completes a milestone.</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem">
+      <!-- Phase 0 -->
+      <div class="checklist">
+        <div class="check-group">
+          <h4>🏗️ Phase 0: Planning <span class="pct">(100%)</span></h4>
+          <div class="progress-bar"><div class="progress-fill fill-green" style="width:100%"></div></div>
+          <div class="check-item done"><div class="ci">✓</div>Paper analysis & research</div>
+          <div class="check-item done"><div class="ci">✓</div>Paper explainer website built & deployed</div>
+          <div class="check-item done"><div class="ci">✓</div>Newer models researched (Qwen2.5-VL, Gemini Embed 2)</div>
+          <div class="check-item done"><div class="ci">✓</div>Architecture designed & tech stack chosen</div>
+          <div class="check-item done"><div class="ci">✓</div>Project skeleton created</div>
+          <div class="check-item done"><div class="ci">✓</div>Interface contracts written (5 session specs)</div>
+          <div class="check-item done"><div class="ci">✓</div>Tracker website built & deployed</div>
+        </div>
+      </div>
+
+      <!-- Phase 1 -->
+      <div class="checklist">
+        <div class="check-group">
+          <h4>🔄 Phase 1: Ingest + RAG <span class="pct">(0%)</span></h4>
+          <div class="progress-bar"><div class="progress-fill fill-amber" style="width:0%"></div></div>
+          <div class="check-item"><div class="ci"></div>Session A: Transcript extraction working</div>
+          <div class="check-item"><div class="ci"></div>Session A: Frame extraction working</div>
+          <div class="check-item"><div class="ci"></div>Session A: Chunking logic (2-min segments)</div>
+          <div class="check-item"><div class="ci"></div>Session A: Whisper fallback tested</div>
+          <div class="check-item"><div class="ci"></div>Session B: BGE-M3 embedding working</div>
+          <div class="check-item"><div class="ci"></div>Session B: ChromaDB index/query working</div>
+          <div class="check-item"><div class="ci"></div>Session B: Top-K retrieval tested</div>
+        </div>
+      </div>
+
+      <!-- Phase 2 -->
+      <div class="checklist">
+        <div class="check-group">
+          <h4>⏳ Phase 2: Inference <span class="pct">(0%)</span></h4>
+          <div class="progress-bar"><div class="progress-fill fill-rose" style="width:0%"></div></div>
+          <div class="check-item"><div class="ci"></div>Session C: Qwen2.5-VL-7B loaded (4-bit)</div>
+          <div class="check-item"><div class="ci"></div>Session C: Prompt template designed</div>
+          <div class="check-item"><div class="ci"></div>Session C: Answer generation working</div>
+          <div class="check-item"><div class="ci"></div>Session C: Quality evaluation (Clarity/ECT/UPT)</div>
+          <div class="check-item"><div class="ci"></div>Session C: Kaggle notebook ready</div>
+        </div>
+      </div>
+
+      <!-- Phase 3+4 -->
+      <div class="checklist">
+        <div class="check-group">
+          <h4>⏳ Phase 3-4: UI + Deploy <span class="pct">(0%)</span></h4>
+          <div class="progress-bar"><div class="progress-fill fill-rose" style="width:0%"></div></div>
+          <div class="check-item"><div class="ci"></div>Session D: React app scaffolded</div>
+          <div class="check-item"><div class="ci"></div>Session D: URL + question input UI</div>
+          <div class="check-item"><div class="ci"></div>Session D: Answer display + quality badges</div>
+          <div class="check-item"><div class="ci"></div>Session E: FastAPI backend wired</div>
+          <div class="check-item"><div class="ci"></div>Session E: HF Spaces deployed</div>
+          <div class="check-item"><div class="ci"></div>Session E: Vercel frontend deployed</div>
+          <div class="check-item"><div class="ci"></div>Session E: End-to-end test passing</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <p><strong>EduVidQA Product Tracker</strong> — From research paper to real product, $0 budget</p>
+  <p style="margin-top:0.3rem">Based on <a href="https://sr7-human.github.io/eduvidqa-explained/" target="_blank">EduVidQA (EMNLP 2025)</a> · <a href="https://github.com/sr7-human/eduvidqa-product" target="_blank">GitHub Repo</a></p>
+  <p style="margin-top:0.3rem;color:var(--text3)">Last updated: March 29, 2026</p>
+</footer>
+
+</body>
+</html>

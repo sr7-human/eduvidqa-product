@@ -1,0 +1,30 @@
+# EduVidQA — Combined requirements
+# Install with: pip install -r requirements.txt
+
+# ── Backend (FastAPI) ────────────────────────────────────────────
+fastapi
+uvicorn[standard]
+pydantic>=2.0
+python-multipart
+
+# ── Session A: Ingestion ────────────────────────────────────────
+youtube-transcript-api
+yt-dlp
+ffmpeg-python
+Pillow
+
+# ── Session B: RAG ──────────────────────────────────────────────
+sentence-transformers
+chromadb
+
+# ── Session C: Inference ────────────────────────────────────────
+transformers>=4.45.0
+bitsandbytes
+accelerate
+qwen-vl-utils
+torch
+
+# ── Testing ─────────────────────────────────────────────────────
+httpx
+pytest
+pytest-asyncio

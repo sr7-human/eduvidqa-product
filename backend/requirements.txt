@@ -1,0 +1,18 @@
+# Backend-specific dependencies
+fastapi
+uvicorn[standard]
+pydantic>=2.0
+python-multipart
+
+# Pipeline dependencies (Sessions A-C)
+youtube-transcript-api
+yt-dlp
+ffmpeg-python
+sentence-transformers
+chromadb
+transformers>=4.45.0
+bitsandbytes
+accelerate
+qwen-vl-utils
+torch
+Pillow
