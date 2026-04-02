@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EduVidQA — Architecture & Design Diagrams</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0a0e1a;--bg2:#111827;--bg3:#1e293b;--text:#e2e8f0;--text2:#94a3b8;--text3:#64748b;--accent:#6366f1;--accent2:#818cf8;--green:#10b981;--amber:#f59e0b;--rose:#f43f5e;--cyan:#06b6d4;--violet:#8b5cf6;--orange:#f97316;--radius:16px}
+html{scroll-behavior:smooth}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);line-height:1.7;overflow-x:hidden}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:var(--bg2)}::-webkit-scrollbar-thumb{background:var(--accent);border-radius:4px}
+
+.nav{position:fixed;top:0;left:0;right:0;z-index:1000;background:rgba(10,14,26,0.92);backdrop-filter:blur(20px);border-bottom:1px solid rgba(99,102,241,0.2);display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:56px}
+.nav-logo{font-weight:800;font-size:1.15rem;background:linear-gradient(135deg,var(--accent2),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.nav-badge{font-size:.65rem;background:var(--accent);color:#fff;padding:2px 8px;border-radius:12px;margin-left:8px;font-weight:600;vertical-align:middle;-webkit-text-fill-color:#fff}
+.nav-right{display:flex;gap:1rem}.nav-right a{color:var(--text2);font-size:.8rem;text-decoration:none;transition:color .2s}.nav-right a:hover{color:var(--accent2)}
+
+.hero{padding:80px 1.5rem 24px;text-align:center;background:radial-gradient(ellipse at 50% 0%,rgba(99,102,241,0.08) 0%,transparent 60%)}
+.hero h1{font-size:clamp(1.6rem,4vw,2.6rem);font-weight:800;background:linear-gradient(135deg,var(--accent2),var(--cyan),var(--green));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:.4rem}
+.hero p{color:var(--text2);font-size:clamp(.85rem,2vw,1.05rem);max-width:680px;margin:0 auto}
+
+.tabs-wrapper{position:sticky;top:56px;z-index:900;background:rgba(10,14,26,0.95);backdrop-filter:blur(16px);border-bottom:1px solid rgba(99,102,241,0.15)}
+.tabs-scroll{display:flex;overflow-x:auto;max-width:1400px;margin:0 auto;scrollbar-width:none}
+.tabs-scroll::-webkit-scrollbar{display:none}
+.tab-btn{flex-shrink:0;padding:11px 16px;background:none;border:none;border-bottom:3px solid transparent;color:var(--text3);font-size:.76rem;font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap;font-family:inherit}
+.tab-btn:hover{color:var(--text2);background:rgba(99,102,241,0.05)}
+.tab-btn.active{color:var(--accent2);border-bottom-color:var(--accent2);background:rgba(99,102,241,0.08)}
+.tab-num{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--bg3);font-size:.6rem;margin-right:5px;font-weight:700}
+.tab-btn.active .tab-num{background:var(--accent);color:#fff}
+
+.content{max-width:1400px;margin:0 auto;padding:1.5rem 1.5rem 4rem}
+.panel{display:none;animation:fadeIn .3s ease}.panel.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+.card-header{display:flex;align-items:center;gap:1rem;margin-bottom:1.2rem;flex-wrap:wrap}
+.card-icon{width:46px;height:46px;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0}
+.card-meta h2{font-size:1.3rem;font-weight:700;background:linear-gradient(135deg,var(--accent2),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.card-tag{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:2px;padding:3px 10px;border-radius:20px;display:inline-block;margin-top:4px}
+
+.desc{background:var(--bg2);border:1px solid rgba(99,102,241,0.12);border-radius:var(--radius);padding:1.3rem;margin-bottom:1.2rem}
+.desc h3{color:var(--accent2);font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:2px;margin-bottom:.7rem}
+.desc li{color:var(--text2);font-size:.86rem;line-height:1.8;padding-left:1.2rem;position:relative;margin-bottom:.35rem;list-style:none}
+.desc li::before{content:"\2192";position:absolute;left:0;color:var(--accent);font-weight:700}
+
+.diagram-box{background:var(--bg2);border:1px solid rgba(99,102,241,0.12);border-radius:var(--radius);padding:1.5rem;overflow-x:auto;min-height:180px}
+.diagram-box .mermaid{display:flex;justify-content:center}
+.diagram-box svg{max-width:100%;height:auto}
+
+.footer{text-align:center;padding:2rem;border-top:1px solid rgba(99,102,241,0.1);color:var(--text3);font-size:.78rem}
+
+@media(max-width:768px){.nav{padding:0 .8rem}.hero{padding:68px 1rem 16px}.content{padding:1rem .8rem 3rem}.tab-btn{padding:9px 12px;font-size:.7rem}.card-header{flex-direction:column}.desc{padding:1rem}.diagram-box{padding:1rem}}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-logo">🎓 EduVidQA <span class="nav-badge">Architecture</span></div>
+  <div class="nav-right">
+    <a href="/">App</a>
+    <a href="/tracker.html">Tracker</a>
+    <a href="https://sr7-human.github.io/eduvidqa-explained/">Paper</a>
+    <a href="https://github.com/sr7-human/eduvidqa-product" target="_blank">GitHub</a>
+  </div>
+</nav>
+
+<section class="hero">
+  <h1>System Architecture & Design</h1>
+  <p>11 interactive diagrams — system architecture, data flow, UI wireframes, UML diagrams, deployment strategy, keyframe extraction, and system design principles audit.</p>
+</section>
+
+<div class="tabs-wrapper">
+  <div class="tabs-scroll" id="tabs"></div>
+</div>
+
+<div class="content" id="content"></div>
+
+<div class="footer">EduVidQA — AI Teaching Assistant for YouTube Lectures · EMNLP 2025 · IIT Kharagpur</div>
+
+<script>
+const D = [
+{
+  t:"System Architecture", ic:"🏗️", bg:"linear-gradient(135deg,#6366f1,#818cf8)",
+  tag:"Architecture", tagBg:"rgba(99,102,241,0.15)", tagC:"#818cf8",
+  desc:[
+    "The student opens the app in their browser. A YouTube video is embedded using the IFrame API, which auto-captures the current playback timestamp as the student watches.",
+    "When the student pauses and types a question, the frontend sends the exact timestamp + video_id + question to the backend. The backend extracts a LIVE FRAME at that precise second from the video — this frame is ephemeral (used once, never saved). It also pulls pre-stored keyframes and transcript from ChromaDB.",
+    "The backend has two sub-systems: (a) Ingestion Pipeline \u2014 runs once per video. Downloads .mp4, extracts transcript (split into 10-second chunks for high precision), extracts 1 frame/sec, runs SSIM dedup to find unique keyframes, links keyframes to their 10-sec chunks, generates a pre-computed DIGEST of the entire lecture from the full transcript AND all keyframes together (using the VLM), then deletes the .mp4. (b) Multimodal RAG \u2014 embeds transcript chunks AND keyframes using Jina CLIP v2 (local, free, no API quota) in a unified embedding space into ChromaDB. Gemini Embedding 2 available as optional upgrade.",
+    "The VLM receives FOUR types of context: (1) the live ephemeral frame at the exact timestamp, (2) pre-stored keyframes from ChromaDB near that time, (3) ranked 10-sec transcript chunks (the chunk containing the exact timestamp comes first), and (4) the pre-computed lecture digest for overall context. Groq API (Llama 4 Scout 17B) sees all of this to generate an answer. The live frame is discarded after answering.",
+    "Storage is minimal: ~4 MB per video (keyframe JPEGs + transcript CSV + embeddings). Full .mp4 is deleted after processing. YouTube hosts the video stream. Total cost: $0."
+  ],
+  m:`graph TB
+    subgraph CLIENT["Client Browser"]
+        YT["YouTube IFrame API"] --> CAP["Auto-capture timestamp"]
+        CAP --> UI["React or Streamlit UI"]
+    end
+    subgraph INGEST["Ingestion Pipeline - one time"]
+        DL["yt-dlp Download"] --> TRANS["Extract Transcript\n10-sec chunks"]
+        DL --> FRAMES["OpenCV 1 frame/sec"]
+        FRAMES --> SSIM["SSIM Dedup"]
+        TRANS --> SUM["Generate Digest\nfrom transcript + keyframes\nvia VLM - stored"]
+    end
+    subgraph RAG["Multimodal RAG"]
+        GEM["Jina CLIP v2 (local)\nText + Image unified\nNo API quota"] --> CHROMA["ChromaDB"]
+        CHROMA --> RET["Hybrid Retriever"]
+    end
+    subgraph QUERY["Query Time"]
+        LIVE["Live Frame Extraction\nat exact timestamp\nEPHEMERAL - not saved"]
+        GROQ["Groq Llama 4 Scout 17B"]
+    end
+    UI -->|"POST /ask + timestamp"| LIVE
+    SSIM --> GEM
+    TRANS --> GEM
+    SSIM --> SUM
+    SUM --> GEM
+    RET -->|"keyframes + ranked chunks + digest"| GROQ
+    LIVE -->|"live frame"| GROQ
+    GROQ -->|"answer + scores"| UI`
+},
+{
+  t:"Data Flow Pipeline", ic:"🔄", bg:"linear-gradient(135deg,#10b981,#34d399)",
+  tag:"Data Flow", tagBg:"rgba(16,185,129,0.15)", tagC:"#34d399",
+  desc:[
+    "Phase 1 — Ingestion (one-time per video): YouTube URL comes in. Download .mp4 via yt-dlp. Extract transcript split into 10-SECOND CHUNKS (not 120s). Extract 1 frame/sec (3,600 for 60 min). SSIM dedup reduces to 30-200 unique keyframes. Each keyframe is linked to its 10-sec chunk. A DIGEST of the entire lecture is generated via LLM and stored. Delete .mp4.",
+    "Phase 2 \u2014 Embedding (one-time): Keyframes, 10-sec transcript chunks, AND the digest are ALL embedded via Jina CLIP v2 \u2014 a LOCAL multimodal model that runs on CPU with ZERO API calls and NO quota limits. Text and images live in the same 1024-dim space. Gemini Embedding 2 available as optional upgrade if higher quality needed.",
+    "Phase 3 \u2014 Query (every question): A LIVE FRAME is extracted at the exact timestamp (ephemeral). Question is embedded locally via Jina CLIP v2, ChromaDB returns ranked 10-sec chunks (nearest chunk first) + relevant keyframes + lecture digest. All of this + live frame goes to Llama 4 Scout.",
+    "Key insight: The 10-sec chunking means the first chunk shown to the VLM contains the EXACT moment the student asked about. The digest gives overall lecture context. The live frame gives pixel-perfect visual context."
+  ],
+  m:`graph LR
+    subgraph P1["Phase 1: Ingest"]
+        A1["YouTube URL"] --> A2["Download mp4"]
+        A2 --> A3["Transcript into\n10-sec chunks"]
+        A2 --> A4["Extract 1 frame/sec"]
+        A4 --> A5["SSIM Dedup"]
+        A5 --> A6["N Keyframes\nlinked to chunks"]
+        A3 --> A8["Generate Digest\nfrom full transcript\n+ all keyframes via VLM"]
+        A6 --> A8
+        A2 --> A7["Delete mp4"]
+    end
+    subgraph P2["Phase 2: Embed"]
+        B1["Keyframes"] --> B3["Jina CLIP v2 (local)\nUnified space\nNo quota limits"]
+        B2["10-sec Chunks"] --> B3
+        B5["Digest"] --> B3
+        B3 --> B4["ChromaDB"]
+    end
+    subgraph P3["Phase 3: Query"]
+        C0["Exact Timestamp"] --> C00["Live Frame Extraction\nEPHEMERAL"]
+        C1["Student Question"] --> C2["Jina CLIP v2"]
+        C2 --> C3["Hybrid Search"]
+        C3 --> C4["Stored keyframes + transcript"]
+        C4 --> C5["Llama 4 Scout"]
+        C00 -->|"live frame"| C5
+        C5 --> C6["Answer + Quality"]
+    end
+    A6 --> B1
+    A3 --> B2
+    A8 --> B5
+    B4 --> C3`
+},
+{
+  t:"UI/UX Wireframe", ic:"🎨", bg:"linear-gradient(135deg,#8b5cf6,#a78bfa)",
+  tag:"Wireframe", tagBg:"rgba(139,92,246,0.15)", tagC:"#a78bfa",
+  desc:[
+    "Layout: Split-screen — YouTube player on the left (60%), chat panel on the right (40%). Header has logo, navigation (Gallery, About, GitHub), and theme toggle.",
+    "Left panel: Embedded YouTube player streams from YouTube. Below the player, a LIVE frame preview shows the exact frame at the current timestamp — extracted on the fly, ephemeral (not saved). This gives the student transparency — they see exactly what the AI will analyze for their question.",
+    "Right panel: Chat interface with full conversation history preserved. Each AI response includes quality score badges (Clarity, ECT, UPT). Auto-detected timestamp shown above input field.",
+    "Auto-timestamp: YouTube IFrame API polled every 500ms. Updates as student seeks/plays. Freezes when chat input focused. Editable manually. Resets to auto after submit.",
+    "Mobile responsive: Tabs scroll horizontally, video and chat stack vertically, 44px+ touch targets."
+  ],
+  m:`graph TB
+    subgraph HEADER["Header Bar"]
+        LOGO["EduVidQA Logo"]
+        NAV_L["Gallery - About - GitHub"]
+        THEME["Theme Toggle"]
+    end
+    subgraph MAIN["Main Layout"]
+        subgraph LEFT["Left Panel 60 percent"]
+            PLAYER["YouTube Video Player\nIFrame Embed\n12:34 / 45:00"]
+            PREVIEW["Live Frame Preview\nExtracted at 12:34\nEphemeral - not saved"]
+        end
+        subgraph RIGHT["Right Panel 40 percent"]
+            BOT["AI: Hi! Ask about this lecture"]
+            USR["You: What does this function do?"]
+            ANS["AI: Professor explains insertion sort\nClarity 4.2 ECT 3.8 UPT 4.0"]
+            TS["Timestamp: 12:34 editable"]
+            INP["Type your question... Ask button"]
+        end
+    end
+    LOGO --- NAV_L --- THEME
+    HEADER --> MAIN
+    PLAYER --> PREVIEW
+    BOT --> USR --> ANS --> TS --> INP`
+},
+{
+  t:"UML Use Case Diagram", ic:"👥", bg:"linear-gradient(135deg,#f59e0b,#fbbf24)",
+  tag:"UML Use Case", tagBg:"rgba(245,158,11,0.15)", tagC:"#fbbf24",
+  desc:[
+    "Two actors: Student (primary user who watches, asks, reads answers) and Admin/Professor (adds new videos to the system).",
+    "Student use cases: Browse Video Gallery, Watch Lecture Video, Ask Question with Timestamp, View AI Answer, View Quality Scores, View Chat History, Edit Timestamp.",
+    "Admin use case: Add New Video (submit YouTube URL for processing and indexing).",
+    "Internal use cases triggered automatically: Extract Transcript, Extract Keyframes, SSIM Dedup, Embed Content, Retrieve Context, Generate Answer, Score Quality.",
+    "When student asks about a new video, system auto-ingests it. Quality Scores extend View Answer (shown optionally)."
+  ],
+  m:`graph TB
+    STUDENT["Student"]
+    ADMIN["Admin Professor"]
+    subgraph SYS["EduVidQA System"]
+        UC1(("Browse Gallery"))
+        UC2(("Watch Video"))
+        UC3(("Ask Question"))
+        UC4(("View Answer"))
+        UC5(("Quality Scores"))
+        UC6(("Add Video"))
+        UC7(("Chat History"))
+        UC8(("Edit Timestamp"))
+    end
+    subgraph INT["Internal"]
+        I1(("Extract Transcript"))
+        I2(("Extract Keyframes"))
+        I3(("SSIM Dedup"))
+        I4(("Embed Content"))
+        I5(("Retrieve Context"))
+        I6(("Generate Answer"))
+        I7(("Score Quality"))
+    end
+    STUDENT --> UC1
+    STUDENT --> UC2
+    STUDENT --> UC3
+    STUDENT --> UC4
+    STUDENT --> UC5
+    STUDENT --> UC7
+    STUDENT --> UC8
+    ADMIN --> UC6
+    UC3 -.->|includes| UC6
+    UC6 -.->|includes| I1
+    UC6 -.->|includes| I2
+    I2 -.->|includes| I3
+    I3 -.->|includes| I4
+    I1 -.->|includes| I4
+    UC3 -.->|includes| I5
+    I5 -.->|includes| I6
+    I6 -.->|includes| I7
+    UC4 -.->|extends| UC5`
+},
+{
+  t:"UML Class Diagram", ic:"📐", bg:"linear-gradient(135deg,#06b6d4,#22d3ee)",
+  tag:"UML Class", tagBg:"rgba(6,182,212,0.15)", tagC:"#22d3ee",
+  desc:[
+    "Data entities: VideoMetadata (id, title, URL, duration, fps), TranscriptChunk (120-sec segments with text), Keyframe (unique frame with timestamp, file path, SSIM score).",
+    "Question has text + timestamp + video_id. Answer has text, model name, generation time. QualityScore (Clarity/ECT/UPT) optionally attached to Answer.",
+    "EmbeddingService supports TWO models: Primary is Jina CLIP v2 (local, free, no quota). Secondary is Gemini Embedding 2 (API, higher quality). Auto-fallback when Gemini quota exhausts. Both embed text + images in unified spaces.",
+    "InferenceEngine is an interface with GroqInference (Llama 4 Scout) and GeminiInference implementations. Both accept frames + transcript + question.",
+    "Cardinalities: 1 video has many chunks, many keyframes, many questions. 1 question has 1 answer. 1 answer has 0-1 quality score."
+  ],
+  m:`classDiagram
+    class VideoMetadata {
+        +String video_id
+        +String title
+        +float duration
+        +int fps
+    }
+    class Keyframe {
+        +String frame_id
+        +float timestamp
+        +String file_path
+    }
+    class TranscriptChunk {
+        +float start_time
+        +float end_time
+        +String text
+    }
+    class Question {
+        +String text
+        +float timestamp
+    }
+    class Answer {
+        +String text
+        +String model_name
+    }
+    class QualityScore {
+        +float clarity
+        +float ect
+        +float upt
+    }
+    class IngestPipeline {
+        +ingest_video()
+        +ssim_dedup()
+    }
+    class EmbeddingService {
+        +embed_text()
+        +embed_image()
+    }
+    class VectorStore {
+        +index()
+        +retrieve()
+    }
+    class GroqInference {
+        +generate_answer()
+    }
+    class GeminiInference {
+        +generate_answer()
+    }
+    VideoMetadata "1" --> "*" Keyframe
+    VideoMetadata "1" --> "*" TranscriptChunk
+    VideoMetadata "1" --> "*" Question
+    Question "1" --> "1" Answer
+    Answer "1" --> "0..1" QualityScore`
+},
+{
+  t:"UML Sequence Diagram", ic:"⏱️", bg:"linear-gradient(135deg,#f43f5e,#fb7185)",
+  tag:"UML Sequence", tagBg:"rgba(244,63,94,0.15)", tagC:"#fb7185",
+  desc:[
+    "Phase 1 — Video Selection: Student opens page, YouTube player embeds, student pastes URL. Backend checks if indexed. If not: downloads .mp4, extracts transcript + keyframes, runs SSIM dedup, embeds all content via Jina CLIP v2 (primary) or Gemini Embedding 2 (secondary), stores in ChromaDB, deletes .mp4.",
+    "Phase 2 — Watching: Student watches video, pauses at 12:34. YouTube IFrame API reports current time. Frontend shows auto-updating timestamp. A live frame preview is extracted at this exact moment (ephemeral, not saved).",
+    "Phase 3 — Asking: Student clicks Ask. Backend extracts a LIVE FRAME at the exact timestamp (ephemeral — discarded after answering). Also embeds question via Jina CLIP v2 (primary), searches ChromaDB for pre-stored keyframes + transcript. Sends live frame + stored keyframes + transcript to Llama 4 Scout. Scores quality. Returns answer."
+  ],
+  m:`sequenceDiagram
+    actor S as Student
+    participant UI as Frontend
+    participant YT as YouTube API
+    participant API as FastAPI
+    participant DB as ChromaDB
+    participant LLM as Groq LLM
+    participant EV as Quality Eval
+    S->>UI: Open video page
+    UI->>YT: Embed player
+    S->>UI: Paste YouTube URL
+    UI->>API: POST /process-video
+    API->>DB: is_indexed?
+    alt Not indexed
+        API->>API: Download SSIM Embed
+        API->>DB: Store embeddings
+    end
+    API-->>UI: Video ready
+    S->>YT: Watch pause at 12:34
+    YT-->>UI: currentTime 754s
+    UI->>UI: Show timestamp + live frame preview
+    S->>UI: Type question click Ask
+    UI->>API: POST /ask Q timestamp
+    API->>API: Extract LIVE FRAME at 754s ephemeral
+    API->>DB: Embed Q hybrid search
+    DB-->>API: Stored keyframes + transcript
+    API->>LLM: live frame + stored frames + transcript + Q
+    LLM-->>API: Answer
+    API->>EV: Score quality
+    EV-->>API: Clarity ECT UPT
+    API-->>UI: Answer scores sources
+    UI-->>S: Display in chat`
+},
+{
+  t:"Deployment: MVP vs Scale", ic:"🚀", bg:"linear-gradient(135deg,#f97316,#fb923c)",
+  tag:"Deployment", tagBg:"rgba(249,115,22,0.15)", tagC:"#fb923c",
+  desc:[
+    "MVP (Phase 1, $0/month): Frontend on Vercel/localhost. Backend on HF Spaces (free). ChromaDB embedded SQLite. Local disk storage. Groq free API. Embeddings via Jina CLIP v2 (local free) + Gemini Embed 2 (API fallback). 3-10 videos for demo.",
+    "Scale (Phase 2, ~$25-50/month at 10K users): Cloudflare CDN. Vercel frontend. Cloud Run API (scale to 0). Redis+Celery async ingest. Qdrant Cloud vector DB. Cloudflare R2 blob storage (10GB free, no egress). Redis response cache.",
+    "Transition is incremental — swap via env vars. $0 up to 100 users, ~$25 at 10K, ~$100-200 at 100K."
+  ],
+  m:`graph TB
+    subgraph MVP["MVP Phase - Zero Cost"]
+        M1["Vercel Frontend"]
+        M2["FastAPI on HF Spaces"]
+        M3["ChromaDB SQLite"]
+        M4["Groq Llama 4 Scout"]
+        M5["Local Storage 4MB/video"]
+        M1 --> M2
+        M2 --> M3
+        M2 --> M4
+        M2 --> M5
+    end
+    subgraph SCALE["Scale Phase - 25-50 dollars/mo"]
+        S1["Cloudflare CDN"]
+        S2["Vercel Frontend"]
+        S3["Cloud Run API"]
+        S4["Redis Celery Queue"]
+        S5["Qdrant Cloud Vector DB"]
+        S6["Cloudflare R2 Storage"]
+        S7["Redis Response Cache"]
+        S1 --> S2
+        S2 --> S3
+        S3 --> S4
+        S3 --> S5
+        S3 --> S6
+        S3 --> S7
+    end
+    MVP -.->|Scale when needed| SCALE`
+},
+{
+  t:"Keyframe Extraction Pipeline", ic:"🔬", bg:"linear-gradient(135deg,#10b981,#6ee7b7)",
+  tag:"Pipeline", tagBg:"rgba(16,185,129,0.15)", tagC:"#6ee7b7",
+  desc:[
+    "Problem: 60-min lecture at 30fps = 108,000 frames. Cannot embed or store all. But most are identical (same slide shown for minutes).",
+    "Step 1 — Temporal Sampling: Extract 1 frame/sec = 3,600 frames. 30x reduction. Free. Instant.",
+    "Step 2 — SSIM Dedup: Compare each frame with last kept frame. Score 0 to 1 (1 = identical). Threshold 0.92. Above = skip (same slide). Below = keep (new content). Runs in 5 seconds on CPU.",
+    "Step 3 — Result: 30-200 unique keyframes. Slide-heavy NPTEL: ~30. Live coding: ~80. Whiteboard: ~150.",
+    "Step 4 — Embed via Jina CLIP v2 (local, 1024-dim) or Gemini Embed 2 (API, 768-dim). Vectors stored in ChromaDB. Enables semantic search by meaning, not just timestamp."
+  ],
+  m:`graph TB
+    VIDEO["60-min Video\n108000 frames at 30fps"]
+    SAMPLE["Step 1: Sample\n1 frame per second\n3600 frames"]
+    CMP["Step 2: Compare with\nlast kept frame"]
+    CHECK{"SSIM above 0.92?"}
+    SKIP["Same slide SKIP"]
+    KEEP["New content KEEP"]
+    RESULT["Step 3: Result\n30-200 unique keyframes"]
+    EMBED["Step 4: Jina CLIP v2 local\nor Gemini Embed 2 API"]
+    STORE["ChromaDB\n3072-dim vectors"]
+    VIDEO --> SAMPLE
+    SAMPLE --> CMP
+    CMP --> CHECK
+    CHECK -->|Yes| SKIP
+    CHECK -->|No| KEEP
+    SKIP --> CMP
+    KEEP --> RESULT
+    RESULT --> EMBED
+    EMBED --> STORE`
+},
+{
+  t:"Hybrid Frame Retrieval", ic:"🎯", bg:"linear-gradient(135deg,#ec4899,#f472b6)",
+  tag:"Strategy", tagBg:"rgba(236,72,153,0.15)", tagC:"#f472b6",
+  desc:[
+    "When a student asks about a time range (e.g., 2:00-5:00), we combine THREE sources of frames for maximum visual context.",
+    "Source 1 — Live Boundary Frames (EPHEMERAL): Extract exact frames at START (2:00) and END (5:00) from the video at runtime. These are NOT saved — they exist only for this one question, then discarded. They show precisely what the student was looking at.",
+    "Source 2 — Pre-stored Keyframes (PERMANENT): SSIM identified unique frames during ingestion. Filter by range to find any within 2:00-5:00 (e.g., slide change at 3:15). These are permanent, indexed, searchable.",
+    "Source 3 — Semantic Search: Embed question via Jina CLIP v2 (primary) or Gemini Embed 2 (fallback). Search ChromaDB for conceptually relevant keyframes. May find frames outside the time range if related.",
+    "Merge and Dedup: Remove near-duplicates, send 3-5 unique frames + transcript to Vision LLM. AI gets complete visual context."
+  ],
+  m:`graph TB
+    subgraph QUERY["Student Query"]
+        Q1["Question text"]
+        Q2["Time range 2:00 to 5:00"]
+    end
+    subgraph SRC1["Source 1: Live Frames EPHEMERAL"]
+        L1["Live frame at 2:00\nnot saved"]
+        L2["Live frame at 5:00\nnot saved"]
+    end
+    subgraph SRC2["Source 2: Stored Keyframes PERMANENT"]
+        S1["Stored keyframe 2:00"]
+        S2["Stored keyframe 3:15"]
+        S3["Stored keyframe 4:00"]
+    end
+    subgraph SRC3["Source 3: Semantic"]
+        SE1["Embed question"]
+        SE2["Search ChromaDB"]
+        SE3["Best match 3:15"]
+    end
+    subgraph MERGE["Merge and Dedup"]
+        M1["Remove duplicates"]
+        M2["3-5 unique frames"]
+    end
+    subgraph VLM["Vision Language Model"]
+        V1["Llama 4 Scout\nframes + transcript + Q"]
+        V2["Educational Answer"]
+    end
+    Q2 --> L1
+    Q2 --> L2
+    Q2 --> S1
+    Q2 --> S2
+    Q2 --> S3
+    Q1 --> SE1
+    SE1 --> SE2
+    SE2 --> SE3
+    L1 --> M1
+    L2 --> M1
+    S1 --> M1
+    S2 --> M1
+    S3 --> M1
+    SE3 --> M1
+    M1 --> M2
+    M2 --> V1
+    V1 --> V2`
+},
+{
+  t:"10-sec Chunking Strategy", ic:"⏱️", bg:"linear-gradient(135deg,#14b8a6,#5eead4)",
+  tag:"Chunking", tagBg:"rgba(20,184,166,0.15)", tagC:"#5eead4",
+  desc:[
+    "Transcript is split into 10-second chunks instead of 120-second blobs (as in the original paper). Each chunk has: text, start_time, end_time, embedding, and linked keyframe IDs.",
+    "Keyframes from SSIM dedup are timestamped and linked to whichever 10-sec chunk they fall in. This creates a tight visual-textual alignment: chunk 12:30-12:40 knows which keyframes exist within those 10 seconds.",
+    "At query time (student asks at 12:34): retrieve ±60 seconds = 12 chunks. Chunks are RANKED by proximity to the timestamp — the chunk containing 12:34 (namely 12:30-12:40) comes FIRST. Adjacent chunks follow in order of distance.",
+    "A pre-computed DIGEST of the entire lecture is generated during ingestion by sending the full transcript + all keyframes to the VLM in one call. This means the digest captures BOTH what was spoken AND what was shown on screen (diagrams, code, equations). Stored permanently. At query time, prepended to context.",
+    "Why digest helps: (1) Context priming — VLM knows this is a Data Structures lecture about sorting, not just a random 2-min clip. (2) Ambiguity resolution — student says 'what does he mean by it?' and digest clarifies the broader topic. (3) Pedagogical quality — model knows where in the lecture this moment falls (intro/middle/conclusion).",
+    "60-min video = 360 transcript chunks + 30-200 keyframes + 1 digest. All embedded via Jina CLIP v2 (local, no API quota). Optional upgrade to Gemini Embedding 2 for higher quality."
+  ],
+  m:`graph TB
+    subgraph INGEST["During Ingestion - one time"]
+        FULL["Full Transcript"] --> SPLIT["Split into 10-sec chunks\n60 min = 360 chunks"]
+        SPLIT --> LINK["Link each chunk\nto keyframes in same window"]
+        FULL --> SUM["Generate Lecture Digest\nfrom transcript + all keyframes\nvia VLM - stored permanently"]
+        LINK --> SUM
+    end
+    subgraph STORE["Stored in ChromaDB"]
+        C1["360 chunk embeddings"]
+        C2["30-200 keyframe embeddings"]
+        C3["1 digest embedding"]
+    end
+    subgraph NOTE["Embedding Model"]
+        N1["Primary: Jina CLIP v2\nLocal CPU - no quota"]
+        N2["Upgrade: Gemini Embed 2\nAPI - higher quality"]
+    end
+    subgraph QUERY["At Query Time - student asks at 12:34"]
+        Q1["Find 12 chunks within +-60s"]
+        Q2["Rank by proximity\n12:30-12:40 = first"]
+        Q3["Attach linked keyframes"]
+        Q4["Prepend lecture digest"]
+        Q5["Live frame at 12:34\nephemeral"]
+        Q1 --> Q2 --> Q3 --> Q4
+    end
+    subgraph VLM["Send to Llama 4 Scout"]
+        ALL["Digest + ranked chunks\n+ keyframes + live frame\n+ question"]
+        ANS["Educational Answer"]
+        ALL --> ANS
+    end
+    LINK --> C1
+    LINK --> C2
+    SUM --> C3
+    C1 --> Q1
+    C2 --> Q3
+    C3 --> Q4
+    Q4 --> ALL
+    Q5 --> ALL`
+},
+{
+  t:"System Design Principles", ic:"🏆", bg:"linear-gradient(135deg,#eab308,#facc15)",
+  tag:"Design Audit", tagBg:"rgba(234,179,8,0.15)", tagC:"#facc15",
+  desc:[
+    "22 out of 25 industry-standard system design fundamentals are implemented in EduVidQA. The diagram below maps each principle to where it's used in the architecture.",
+    "KEY STRENGTHS: (1) Caching at 4 levels — response cache, embedding cache, keyframe disk cache, is_indexed check. (2) Latency optimization — 10-sec chunks reduce retrieval time, pre-computed digest avoids re-processing. (3) Scalability — stateless API, managed vector DB, horizontal scaling via Cloud Run.",
+    "CAP THEOREM CHOICE: We pick AP (Availability + Partition Tolerance). Lecture content is immutable so eventual consistency is fine. Availability matters more — students should never see downtime.",
+    "TRADE-OFF HIGHLIGHTS: Delete .mp4 after ingest (storage vs re-processability). 10-sec chunks vs 120-sec (precision vs fewer embeddings). SSIM threshold 0.92 (dedup aggression vs missing subtle changes). Groq primary + Gemini fallback (cost vs reliability).",
+    "NOT USED (intentional): Notification System (no user accounts yet), Distributed Coordination (managed by Qdrant/Cloud Run), Database Replication (delegated to managed services). These activate at scale, not MVP."
+  ],
+  m:`graph TB
+    subgraph INFRA["Infrastructure Layer"]
+        DNS["1. DNS\nVercel + HF Spaces\nhandle routing"]
+        LB["2. Load Balancer\nCloud Run auto-scale\nbuilt-in LB"]
+        CDN["4. CDN\nCloudflare for frontend\nYouTube for video"]
+        PROXY["5. Reverse Proxy\nVercel + HF Spaces"]
+    end
+    subgraph DATA["Data Layer"]
+        CACHE["6. Caching\n4 levels: response\nembedding, disk, is_indexed"]
+        PART["7. Data Partitioning\nby video_id in ChromaDB\n10-sec temporal chunks"]
+        NOSQL["11. NoSQL DB\nChromaDB vector store"]
+        INDEX["12. DB Index\nHNSW vector index\nO log n search"]
+        FTS["15. Full-Text Search\nHybrid: vector + keyword"]
+    end
+    subgraph COMPUTE["Compute Layer"]
+        API_GW["3. API Gateway\nFastAPI routes\nask, process, health"]
+        MICRO["10. Microservices\nFrontend + API + VectorDB\n+ LLM = 4 services"]
+        ASYNC["9. Message Queue\nRedis + Celery\nasync video ingest"]
+        HB["17. Heartbeat\n/api/health endpoint"]
+    end
+    subgraph QUALITY["Quality + Resiltic"]
+        LAT["19. Latency vs Throughput\nQuery: low latency 2-3s\nIngest: high throughput async"]
+        AVAIL["20. Availability\nGroq primary\nGemini fallback"]
+        CAP["21. CAP Theorem\nAP chosen\neventual consistency"]
+        CONSIST["22. Consistency\nEventual for embeddings\nStrong for answers"]
+        SCALE["23. Scalability\nStateless API\nhorizontal scaling"]
+        RATE["25. Rate Limiting\nGroq built-in\nRedis token bucket"]
+    end
+    subgraph STORAGE_L["Storage Layer"]
+        DFS["13. Distributed FS\nCloudflare R2\ncross-region"]
+        CHECK["18. Checksum\nvideo_id as identifier\nis_indexed integrity"]
+    end
+    DNS --> LB
+    LB --> API_GW
+    CDN --> PROXY
+    API_GW --> MICRO
+    MICRO --> ASYNC
+    MICRO --> CACHE
+    CACHE --> PART
+    PART --> NOSQL
+    NOSQL --> INDEX
+    INDEX --> FTS
+    API_GW --> HB
+    FTS --> LAT
+    LAT --> AVAIL
+    AVAIL --> CAP
+    CAP --> CONSIST
+    CONSIST --> SCALE
+    SCALE --> RATE
+    NOSQL --> DFS
+    DFS --> CHECK`
+}
+];
+
+// Build tabs
+const tabsEl = document.getElementById('tabs');
+tabsEl.innerHTML = D.map((d,i) => `<button class="tab-btn${i===0?' active':''}" data-i="${i}"><span class="tab-num">${i+1}</span>${d.t}</button>`).join('');
+
+// Mermaid init — NO startOnLoad, we render manually
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'dark',
+  themeVariables: {
+    primaryColor:'#1e293b', primaryTextColor:'#e2e8f0', primaryBorderColor:'#818cf8',
+    lineColor:'#818cf8', secondaryColor:'#1e293b', tertiaryColor:'#111827',
+    background:'#0a0e1a', mainBkg:'#1e293b', nodeBorder:'#6366f1',
+    clusterBkg:'#111827', clusterBorder:'#6366f1', titleColor:'#e2e8f0',
+    edgeLabelBackground:'#111827', actorBkg:'#1e293b', actorBorder:'#6366f1',
+    actorTextColor:'#e2e8f0', signalColor:'#e2e8f0', signalTextColor:'#e2e8f0',
+    labelTextColor:'#e2e8f0', loopTextColor:'#e2e8f0',
+    noteBkgColor:'#1e293b', noteTextColor:'#e2e8f0',
+    activationBorderColor:'#818cf8', sequenceNumberColor:'#0a0e1a',
+  },
+  flowchart: { htmlLabels:true, curve:'linear', rankSpacing:60, nodeSpacing:30 },
+  sequence: { mirrorActors:false },
+});
+
+// Pre-render ALL diagrams as SVG strings in a visible temp container
+const contentEl = document.getElementById('content');
+contentEl.innerHTML = '<div id="prerender-zone" style="position:absolute;left:-9999px;width:1200px;"></div>';
+
+async function boot() {
+  const svgs = [];
+  for (let i = 0; i < D.length; i++) {
+    try {
+      const { svg } = await mermaid.render('mmd-' + i, D[i].m);
+      svgs.push(svg);
+    } catch(e) {
+      svgs.push('<p style="color:#f43f5e;padding:1rem;">Diagram render error: ' + e.message + '</p>');
+    }
+  }
+  // Now build panels with pre-rendered SVGs
+  contentEl.innerHTML = D.map((d,i) => `
+    <div class="panel${i===0?' active':''}" data-p="${i}">
+      <div class="card-header">
+        <div class="card-icon" style="background:${d.bg}">${d.ic}</div>
+        <div class="card-meta">
+          <h2>${d.t}</h2>
+          <span class="card-tag" style="background:${d.tagBg};color:${d.tagC}">${d.tag}</span>
+        </div>
+      </div>
+      <div class="desc">
+        <h3>How it works</h3>
+        <ul>${d.desc.map(p=>`<li>${p}</li>`).join('')}</ul>
+      </div>
+      <div class="diagram-box">${svgs[i]}</div>
+    </div>`).join('');
+}
+boot();
+
+// Tab click
+tabsEl.addEventListener('click', e => {
+  const btn = e.target.closest('.tab-btn');
+  if (!btn) return;
+  const i = btn.dataset.i;
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelector(`[data-p="${i}"]`).classList.add('active');
+  btn.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+});
+
+// Keyboard nav
+document.addEventListener('keydown', e => {
+  if (e.key==='ArrowRight'||e.key==='ArrowLeft') {
+    const cur = parseInt(document.querySelector('.tab-btn.active').dataset.i);
+    const next = e.key==='ArrowRight' ? Math.min(cur+1,D.length-1) : Math.max(cur-1,0);
+    document.querySelectorAll('.tab-btn')[next].click();
+  }
+});
+</script>
+</body>
+</html>

@@ -7,6 +7,7 @@ import re
 from typing import Optional
 
 import chromadb
+from chromadb.errors import NotFoundError
 
 from pipeline.embeddings import EmbeddingModel
 from pipeline.models import RetrievalResult, RetrievedContext, VideoSegment
@@ -100,7 +101,7 @@ class LectureIndex:
         # Recreate collection (idempotent: wipe old data for this video)
         try:
             self._client.delete_collection(col_name)
-        except ValueError:
+        except (ValueError, NotFoundError):
             pass  # collection didn't exist yet
         collection = self._client.get_or_create_collection(
             name=col_name, metadata={"hnsw:space": "cosine"}
@@ -159,7 +160,7 @@ class LectureIndex:
         try:
             col = self._client.get_collection(col_name)
             return col.count() > 0
-        except ValueError:
+        except (ValueError, NotFoundError):
             return False
 
     def retrieve(
@@ -177,7 +178,7 @@ class LectureIndex:
         col_name = _collection_name(video_id)
         try:
             collection = self._client.get_collection(col_name)
-        except ValueError as exc:
+        except (ValueError, NotFoundError) as exc:
             raise ValueError(
                 f"Video '{video_id}' has not been indexed yet."
             ) from exc
@@ -249,5 +250,5 @@ class LectureIndex:
             self._client.delete_collection(col_name)
             logger.info("Deleted index for video %s", video_id)
             return True
-        except ValueError:
+        except (ValueError, NotFoundError):
             return False

@@ -37,17 +37,9 @@ def parse_video_id(youtube_url: str) -> str:
 
 
 def _get_video_info(video_id: str) -> dict:
-    """Fetch video metadata via yt-dlp --dump-json (no download)."""
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    result = subprocess.run(
-        ["yt-dlp", "--dump-json", "--no-playlist", url],
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"yt-dlp metadata failed: {result.stderr.strip()}")
-    return json.loads(result.stdout)
+    """Fetch basic video metadata without yt-dlp (fast, no hang)."""
+    # Just return minimal info — we get duration from transcript entries
+    return {"title": f"Video {video_id}", "duration": 0, "channel": "YouTube"}
 
 
 # ---------------------------------------------------------------------------
@@ -66,7 +58,12 @@ def extract_transcript(video_id: str) -> tuple[list[dict], str]:
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
 
-        entries = YouTubeTranscriptApi.get_transcript(video_id)
+        ytt_api = YouTubeTranscriptApi()
+        transcript = ytt_api.fetch(video_id)
+        entries = [
+            {"text": s.text, "start": s.start, "duration": s.duration}
+            for s in transcript.snippets
+        ]
         if entries:
             logger.info("Transcript obtained via captions API (%d entries)", len(entries))
             return entries, "captions"
@@ -84,20 +81,18 @@ def _whisper_transcribe(video_id: str) -> list[dict]:
     url = f"https://www.youtube.com/watch?v={video_id}"
     with tempfile.TemporaryDirectory() as tmp:
         audio_path = os.path.join(tmp, "audio.m4a")
-        subprocess.run(
-            [
-                "yt-dlp",
-                "-f",
-                "bestaudio[ext=m4a]/bestaudio",
-                "-o",
-                audio_path,
-                "--no-playlist",
-                url,
-            ],
-            check=True,
-            capture_output=True,
-            timeout=300,
-        )
+        try:
+            import yt_dlp
+            ydl_opts = {
+                "format": "bestaudio[ext=m4a]/bestaudio",
+                "outtmpl": audio_path,
+                "no_playlist": True,
+                "quiet": True,
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+        except Exception as e:
+            raise RuntimeError(f"Audio download failed: {e}")
         model = whisper.load_model("small")
         result = model.transcribe(audio_path)
 
@@ -182,32 +177,37 @@ def extract_frames(
     Downloads the video once (360p), then uses ffmpeg to seek & grab frames.
     Saved as JPEG, max 512px width, quality 80.
 
-    Returns list of saved JPEG paths.
+    Returns list of saved JPEG paths (may be empty if tools unavailable).
     """
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
+
+    # Check if yt-dlp and ffmpeg are available
+    try:
+        subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=5)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        logger.warning("ffmpeg not found — skipping frame extraction")
+        return []
 
     # Download video once (low quality)
     url = f"https://www.youtube.com/watch?v={video_id}"
     video_path = out / f"{video_id}.mp4"
     if not video_path.exists():
-        logger.info("Downloading video (360p) for frame extraction …")
-        subprocess.run(
-            [
-                "yt-dlp",
-                "-f",
-                "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360]/best",
-                "-o",
-                str(video_path),
-                "--no-playlist",
-                "--merge-output-format",
-                "mp4",
-                url,
-            ],
-            check=True,
-            capture_output=True,
-            timeout=600,
-        )
+        try:
+            logger.info("Downloading video (360p) for frame extraction …")
+            import yt_dlp
+            ydl_opts = {
+                "format": "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360]/best",
+                "outtmpl": str(video_path),
+                "no_playlist": True,
+                "merge_output_format": "mp4",
+                "quiet": True,
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+        except Exception as e:
+            logger.warning("Video download failed (%s) — skipping frames", e)
+            return []
 
     frame_paths: list[str] = []
     for ts in timestamps:
@@ -217,29 +217,29 @@ def extract_frames(
             frame_paths.append(str(frame_file))
             continue
 
-        # Use ffmpeg to extract a single frame at the timestamp
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-ss",
-                str(ts),
-                "-i",
-                str(video_path),
-                "-frames:v",
-                "1",
-                "-q:v",
-                "2",
-                str(frame_file),
-            ],
-            check=True,
-            capture_output=True,
-            timeout=30,
-        )
-
-        # Resize to max 512px width
-        _resize_frame(str(frame_file), max_width=512, quality=80)
-        frame_paths.append(str(frame_file))
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-ss",
+                    str(ts),
+                    "-i",
+                    str(video_path),
+                    "-frames:v",
+                    "1",
+                    "-q:v",
+                    "2",
+                    str(frame_file),
+                ],
+                check=True,
+                capture_output=True,
+                timeout=30,
+            )
+            _resize_frame(str(frame_file), max_width=512, quality=80)
+            frame_paths.append(str(frame_file))
+        except Exception as e:
+            logger.warning("Frame extraction failed for ts=%s: %s", ts, e)
 
     return frame_paths
 
@@ -325,23 +325,26 @@ async def ingest_video(
             "It may be private, age-restricted, or have no audio."
         )
 
-    # --- Chunk ---
-    chunks = chunk_transcript(transcript_entries)
+    # --- Chunk (15-second segments for precise timestamp matching) ---
+    chunks = chunk_transcript(transcript_entries, chunk_duration=15.0)
 
-    # --- Frames ---
+    # --- Frames (1 every 5 seconds) ---
     frames_dir = cache_dir / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
 
     segments: list[VideoSegment] = []
     for idx, chunk in enumerate(chunks):
-        # 1 frame every 30 seconds within this chunk
         ts = chunk["start"]
         ts_list: list[float] = []
         while ts < chunk["end"]:
             ts_list.append(ts)
-            ts += 30.0
+            ts += 5.0
 
-        frame_paths = extract_frames(video_id, ts_list, str(frames_dir))
+        frame_paths: list[str] = []
+        try:
+            frame_paths = extract_frames(video_id, ts_list, str(frames_dir))
+        except Exception as exc:
+            logger.warning("Frame extraction failed for segment %d: %s", idx, exc)
 
         segments.append(
             VideoSegment(

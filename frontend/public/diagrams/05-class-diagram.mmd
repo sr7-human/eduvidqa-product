@@ -1,0 +1,167 @@
+%% ============================================================
+%% UML CLASS DIAGRAM — EduVidQA
+%% ============================================================
+%%
+%% This diagram shows all the data entities (classes) in the system
+%% and how they relate to each other.
+%%
+%% DATA ENTITIES:
+%%   - VideoMetadata: Represents one YouTube video. Has video_id,
+%%     title, URL, duration, fps, thumbnail. One video has many
+%%     transcript chunks, many keyframes, and many questions.
+%%
+%%   - TranscriptChunk: A 120-second segment of the transcript.
+%%     Has start/end time, text content, and its BGE-M3 embedding.
+%%
+%%   - Keyframe: A unique frame extracted after SSIM dedup.
+%%     Has timestamp, file path to the JPEG, its Gemini Embed 2
+%%     embedding, and the SSIM score that made it a keyframe.
+%%
+%%   - Question: What the student asked. Has text, timestamp,
+%%     and links to the video it was asked about.
+%%
+%%   - Answer: The AI-generated response. Has text, model name,
+%%     generation time, and a list of source segments used.
+%%
+%%   - QualityScore: Clarity (1-5), ECT (1-5), UPT (1-5).
+%%     Attached to an Answer. Optional (can be skipped).
+%%
+%%   - SourceInfo: Which video segments were used to generate
+%%     the answer. Has start_time, end_time, relevance_score.
+%%
+%% SERVICE CLASSES:
+%%   - IngestPipeline: Downloads video, extracts transcript,
+%%     extracts frames, runs SSIM dedup, deletes .mp4.
+%%
+%%   - EmbeddingService: Embeds text (BGE-M3) and images
+%%     (Gemini Embedding 2). Supports batch embedding.
+%%
+%%   - VectorStore: ChromaDB wrapper. Indexes transcript chunks
+%%     and keyframes. Retrieves top-K results for a query.
+%%
+%%   - InferenceEngine: Interface with two implementations:
+%%     GroqInference (Llama 4 Scout) and GeminiInference.
+%%     Both implement generate_answer().
+%%
+%%   - QualityEvaluator: Scores answers on Clarity, ECT, UPT.
+%% ============================================================
+
+classDiagram
+    class VideoMetadata {
+        +String video_id
+        +String title
+        +String url
+        +float duration
+        +int fps
+        +String thumbnail_url
+        +DateTime ingested_at
+    }
+
+    class TranscriptChunk {
+        +String chunk_id
+        +String video_id
+        +float start_time
+        +float end_time
+        +String text
+        +float[] embedding
+    }
+
+    class Keyframe {
+        +String frame_id
+        +String video_id
+        +float timestamp
+        +String file_path
+        +float[] embedding
+        +float ssim_score
+    }
+
+    class Question {
+        +String question_id
+        +String video_id
+        +String text
+        +float timestamp
+        +DateTime asked_at
+    }
+
+    class Answer {
+        +String answer_id
+        +String question_id
+        +String text
+        +String model_name
+        +float generation_time
+        +SourceInfo[] sources
+    }
+
+    class QualityScore {
+        +String answer_id
+        +float clarity
+        +float ect
+        +float upt
+    }
+
+    class SourceInfo {
+        +float start_time
+        +float end_time
+        +float relevance_score
+    }
+
+    class IngestPipeline {
+        +ingest_video(url) VideoMetadata
+        +extract_transcript(video_id) TranscriptChunk[]
+        +extract_frames(video_path) Frame[]
+        +ssim_dedup(frames) Keyframe[]
+        +delete_video(video_path) void
+    }
+
+    class EmbeddingService {
+        +embed_text(text) float[]
+        +embed_image(image) float[]
+        +embed_batch(images) float[][]
+    }
+
+    class VectorStore {
+        +index_segments(chunks) int
+        +index_keyframes(frames) int
+        +retrieve(query, video_id, top_k) RetrievalResult
+        +is_indexed(video_id) bool
+    }
+
+    class InferenceEngine {
+        <<interface>>
+        +generate_answer(context) Answer
+        +unload() void
+    }
+
+    class GroqInference {
+        +generate_answer(context) Answer
+    }
+
+    class GeminiInference {
+        +generate_answer(context) Answer
+    }
+
+    class QualityEvaluator {
+        +score(question, answer) QualityScore
+    }
+
+    VideoMetadata "1" --> "*" TranscriptChunk
+    VideoMetadata "1" --> "*" Keyframe
+    VideoMetadata "1" --> "*" Question
+    Question "1" --> "1" Answer
+    Answer "1" --> "0..1" QualityScore
+    Answer "1" --> "*" SourceInfo
+
+    IngestPipeline ..> VideoMetadata : creates
+    IngestPipeline ..> TranscriptChunk : creates
+    IngestPipeline ..> Keyframe : creates
+
+    EmbeddingService ..> TranscriptChunk : embeds
+    EmbeddingService ..> Keyframe : embeds
+
+    VectorStore ..> TranscriptChunk : stores
+    VectorStore ..> Keyframe : stores
+
+    InferenceEngine <|.. GroqInference
+    InferenceEngine <|.. GeminiInference
+    InferenceEngine ..> Answer : creates
+    QualityEvaluator ..> QualityScore : creates

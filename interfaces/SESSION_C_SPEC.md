@@ -1,261 +1,273 @@
-# Session C: Inference Worker — Interface Specification
+# Session C: Answer Pipeline + Backend Integration
 
 ## Status
-- **Assigned:** Not yet started
-- **Dependencies:** BLOCKED — needs Session A + B output formats finalized
-- **Last updated:** March 29, 2026
+- **Assigned:** Worker Session C
+- **Dependencies:** BLOCKED — Needs Session A (keyframes/chunks) + Session B (embeddings/ChromaDB/digest)
+- **Last updated:** April 1, 2026
 
 ---
 
-## Your Mission
-Load Qwen2.5-VL-7B-Instruct (4-bit quantized), build the prompt template, and generate educational answers from retrieved video context. Also build quality evaluation (Clarity/ECT/UPT scoring).
+## ⚠️ MANAGER INSTRUCTIONS (READ THIS FIRST)
 
-## Context
-We're building an AI Teaching Assistant for YouTube lectures (EduVidQA paper, EMNLP 2025). Sessions A+B produce `RetrievalResult` (top-K relevant video segments with transcripts + frame paths). YOUR job is to:
-1. Load Qwen2.5-VL-7B with 4-bit quantization (~5GB memory)
-2. Build a prompt that feeds transcript + frames + question
-3. Generate a clear, pedagogical answer
-4. Score the answer on Clarity/ECT/UPT using the paper's Likert scales
+Read `/memories/session/munimi.md` for full project context. You build the ANSWER GENERATION layer and wire everything into FastAPI.
 
-## Hardware
-- MacBook Air M2 16GB (local dev — model runs on MPS/CPU, slow but works)
-- HuggingFace Spaces ZeroGPU (production — free A10G/T4 bursts)
-- Kaggle 2×T4 (alternative for batch inference, 30hrs/week free)
+**WAIT** until Sessions A and B have completed. Check their "Worker Updates" in `interfaces/SESSION_A_SPEC.md` and `interfaces/SESSION_B_SPEC.md`.
 
-## Files You Create
-```
-pipeline/inference.py        # Model loading + answer generation
-pipeline/prompts.py          # Prompt templates
-pipeline/evaluate.py         # Clarity/ECT/UPT scoring
-notebooks/inference_kaggle.ipynb  # Kaggle notebook for GPU inference
-tests/test_inference.py      # Unit tests
-```
+Working directory: `/Users/shubhamkumar/eduvidqa-product/`
+Python venv: `.venv/bin/python`
 
-## Input Data Model (from Session B)
+### Research Paper Context (important for prompt engineering!)
+The EduVidQA paper (EMNLP 2025) introduced 3 quality metrics for educational answers:
+- **Clarity** (1-5): Is the answer clear, jargon-free, and understandable?
+- **ECT** (1-5): Does it Encourage Critical Thinking? Challenge assumptions?
+- **UPT** (1-5): Does it Use Pedagogical Techniques? Scaffolding, examples, Socratic method?
 
+Students overwhelmingly prefer CLARITY (~65%) over all other qualities.
+Our product is the RAG-based baseline the paper never tested — this is our academic angle.
+
+**When done:** Update the "Worker Updates" section at the bottom of THIS file.
+
+---
+
+## Task 1: Live Frame Extraction (pipeline/live_frame.py)
+
+### What to build
+Extract a frame at the EXACT timestamp the student asked about. This frame is EPHEMERAL — used once, never saved.
+
+### Function
 ```python
-class RetrievedContext(BaseModel):
-    segment: VideoSegment        # Has: transcript_text, frame_paths, start_time, end_time
-    relevance_score: float
-    rank: int
-
-class RetrievalResult(BaseModel):
-    query: str                   # Student's question
-    video_id: str
-    contexts: list[RetrievedContext]
-    total_segments: int
-```
-
-## Output Data Model (YOU define these — add to pipeline/models.py)
-
-```python
-class QualityScores(BaseModel):
-    """Likert scale scores (1-5) from the EduVidQA paper."""
-    clarity: float              # 1-5: Is the answer clear and jargon-free?
-    ect: float                  # 1-5: Does it encourage critical thinking?
-    upt: float                  # 1-5: Does it use pedagogical techniques?
-
-class AnswerResult(BaseModel):
-    """Final output: the AI-generated answer with metadata."""
-    question: str
-    answer: str                  # The generated educational answer
-    video_id: str
-    sources: list[dict]          # [{start_time, end_time, relevance_score}] — which segments were used
-    quality_scores: QualityScores | None  # None if scoring is skipped
-    model_name: str              # "Qwen/Qwen2.5-VL-7B-Instruct"
-    generation_time_seconds: float
-```
-
-## Functions You Implement
-
-### `pipeline/prompts.py`
-
-```python
-SYSTEM_PROMPT = """You are an expert AI teaching assistant helping students understand lecture videos. 
-Your answers must be:
-1. CLEAR — explain every technical term, use simple language, logical flow
-2. COMPLETE — cover the concept fully using the provided lecture context
-3. PEDAGOGICAL — use examples, analogies, step-by-step breakdowns where helpful
-4. ACCURATE — only state facts supported by the lecture content provided
-
-You have access to the lecture transcript and video frames around the student's question.
-"""
-
-def build_answer_prompt(question: str, contexts: list[RetrievedContext]) -> list[dict]:
+def extract_live_frame(video_id: str, timestamp: float, data_dir: str = "data/processed") -> str | None:
     """
-    Build the multimodal prompt for Qwen2.5-VL.
+    Finds the nearest stored keyframe to the given timestamp.
+    Returns the file path to the keyframe image.
     
-    Returns list of message dicts in the format Qwen2.5-VL expects:
-    [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": [
-            {"type": "text", "text": "...context..."},
-            {"type": "image", "image": "file:///path/to/frame.jpg"},
-            ...
-            {"type": "text", "text": "Student question: ..."}
-        ]}
-    ]
+    If the video .mp4 is still available (in data/videos/), extract the exact frame.
+    If not, fall back to the nearest keyframe from manifest.json.
+    
+    Returns: path to the frame image (temporary if extracted from .mp4)
     """
-    pass
+```
 
-EVAL_PROMPT_TEMPLATE = """Rate the following answer on a scale of 1-5 for each quality:
+### Logic
+1. Check if `data/videos/{video_id}/*.mp4` exists → extract exact frame at `timestamp` using OpenCV
+2. If no .mp4 → read `data/processed/{video_id}/keyframes/manifest.json` → find nearest keyframe by timestamp
+3. Return the path (caller will read the image and send to VLM)
+
+---
+
+## Task 2: Answer Generation (pipeline/answer.py)
+
+### What to build
+Assemble ALL context and send to the VLM for answer generation.
+
+### Context assembly (4 types)
+1. **Live frame** — ephemeral frame at the exact timestamp (from Task 1)
+2. **Ranked chunks** — 10-sec transcript chunks near the timestamp (from Session B's retriever)
+3. **Stored keyframes** — pre-indexed keyframes linked to those chunks
+4. **Lecture Digest** — comprehensive description of the entire lecture
+
+### Function
+```python
+def generate_answer(
+    question: str,
+    video_id: str,
+    timestamp: float,
+    retrieval_result: dict,   # from LectureIndex.retrieve()
+    live_frame_path: str | None,
+    groq_api_key: str = None,
+    gemini_api_key: str = None,
+) -> dict:
+    """
+    Returns:
+    {
+        "answer": "The professor is explaining...",
+        "model_name": "llama-4-scout-17b",
+        "generation_time": 2.3,
+        "sources": [{"start_time": 30, "end_time": 40, "relevance_score": 0.89}, ...]
+    }
+    """
+```
+
+### Prompt structure
+```
+SYSTEM: You are an expert AI teaching assistant. A student is watching a lecture
+video and has paused at {timestamp} to ask a question. Answer clearly and
+pedagogically, using the provided context.
+
+CONTEXT:
+[Lecture Digest]
+{digest text}
+
+[Relevant Transcript (ranked by relevance to timestamp {timestamp})]
+{chunk 1 text — contains the exact moment}
+{chunk 2 text — adjacent}
+...
+
+[Visual Context]
+{live frame at timestamp + stored keyframes attached as images}
+
+QUESTION: {question}
+
+Answer in a conversational, teaching-assistant tone. Prioritize CLARITY.
+Reference what's shown on screen when relevant. If the question isn't
+related to the video, politely say so.
+```
+
+### LLM: Groq (primary) → Gemini (fallback)
+- Primary: `groq.Groq(api_key=...).chat.completions.create(model="meta-llama/llama-4-scout-17b-16e-instruct")`
+- Fallback: Gemini 2.0 Flash (if Groq fails/rate-limited)
+- Send images as base64 data URLs in the Groq message content array
+
+---
+
+## Task 3: Quality Scoring (pipeline/evaluate_v2.py)
+
+### What to build
+Score the generated answer on Clarity, ECT, UPT (the paper's metrics).
+
+### Function
+```python
+def score_answer(question: str, answer: str, groq_api_key: str = None) -> dict:
+    """
+    Returns: {"clarity": 4.2, "ect": 3.8, "upt": 4.0}
+    Uses Groq with llama-3.3-70b-versatile (text-only, fast) as the judge.
+    """
+```
+
+### Scoring prompt (adapted from the paper)
+```
+Rate the following answer to a student's question on three scales (1-5):
+
+1. CLARITY (1-5): Is the answer clear, well-organized, and free of unnecessary jargon?
+2. ECT (1-5): Does the answer Encourage Critical Thinking? Does it challenge assumptions or invite deeper exploration?
+3. UPT (1-5): Does the answer Use Pedagogical Techniques? (examples, analogies, scaffolding, Socratic questioning)
 
 Question: {question}
 Answer: {answer}
 
-Rate EACH on 1-5:
-1. Clarity (1=jargon-filled, incoherent → 5=crystal clear, logical, beginner-friendly)
-2. ECT - Encouraging Critical Thinking (1=purely factual → 5=poses follow-ups, discusses alternatives)  
-3. UPT - Uses Pedagogical Techniques (1=no examples → 5=rich examples, analogies, step-by-step)
-
-Return JSON only: {{"clarity": X, "ect": X, "upt": X}}
-"""
-```
-
-### `pipeline/inference.py`
-
-```python
-class QwenInference:
-    """Qwen2.5-VL-7B inference engine."""
-    
-    def __init__(self, model_name: str = "Qwen/Qwen2.5-VL-7B-Instruct", quantize_4bit: bool = True):
-        """
-        Load model with 4-bit quantization.
-        Uses bitsandbytes on GPU, or MPS/CPU fallback on Mac.
-        """
-        pass
-    
-    def generate_answer(
-        self, 
-        retrieval_result: RetrievalResult,
-        max_new_tokens: int = 4096,
-        temperature: float = 0.3
-    ) -> AnswerResult:
-        """
-        Generate an educational answer from retrieved context.
-        
-        1. Build prompt from retrieval_result (transcript + frames + question)
-        2. Run inference
-        3. Return structured AnswerResult
-        """
-        pass
-    
-    def unload(self):
-        """Free GPU/MPS memory."""
-        pass
-```
-
-### `pipeline/evaluate.py`
-
-```python
-class QualityEvaluator:
-    """Score answers on Clarity/ECT/UPT using the EduVidQA paper's Likert scales."""
-    
-    def __init__(self, method: str = "hf_inference"):
-        """
-        method options:
-        - "hf_inference": Use HuggingFace free Inference API (Qwen2.5-72B-Instruct)
-        - "local": Use the same local Qwen2.5-VL-7B (less accurate but no API needed)
-        - "groq": Use Groq free API (Llama 3.3 70B, fast)
-        """
-        pass
-    
-    def score(self, question: str, answer: str) -> QualityScores:
-        """Score an answer on Clarity/ECT/UPT. Returns QualityScores."""
-        pass
-```
-
-## Key Requirements
-
-1. **Model loading**: Use `transformers` + `bitsandbytes` for 4-bit quantization. Model ID: `Qwen/Qwen2.5-VL-7B-Instruct`. On Mac M2, use `device_map="mps"` or `"cpu"` with float16. On GPU (HF Spaces/Kaggle), use 4-bit NF4 quantization.
-
-2. **Multimodal prompt**: Qwen2.5-VL accepts interleaved text + images. Feed the top-5 retrieved segments' transcripts AND up to 3 key frames per segment (max 15 frames total). Use `qwen_vl_utils` for image preprocessing.
-
-3. **Answer quality**: Target >3.5 Clarity on the paper's Likert scale. System prompt should emphasize clarity and pedagogical techniques.
-
-4. **Max tokens**: Set to 4096 (the paper used only 256 — we're doing much better).
-
-5. **Temperature**: Use 0.3 for factual educational content (low creativity, high accuracy).
-
-6. **Evaluation**: The quality scorer is SEPARATE from the answer generator. Use a larger model (72B via free API) to judge the 7B model's output. This mirrors the paper's approach (they used GPT-4o as evaluator).
-
-## Likert Scale Definitions (from the paper)
-
-### Clarity (1-5)
-- 1: ≥2 jargon terms without explanation AND ≥2 incoherent transitions
-- 2: ≥2 jargon terms without explanation OR ≥2 incoherent transitions  
-- 3: ≤1 jargon term without explanation AND ≤1 incoherent transition, but improvable
-- 4: No unexplained jargon, logical structure, minor improvements possible
-- 5: Crystal clear, perfectly structured, beginner-friendly
-
-### ECT (1-5)
-- 1: No questions, no alternatives, purely factual
-- 2: One surface-level question or suggestion
-- 3: Meaningful question or alternative approach discussed
-- 4: Multiple thought-provoking elements + why-questions
-- 5: Deep critical engagement, challenges assumptions, open-ended exploration
-
-### UPT (1-5)  
-- 1: Pure explanation without any example or breakdown
-- 2: One basic example
-- 3: Good example with some step-by-step breakdown
-- 4: Multiple examples + analogies + clear breakdown  
-- 5: Rich pedagogical approach — examples, analogies, visualizations, step-by-step
-
-## Dependencies (pip install)
-```
-transformers>=4.45.0
-bitsandbytes
-accelerate
-qwen-vl-utils
-torch
-Pillow
-pydantic
-huggingface_hub  # for free inference API
-```
-
-## Test Criteria
-```python
-# Test with mock retrieval result
-from pipeline.models import VideoSegment, RetrievedContext, RetrievalResult
-
-mock_result = RetrievalResult(
-    query="How does backpropagation work?",
-    video_id="test123",
-    contexts=[
-        RetrievedContext(
-            segment=VideoSegment(
-                video_id="test123", segment_index=0,
-                start_time=120, end_time=240,
-                transcript_text="Backpropagation works by computing gradients...",
-                frame_paths=["test_frame.jpg"]
-            ),
-            relevance_score=0.92, rank=1
-        )
-    ],
-    total_segments=10
-)
-
-engine = QwenInference(quantize_4bit=True)
-answer = engine.generate_answer(mock_result)
-
-assert len(answer.answer) > 100          # Non-trivial answer
-assert answer.model_name == "Qwen/Qwen2.5-VL-7B-Instruct"
-assert answer.generation_time_seconds > 0
-assert len(answer.sources) > 0
-
-# Test quality scoring
-evaluator = QualityEvaluator(method="hf_inference")
-scores = evaluator.score(answer.question, answer.answer)
-assert 1 <= scores.clarity <= 5
-assert 1 <= scores.ect <= 5
-assert 1 <= scores.upt <= 5
+Respond ONLY with JSON: {"clarity": X, "ect": X, "upt": X}
 ```
 
 ---
 
-## Worker Updates (Session C fills this in)
+## Task 4: FastAPI Backend Integration (backend/app.py)
 
-### Progress Log
-<!-- Worker: Add your updates below this line -->
+### What to build
+Wire all pipeline modules into the existing FastAPI app. Update endpoints to use the new pipeline.
 
+### Endpoints
+```
+GET  /api/health          → {status, model_loaded, indexed_videos}
+POST /api/process-video   → Ingest: download + keyframes + chunks + embed + digest
+POST /api/ask             → Query: live frame + retrieve + answer + score
+```
+
+### POST /api/process-video flow
+1. Parse YouTube URL → video_id
+2. Check `is_indexed(video_id)` → skip if yes
+3. Download .mp4 to `data/videos/{video_id}/`
+4. Run `extract_keyframes()` (Session A)
+5. Run `chunk_transcript()` (Session A)
+6. Run `generate_digest()` (Session B)
+7. Run `index_video()` (Session B) — embed + store in ChromaDB
+8. Delete .mp4 from `data/videos/`
+9. Return {video_id, title, keyframe_count, chunk_count}
+
+### POST /api/ask flow
+1. Parse YouTube URL → video_id
+2. If not indexed → auto-ingest (step above)
+3. `extract_live_frame(video_id, timestamp)`
+4. `retrieve(question, video_id, timestamp)`
+5. `generate_answer(question, video_id, timestamp, retrieval, live_frame)`
+6. `score_answer(question, answer)` (optional, skip if `skip_quality_eval=true`)
+7. Return {answer, sources, quality_scores, model_name, generation_time}
+
+### Config updates needed in backend/config.py
+- `EMBEDDING_MODEL`: "jina" or "gemini"
+- Keep existing config vars
+
+---
+
+## Task 5: E2E Test
+
+Test the full pipeline on all 3 videos:
+1. POST /process-video for each video
+2. POST /ask with 2 questions per video at different timestamps
+3. Verify answers make sense, quality scores are in range
+
+Create: `tests/test_e2e_v2.py`
+
+---
+
+## Worker Updates
+
+### April 1, 2026 — ALL TASKS COMPLETE
+
+**Files created:**
+- `pipeline/live_frame.py` — Extracts nearest keyframe to timestamp (fallback from manifest.json if .mp4 unavailable)
+- `pipeline/answer.py` — Context assembly + Groq (primary) → Gemini 2.5 Flash (fallback) answer generation with multimodal support (transcript + images)
+- `pipeline/evaluate_v2.py` — Groq Llama 3.3 70B scoring on Clarity/ECT/UPT with JSON parsing + regex fallback
+- `tests/test_e2e_v2.py` — E2E tests for all 3 videos (health, process, ask, scoring, error cases)
+- `backend/app.py` — Fully rewritten: dotenv loading, new pipeline integration (live_frame → rag_v2.retrieve → answer.generate_answer → evaluate_v2.score_answer)
+
+**E2E Results (verified live):**
+
+| Test | Video | Result |
+|------|-------|--------|
+| Process | 3OmfTIf-SOU | `already indexed` (cached) |
+| Ask (skip scoring) | 3OmfTIf-SOU@30s | 2000+ char answer, 10 sources, `groq/llama-4-scout-17b` (when Groq available) or `gemini/gemini-2.5-flash` (fallback) |
+| Ask + quality scoring | 3OmfTIf-SOU@30s | Clarity: 5/5, ECT: 4/5, UPT: 5/5, 33s total |
+
+**Architecture decisions:**
+1. **Groq → Gemini fallback**: Groq Llama 4 Scout is primary (faster, vision), Gemini 2.5 Flash is fallback when Groq hits rate limits
+2. **Gemini SDK**: Uses new `google-genai` SDK (not deprecated `google-generativeai`), with thinking disabled for speed
+3. **Keys via Settings**: API keys loaded from `.env` via `python-dotenv` at import time in `backend/app.py`, passed explicitly to pipeline functions via `settings.GROQ_API_KEY` / `settings.GEMINI_API_KEY`
+4. **Live frame**: Falls back to nearest keyframe from manifest.json when .mp4 isn't available (e.g., deleted after ingestion)
+
+**Known issues:**
+- Groq free tier has 500K TPD daily limit — hits it after ~30 full answers
+- Gemini free tier has per-minute and daily quotas per project
+- Both are fine for demo/testing; production needs paid tier or multiple project keys
+
+---
+
+### Debugging Log — Issues Faced & How They Were Resolved
+
+#### Issue 1: CWD mismatch with uvicorn background terminals
+**Problem:** VS Code background terminals always started in `~/EduVidQA` instead of `~/eduvidqa-product`. The backend uses relative paths (`./data/chroma`, `./data/processed`), so `is_indexed()` returned `False` even though 792 items were in ChromaDB. This caused the server to re-ingest already-indexed videos on every request.
+**Symptoms:** Server re-ran keyframe extraction + digest generation for already-indexed videos → hit Groq rate limits immediately.
+**Fix:** Used `cd /Users/shubhamkumar/eduvidqa-product && .venv/bin/uvicorn ...` with the `cd` in the same command to ensure CWD was correct. Verified with `lsof -p PID | grep cwd`.
+
+#### Issue 2: Environment variables not reaching pipeline modules
+**Problem:** `.env` was loaded by `backend/config.py` via `python-dotenv`, and `os.getenv("GROQ_API_KEY")` worked at import time, but `pipeline/answer.py` called `os.getenv()` at request time and got empty strings. Spent many cycles adding `load_dotenv(override=True)` in `app.py`, adding debug prints, all showing keys were set — but requests still failed.
+**Root cause:** The error message was **misleading**. The actual errors were Groq 429 rate limit + Gemini missing SDK — NOT missing keys. The `RuntimeError("No LLM API key available")` was thrown as a catch-all when both backends failed, regardless of the actual failure reason.
+**Fix:** 
+1. Fixed error message to propagate actual backend errors: `"All LLM backends failed. Last error: {_last_error}"`
+2. Added `settings.GROQ_API_KEY` / `settings.GEMINI_API_KEY` to `backend/config.py` Settings class and passed explicitly to pipeline functions — belt-and-suspenders.
+
+#### Issue 3: Groq daily rate limit (429 TPD exhausted)
+**Problem:** Groq free tier allows 500K tokens/day. Sessions A+B consumed most of the quota during digest generation + earlier testing. By the time Session C tested answer generation, only ~2K tokens remained.
+**Symptoms:** `Error code: 429 - Rate limit reached for model llama-4-scout-17b... Limit 500000, Used 498755`
+**Fix:** Implemented Gemini 2.5 Flash as fallback. The answer pipeline tries Groq first, catches any exception, then falls back to Gemini.
+
+#### Issue 4: `google-generativeai` package missing
+**Problem:** The Gemini fallback in `answer.py` imported `google.generativeai` but the package wasn't installed in the `.venv`.
+**Symptoms:** `ModuleNotFoundError: No module named 'google.generativeai'` — but this was masked by the catch-all error message "No LLM API key available".
+**Fix:** Installed `google-generativeai`, then discovered it was deprecated. Switched to new `google-genai` SDK.
+
+#### Issue 5: Gemini free tier quota exhausted (429)
+**Problem:** The original Gemini API key (`[REDACTED]`) had its daily quota exhausted from earlier Session B usage.
+**Symptoms:** `429 RESOURCE_EXHAUSTED. Quota exceeded for metric: generate_content_free_tier_requests, limit: 0`
+**Fix:** User provided 3 more keys — first 2 were from **suspended** GCP projects (`CONSUMER_SUSPENDED`), third was from the same project (shared quota). Finally got a working key from a new project (`[REDACTED]`). Then switched model from `gemini-2.0-flash` (exhausted quota) to `gemini-2.5-flash` (separate quota bucket per model) — this worked immediately.
+
+#### Issue 6: `google-genai` SDK API differences
+**Problem:** The new `google-genai` SDK has different API signatures than the deprecated `google-generativeai`. `Part.from_text(text)` takes keyword arg, not positional. Gemini 2.5 Flash uses "thinking" by default which returned `None` text.
+**Symptoms:** `Part.from_text() takes 1 positional argument but 2 were given`; Response text was `None`.
+**Fix:** Changed to `Part.from_text(text=...)` and added `thinking_config=types.ThinkingConfig(thinking_budget=0)` to disable the thinking mode.
+
+#### Issue 7: uvicorn `--reload` killed mid-request
+**Problem:** When editing code with `--reload` enabled, the file watcher detected changes and killed the worker process mid-request (while Jina CLIP model was loading), causing the health check to report "ok" but subsequent requests failed because the reloaded worker hadn't finished initializing.
+**Fix:** Stopped using `--reload` for testing. Kill + restart cleanly instead.
+
+#### Key lesson learned
+The misleading error message `"No LLM API key available"` wasted the most time. It was thrown as a generic fallback when both LLM backends failed, even when the actual failures were rate limits, missing packages, or API errors. Fixing the error propagation to show the REAL last error immediately revealed the true problems.

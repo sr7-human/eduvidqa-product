@@ -1,187 +1,235 @@
-# Session B: RAG Pipeline Worker — Interface Specification
+# Session B: Embeddings + ChromaDB + Lecture Digest
 
 ## Status
-- **Assigned:** Not yet started
-- **Dependencies:** None — can start immediately (parallel with Session A)
-- **Last updated:** March 29, 2026
+- **Assigned:** Worker Session B
+- **Dependencies:** BLOCKED — Needs Session A output (keyframes + chunks in data/processed/)
+- **Last updated:** April 1, 2026
 
 ---
 
-## Your Mission
-Build the RAG (Retrieval-Augmented Generation) pipeline that embeds transcript chunks into vectors, stores them in ChromaDB, and retrieves the most relevant chunks for a student's question.
+## ⚠️ MANAGER INSTRUCTIONS (READ THIS FIRST)
 
-## Context
-We're building an AI Teaching Assistant for YouTube lectures (EduVidQA paper, EMNLP 2025). Session A produces `VideoSegment` objects (2-min chunks with transcript + frame paths). YOUR job is to:
-1. Embed those chunks into vectors
-2. Store them in a vector database
-3. When a student asks a question, find the top-K most relevant chunks
+Read `/memories/session/munimi.md` for full project context. You build the RETRIEVAL layer — embeddings, vector storage, and the Lecture Digest.
 
-## Hardware
-- MacBook Air M2 16GB (local dev)
-- HuggingFace Spaces 2-vCPU 16GB (production)
-- NO GPU required for this module — embeddings run on CPU (M2 is fast enough)
+**WAIT** until Session A has completed and updated their spec file. Check for their "Worker Updates" section in `interfaces/SESSION_A_SPEC.md`.
 
-## Files You Create
-```
-pipeline/rag.py             # Main RAG module (index + retrieve)
-pipeline/embeddings.py      # Embedding model wrapper
-tests/test_rag.py           # Unit tests
-```
+Working directory: `/Users/shubhamkumar/eduvidqa-product/`
+Python venv: `.venv/bin/python`
 
-## Input Data Model (from Session A — defined in pipeline/models.py)
+Test videos (same 3 as Session A):
+- `3OmfTIf-SOU`, `VRcixOuG-TU`, `oZgbwa8lvDE`
 
+Processed data from Session A should be in: `data/processed/{video_id}/`
+
+**When done:** Update the "Worker Updates" section at the bottom of THIS file.
+
+---
+
+## Task 1: Dual Embedding Module (pipeline/embeddings_v2.py)
+
+### What to build
+A module that embeds BOTH text AND images using two models:
+- **PRIMARY: Jina CLIP v2** — local, free, no quota, 1024-dim
+- **SECONDARY: Gemini Embedding 2** — API, higher quality, 768-dim
+
+### How it works
+
+**Jina CLIP v2 (primary):**
 ```python
-class VideoSegment(BaseModel):
-    video_id: str
-    segment_index: int
-    start_time: float
-    end_time: float
-    transcript_text: str
-    frame_paths: list[str]
+from sentence_transformers import SentenceTransformer
+model = SentenceTransformer("jinaai/jina-clip-v2", trust_remote_code=True)
+text_emb = model.encode("what is sorting?")          # 1024-dim
+img_emb = model.encode(Image.open("kf_000035.jpg"))  # 1024-dim, SAME space!
 ```
 
-## Output Data Model (YOU define these — add to pipeline/models.py)
-
+**Gemini Embedding 2 (secondary):**
 ```python
-class RetrievedContext(BaseModel):
-    """A single retrieved chunk with relevance score."""
-    segment: VideoSegment           # The original segment
-    relevance_score: float          # Cosine similarity (0-1)
-    rank: int                       # 1-based rank
-
-class RetrievalResult(BaseModel):
-    """Output of the retrieval pipeline."""
-    query: str                      # Original student question
-    video_id: str
-    contexts: list[RetrievedContext]  # Top-K results, sorted by relevance
-    total_segments: int              # How many segments were searched
+from google import genai
+from google.genai import types
+client = genai.Client(api_key="GEMINI_API_KEY_FROM_ENV")
+result = client.models.embed_content(
+    model="gemini-embedding-2-preview",
+    contents=[types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")],
+    config=types.EmbedContentConfig(output_dimensionality=768)
+)
 ```
 
-## Functions You Implement
-
-### `pipeline/embeddings.py`
-
+### Function signatures
 ```python
-class EmbeddingModel:
-    """Wrapper around sentence-transformers embedding model."""
-    
-    def __init__(self, model_name: str = "BAAI/bge-m3"):
-        """Load embedding model. Falls back to all-MiniLM-L6-v2 if OOM."""
-        pass
-    
-    def embed_text(self, text: str) -> list[float]:
-        """Embed a single text string. Returns vector."""
-        pass
-    
-    def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        """Embed multiple texts efficiently. Returns list of vectors."""
-        pass
+class EmbeddingService:
+    def __init__(self, model: str = "jina"):
+        """model: 'jina' (local) or 'gemini' (API)"""
+
+    def embed_text(self, text: str) -> list[float]
+    def embed_image(self, image_path: str) -> list[float]
+    def embed_batch_text(self, texts: list[str]) -> list[list[float]]
+    def embed_batch_images(self, paths: list[str]) -> list[list[float]]
+    def get_dimension(self) -> int  # 1024 for jina, 768 for gemini
 ```
 
-### `pipeline/rag.py`
+### Dependencies
+```bash
+.venv/bin/pip install sentence-transformers Pillow
+# google-genai already installed
+```
 
+### Key rule
+- Cannot MIX embeddings from different models in the same ChromaDB collection
+- Config flag `EMBEDDING_MODEL=jina|gemini` decides which to use
+- Default to `jina` (free, no quota issues)
+
+---
+
+## Task 2: ChromaDB Indexing + Retrieval (pipeline/rag_v2.py)
+
+### What to build
+A new RAG module that indexes transcript chunks, keyframes, and digest into ChromaDB. Performs hybrid retrieval at query time.
+
+### How it works
+1. One ChromaDB collection per embedding model: `eduvidqa_jina` or `eduvidqa_gemini`
+2. Each document has metadata: `{video_id, type: "chunk"|"keyframe"|"digest", timestamp, chunk_id}`
+3. Index: embed transcript chunks + keyframe images + digest text → store in ChromaDB
+4. Retrieve: embed question → cosine search → filter by video_id → rank by proximity to timestamp
+
+### Function signatures
 ```python
 class LectureIndex:
-    """Vector index for a single lecture video's segments."""
-    
-    def __init__(self, persist_dir: str = "./data/chroma"):
-        """Initialize ChromaDB client and embedding model."""
-        pass
-    
-    def index_segments(self, segments: list[VideoSegment]) -> int:
+    def __init__(self, persist_dir: str = "data/chroma", embedding_model: str = "jina"):
+
+    def index_video(self, video_id: str, chunks: list[dict], keyframe_manifest: list[dict], digest: str) -> int:
+        """Index all content for one video. Returns count of embeddings stored."""
+
+    def retrieve(self, question: str, video_id: str, timestamp: float, top_k: int = 12) -> dict:
         """
-        Embed and store all segments for a video.
-        
-        Args:
-            segments: List of VideoSegment objects from Session A
-            
         Returns:
-            Number of segments indexed
+        {
+            "ranked_chunks": [...],      # 10-sec chunks ranked by proximity to timestamp
+            "relevant_keyframes": [...], # keyframes from semantic search + linked to chunks
+            "digest": "...",             # full lecture digest text
+        }
         """
-        pass
-    
-    def is_indexed(self, video_id: str) -> bool:
-        """Check if a video has already been indexed (avoid re-embedding)."""
-        pass
-    
-    def retrieve(
-        self, 
-        query: str, 
-        video_id: str, 
-        top_k: int = 5
-    ) -> RetrievalResult:
-        """
-        Find the top-K most relevant segments for a student question.
-        
-        Args:
-            query: Student's question text
-            video_id: Which video to search in
-            top_k: Number of results to return
-            
-        Returns:
-            RetrievalResult with ranked contexts
-        """
-        pass
-    
-    def delete_video(self, video_id: str) -> bool:
-        """Remove all indexed segments for a video (cleanup)."""
-        pass
+
+    def is_indexed(self, video_id: str) -> bool
 ```
 
-## Key Requirements
+### Retrieval logic (important!)
+1. Embed the question using the same model (Jina or Gemini)
+2. Search ChromaDB filtered by `video_id`
+3. Get top-K results (mix of chunks + keyframes)
+4. RE-RANK chunks by proximity to the asked timestamp:
+   - The chunk whose time window contains `timestamp` comes FIRST
+   - Adjacent chunks follow in order of distance
+5. Always include the digest (retrieve it by `type="digest"` filter)
+6. Return linked keyframes from the retrieved chunks + any semantically matched keyframes
 
-1. **Embedding model**: Use `BAAI/bge-m3` (sentence-transformers). It's 568M params, runs well on M2 CPU. If memory issues, fall back to `all-MiniLM-L6-v2` (22M params). BGE-M3 note: prepend instruction "Represent this educational lecture content: " to documents and "Represent this student question for retrieval: " to queries for best results.
+---
 
-2. **ChromaDB setup**: 
-   - Use persistent storage (SQLite on disk at `./data/chroma/`)
-   - One collection per video: collection name = `video_{video_id}`
-   - Store metadata with each embedding: `{ "video_id": ..., "segment_index": ..., "start_time": ..., "end_time": ..., "transcript_text": ... }`
+## Task 3: Lecture Digest Generation (pipeline/digest.py)
 
-3. **Chunking strategy**: Session A already chunks by 2-minute segments. But if a segment's transcript is very long (>500 words), split it into sub-chunks with 1-sentence overlap. Store the parent segment reference in metadata.
+### What to build
+Generate a comprehensive Lecture Digest from the full transcript + all keyframes.
 
-4. **Retrieval**: 
-   - Cosine similarity search
-   - Return top_k results sorted by relevance
-   - Include the full `VideoSegment` object in each result (so Session C can access frame paths)
+### How it works
+1. Read `data/processed/{video_id}/transcript/full.txt`
+2. Read all keyframe images from `data/processed/{video_id}/keyframes/`
+3. Send transcript + keyframe images to Groq Llama 4 Scout (vision model)
+4. Groq API key: `GROQ_API_KEY_FROM_ENV`
+5. Save output as `data/processed/{video_id}/digest.txt`
 
-5. **Caching**: If `is_indexed(video_id)` returns True, skip re-embedding.
-
-## Dependencies (pip install)
+### Prompt
 ```
-sentence-transformers
-chromadb
-pydantic
-torch  # CPU only, no CUDA needed
+Create a detailed, comprehensive digest of this entire lecture.
+
+This is NOT a summary — do NOT shorten or condense. Capture ALL:
+- Key concepts explained
+- Formulas, code, algorithms shown
+- Diagrams and visual content described from the frames
+- Examples given by the professor
+- Important definitions and terminology
+
+The transcript and lecture frames are provided below.
 ```
 
-## Test Criteria
+### Important: Groq image limits
+- Groq may limit images per request. If sending 50+ keyframes fails:
+  - Batch: send 5 keyframes at a time with portions of the transcript
+  - Merge the partial digests into one final document
+
+### Function
 ```python
-# Create mock segments
-segments = [
-    VideoSegment(video_id="test123", segment_index=0, start_time=0, end_time=120,
-                 transcript_text="Today we'll discuss backpropagation in neural networks...",
-                 frame_paths=["frame_0.jpg"]),
-    VideoSegment(video_id="test123", segment_index=1, start_time=120, end_time=240,
-                 transcript_text="Gradient descent works by computing partial derivatives...",
-                 frame_paths=["frame_1.jpg"]),
-    # ... more segments
-]
-
-index = LectureIndex()
-count = index.index_segments(segments)
-assert count == len(segments)
-assert index.is_indexed("test123")
-
-result = index.retrieve("How does backpropagation work?", video_id="test123", top_k=3)
-assert len(result.contexts) <= 3
-assert result.contexts[0].relevance_score >= result.contexts[1].relevance_score  # Sorted
-assert "backpropagation" in result.contexts[0].segment.transcript_text.lower()  # Relevant
+def generate_digest(video_id: str, data_dir: str = "data/processed") -> str:
+    """Returns the full digest text. Also saves to data/processed/{video_id}/digest.txt"""
 ```
 
 ---
 
-## Worker Updates (Session B fills this in)
+## Task 4: Integration Test
 
-### Progress Log
-<!-- Worker: Add your updates below this line -->
+Run the full pipeline on all 3 videos:
+1. Load Session A's keyframes + chunks from `data/processed/`
+2. Generate digest for each video
+3. Embed everything (using Jina CLIP v2 primary)
+4. Index into ChromaDB
+5. Test retrieval: ask 2 questions per video, verify results make sense
 
+Create test script: `tests/test_rag_v2.py`
+
+---
+
+## Worker Updates
+<!-- Worker: Write your results below this line after completing tasks -->
+
+**April 1, 2026 — All 4 tasks complete**
+
+### Files created
+- `pipeline/embeddings_v2.py` — Dual embedding service (Jina CLIP v2 local 1024-dim + Gemini Embedding 2 API 768-dim)
+- `pipeline/rag_v2.py` — ChromaDB indexing + retrieval with timestamp-proximity re-ranking, keyframe linking, digest storage
+- `pipeline/digest.py` — Groq Llama 4 Scout digest generation with batched keyframe handling
+- `tests/test_rag_v2.py` — Integration test suite
+
+### Jina CLIP v2 compatibility fix
+- PyTorch 2.11 + transformers 5.4 cause a meta tensor crash in Jina's EVA vision tower (`torch.linspace().item()`)
+- Patched automatically in `embeddings_v2.py._patch_jina_eva_model()` — replaces with pure Python linspace
+- Required deps: `einops`, `timm`, `torchvision`
+
+### ChromaDB collections
+```
+eduvidqa_jina (792 total):
+  3OmfTIf-SOU:  56 items (29 chunks + 26 keyframes + 1 digest)
+  VRcixOuG-TU: 144 items (78 chunks + 65 keyframes + 1 digest)
+  oZgbwa8lvDE: 592 items (145 chunks + 446 keyframes + 1 digest)
+
+eduvidqa_gemini (792 total):
+  3OmfTIf-SOU:  56 items (29 chunks + 26 keyframes + 1 digest)
+  VRcixOuG-TU: 144 items (78 chunks + 65 keyframes + 1 digest)
+  oZgbwa8lvDE: 592 items (145 chunks + 446 keyframes + 1 digest)
+```
+Both collections fully indexed and consistent.
+
+### Embedding model consistency
+- **Vector embeddings** (ChromaDB): Jina CLIP v2 (1024-dim) and Gemini Embedding 2 `gemini-embedding-2-preview` (768-dim). One collection per model. NO mixing.
+- **Digest generation** (LLM text generation, NOT embeddings): Groq Llama 4 Scout for 2 videos, Gemini 2.5 Flash for `oZgbwa8lvDE` (Groq daily TPD limit hit). The digest is plain text that then gets embedded by the respective embedding model into ChromaDB.
+
+### Digests
+- `3OmfTIf-SOU`: 5,686 chars ✓ (generated by Groq Llama 4 Scout)
+- `VRcixOuG-TU`: 3,427 chars ✓ (generated by Groq Llama 4 Scout)
+- `oZgbwa8lvDE`: 10,428 chars ✓ (generated by Gemini 2.5 Flash — Groq was rate-limited)
+
+### Retrieval verification (2 questions per video, both models)
+```
+3OmfTIf-SOU — "What is unit testing?"
+  [Jina]   top: "unit testing. Unit tests test a single unit of functionality..."
+  [Gemini] top: "unit testing. Unit tests test a single unit of functionality..."
+
+VRcixOuG-TU — "What is a perceptron?"
+  [Jina]   top: "the Perceptron Learning Algorithm. We now see a more principled..."
+  [Gemini] top: "the Perceptron Learning Algorithm. We now see a more principled..."
+
+oZgbwa8lvDE — "How does insertion sort work?"
+  [Jina]   top: "sorted array... output of any sorting algorithm..."
+  [Gemini] top: "sorting algorithms sorting problems..."
+```
+All queries return ranked chunks + linked keyframes + digest. ✓
+
+### Known issue
+- `oZgbwa8lvDE` has 446 keyframes (SSIM threshold too loose for animated sorting content). Session A quality issue — works but slow to embed (~13 min for Gemini API, ~7 min for Jina local).

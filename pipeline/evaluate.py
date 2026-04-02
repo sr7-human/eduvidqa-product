@@ -89,17 +89,17 @@ class QualityEvaluator:
 
         from huggingface_hub import InferenceClient
 
-        token = os.environ.get("HF_TOKEN", "")
+        token = os.environ.get("HF_TOKEN") or None
         client = InferenceClient(
-            model="Qwen/Qwen2.5-72B-Instruct",
-            token=token or None,
+            api_key=token,
         )
-        response = client.text_generation(
-            prompt,
-            max_new_tokens=100,
+        response = client.chat.completions.create(
+            model="Qwen/Qwen2.5-72B-Instruct",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=100,
             temperature=0.1,
         )
-        return response
+        return response.choices[0].message.content
 
     def _call_groq(self, prompt: str) -> str:
         """Use Groq free API with Llama 3.3 70B."""
@@ -107,7 +107,9 @@ class QualityEvaluator:
 
         import httpx
 
-        api_key = os.environ["GROQ_API_KEY"]
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            raise RuntimeError("GROQ_API_KEY environment variable is not set")
         resp = httpx.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {api_key}"},

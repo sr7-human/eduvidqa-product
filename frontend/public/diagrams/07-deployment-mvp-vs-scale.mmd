@@ -1,0 +1,80 @@
+%% ============================================================
+%% DEPLOYMENT ARCHITECTURE — MVP vs SCALE
+%% ============================================================
+%%
+%% This diagram shows two deployment strategies:
+%%
+%% PHASE 1 — MVP (Minimum Viable Product, $0/month):
+%%   - Frontend: Streamlit or React app, hosted on Vercel (free)
+%%     or run locally on localhost during demos.
+%%   - Backend: FastAPI server on HuggingFace Spaces (free tier,
+%%     includes ZeroGPU access for model inference).
+%%   - Vector DB: ChromaDB using SQLite as backend, embedded
+%%     directly with the FastAPI server (no separate service).
+%%   - Storage: Local disk (data/ folder) or HF dataset storage.
+%%     Only keyframes + transcripts stored (~4 MB per video).
+%%   - LLM: Groq API (Llama 4 Scout 17B), completely free.
+%%   - Embeddings: BGE-M3 runs locally on CPU (free).
+%%     Gemini Embedding 2 for images (free API tier).
+%%   - Supports: 3-10 videos, 1-10 users (demo/admission)
+%%
+%% PHASE 2 — SCALE ($25-50/month at 10K users):
+%%   - CDN: Cloudflare (free) for edge caching and DDoS protection.
+%%   - Frontend: Vercel (auto-scales globally, free tier generous).
+%%   - API: Google Cloud Run or Railway — scales to 0 when idle
+%%     (no cost when nobody is using it), auto-scales on traffic.
+%%   - Job Queue: Redis + Celery for async video ingestion.
+%%     Ingestion takes 30-60 sec, shouldn't block the API.
+%%   - Vector DB: Qdrant Cloud (free 1GB) or Supabase pgvector.
+%%     Handles millions of embeddings efficiently.
+%%   - Blob Storage: Cloudflare R2 (10 GB free, NO egress fees
+%%     unlike AWS S3). Stores keyframe JPEGs and transcripts.
+%%   - LLM: Groq free tier handles most traffic. Together.ai
+%%     as fallback ($0.20 per million tokens).
+%%   - Response Cache: Redis — same question about same video
+%%     returns cached answer instantly.
+%%   - Supports: 5,000+ videos, 100K+ users
+%%
+%% SCALING TRANSITION:
+%%   MVP components can be swapped one-by-one as traffic grows.
+%%   No rewrite needed — just change config/environment variables.
+%% ============================================================
+
+graph TB
+    subgraph MVP["Phase 1: MVP ($0)"]
+        direction TB
+        M_FE["Frontend\nStreamlit / React\nlocalhost or Vercel (free)"]
+        M_BE["Backend\nFastAPI\nHF Spaces (free)"]
+        M_VDB["Vector DB\nChromaDB (SQLite)\nEmbedded with backend"]
+        M_STORE["Storage\nLocal disk\ndata/ folder"]
+        M_LLM["LLM\nGroq (Llama 4 Scout)\nFree API"]
+        M_EMB["Embeddings\nBGE-M3 (local)\nGemini Embed 2 (free API)"]
+
+        M_FE --> M_BE
+        M_BE --> M_VDB
+        M_BE --> M_STORE
+        M_BE --> M_LLM
+        M_BE --> M_EMB
+    end
+
+    subgraph SCALE["Phase 2: Scale ($25-50/mo at 10K users)"]
+        direction TB
+        S_CDN["CDN\nCloudflare\nCache + Edge"]
+        S_FE["Frontend\nVercel\nAuto-scale, global"]
+        S_API["API\nCloud Run / Railway\nScale to 0"]
+        S_QUEUE["Job Queue\nRedis + Celery\nAsync video ingest"]
+        S_VDB["Vector DB\nQdrant Cloud (free 1GB)\nor Supabase pgvector"]
+        S_STORE["Blob Storage\nCloudflare R2\n10 GB free, no egress"]
+        S_LLM["LLM\nGroq free tier\nTogether.ai fallback"]
+        S_CACHE["Response Cache\nRedis\nSame Q = cached answer"]
+
+        S_CDN --> S_FE
+        S_FE --> S_API
+        S_API --> S_QUEUE
+        S_API --> S_VDB
+        S_API --> S_STORE
+        S_API --> S_LLM
+        S_API --> S_CACHE
+    end
+
+    MVP -.->|"After admission\nscale up"| SCALE

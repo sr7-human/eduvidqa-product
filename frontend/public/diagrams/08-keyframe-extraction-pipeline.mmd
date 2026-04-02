@@ -1,0 +1,84 @@
+%% ============================================================
+%% KEYFRAME EXTRACTION PIPELINE — SSIM Deduplication
+%% ============================================================
+%%
+%% This diagram shows how we go from 108,000 raw video frames
+%% to ~30-200 unique keyframes using a free, local process.
+%%
+%% THE PROBLEM:
+%%   A 60-minute lecture at 30fps has 108,000 frames.
+%%   We can't embed or store all of them.
+%%   But most frames are nearly identical (same slide for minutes).
+%%
+%% STEP 1 — TEMPORAL SAMPLING:
+%%   Extract 1 frame per second instead of all 30.
+%%   108,000 → 3,600 frames. Already a 30x reduction.
+%%
+%% STEP 2 — SSIM DEDUPLICATION:
+%%   SSIM (Structural Similarity Index) compares each frame
+%%   with the last KEPT frame. SSIM outputs a score from 0 to 1:
+%%     - 1.0 = pixel-perfect identical
+%%     - 0.95+ = same slide, minor changes (mouse moved)
+%%     - 0.85 = significant change (new slide, new diagram)
+%%     - 0.5 = completely different content
+%%   We use threshold 0.92:
+%%     - If SSIM > 0.92: SKIP (same visual content, discard)
+%%     - If SSIM < 0.92: KEEP (new content detected!)
+%%   This runs in ~5 seconds on CPU. No GPU, no API, $0.
+%%   Inspired by Google Photos duplicate detection (since 2015).
+%%
+%% STEP 3 — KEYFRAME OUTPUT:
+%%   Each kept frame becomes a "keyframe" with metadata:
+%%     - timestamp (when in the video it appeared)
+%%     - JPEG file (saved to disk, ~50 KB each)
+%%     - video_id (which video it belongs to)
+%%   Typical results:
+%%     - Slide-heavy NPTEL lecture: 20-40 keyframes
+%%     - Live coding session: 60-100 keyframes
+%%     - Whiteboard lecture: 80-150 keyframes
+%%
+%% STEP 4 — SEMANTIC EMBEDDING:
+%%   Each keyframe is embedded using Gemini Embedding 2.
+%%   6 images per API call, so 50 keyframes = 9 API calls.
+%%   The 3072-dimensional vector is stored in ChromaDB.
+%%   This enables searching frames by MEANING, not just time.
+%%   Example: "where is sorting explained" → finds the right frame
+%%   even without knowing the timestamp.
+%% ============================================================
+
+flowchart TB
+    subgraph INPUT["Input"]
+        VIDEO["60-min Lecture Video\n108,000 frames at 30fps"]
+    end
+
+    subgraph SAMPLE["Step 1: Temporal Sampling"]
+        S1["Extract 1 frame per second\n3,600 frames"]
+    end
+
+    subgraph DEDUP["Step 2: SSIM Deduplication (Local, Free, ~5 sec)"]
+        D1["Compare frame[i] with last kept frame"]
+        D2{"SSIM\nsimilarity\n> 0.92?"}
+        D3["SKIP\n(same slide)"]
+        D4["KEEP\n(new content!)"]
+    end
+
+    subgraph RESULT["Step 3: Keyframes"]
+        R1["N unique keyframes\n(typically 30-200)"]
+        R2["Each has:\n- timestamp\n- JPEG file\n- video_id"]
+    end
+
+    subgraph EMBED["Step 4: Semantic Embedding"]
+        E1["Gemini Embedding 2\nceil(N/6) API calls"]
+        E2["3072-dim vector per frame\nStored in ChromaDB"]
+    end
+
+    VIDEO --> S1
+    S1 --> D1
+    D1 --> D2
+    D2 -->|Yes| D3
+    D2 -->|No| D4
+    D3 --> D1
+    D4 --> R1
+    R1 --> R2
+    R2 --> E1
+    E1 --> E2

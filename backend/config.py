@@ -3,6 +3,16 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+
+# Load .env from project root before reading any env vars
+try:
+    from dotenv import load_dotenv
+
+    _env_path = Path(__file__).resolve().parent.parent / ".env"
+    load_dotenv(_env_path)
+except ImportError:
+    pass  # python-dotenv not installed — env vars must be set externally
 
 
 class Settings:
@@ -15,9 +25,22 @@ class Settings:
     # CORS — comma-separated allowed origins (default: allow all)
     CORS_ORIGINS: list[str] = os.getenv("CORS_ORIGINS", "*").split(",")
 
-    # Model
-    MODEL_NAME: str = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-VL-7B-Instruct")
+    # Model — default to 3B for M2 Mac (7B needs CUDA 4-bit)
+    MODEL_NAME: str = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-VL-3B-Instruct")
     QUANTIZE_4BIT: bool = os.getenv("QUANTIZE_4BIT", "true").lower() == "true"
+
+    # Mock mode — return dummy answers without loading the model
+    MOCK_INFERENCE: bool = os.getenv("MOCK_INFERENCE", "false").lower() == "true"
+
+    # Inference engine: "local" (Qwen on device), "groq" (free API), or "gemini" (best quality)
+    INFERENCE_ENGINE: str = os.getenv("INFERENCE_ENGINE", "local")
+
+    # API Keys
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+
+    # Quality evaluation method: "hf_inference", "groq", or "local"
+    EVAL_METHOD: str = os.getenv("EVAL_METHOD", "hf_inference")
 
     # Data / cache
     DATA_DIR: str = os.getenv("DATA_DIR", "./data")

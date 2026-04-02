@@ -37,7 +37,7 @@ interface Props {
 
 export default function QualityBadges({ scores }: Props) {
   return (
-    <div className="grid grid-cols-3 gap-3">
+    <div className="grid grid-cols-3 gap-2 sm:gap-3">
       {METRICS.map(({ key, label, tooltip }) => {
         const value = scores[key];
         return (
@@ -50,7 +50,7 @@ export default function QualityBadges({ scores }: Props) {
             <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">
               {label}
             </p>
-            <p className="text-xl font-bold text-gray-100">
+            <p className="text-lg sm:text-xl font-bold text-gray-100">
               {value.toFixed(1)}
             </p>
             {/* Progress bar */}

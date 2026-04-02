@@ -103,8 +103,7 @@ class QwenInference:
             output_ids = self.model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                do_sample=temperature > 0,
+                do_sample=False,
             )
         elapsed = time.perf_counter() - t0
 

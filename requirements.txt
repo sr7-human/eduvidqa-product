@@ -6,6 +6,8 @@ fastapi
 uvicorn[standard]
 pydantic>=2.0
 python-multipart
+python-dotenv
+eval_type_backport  # Python 3.9 compat for X|None syntax in Pydantic
 
 # ── Session A: Ingestion ────────────────────────────────────────
 youtube-transcript-api
@@ -23,6 +25,7 @@ bitsandbytes
 accelerate
 qwen-vl-utils
 torch
+huggingface_hub
 
 # ── Testing ─────────────────────────────────────────────────────
 httpx

@@ -1,0 +1,67 @@
+%% ============================================================
+%% UI/UX WIREFRAME — EduVidQA
+%% ============================================================
+%%
+%% This wireframe shows the main interaction screen layout.
+%%
+%% HEADER BAR:
+%%   - EduVidQA logo on the left
+%%   - Navigation links: Gallery (browse videos), About, GitHub
+%%   - Dark/Light theme toggle on the right
+%%
+%% MAIN AREA (split into two panels):
+%%
+%% LEFT PANEL (60% width) — Video + Frame Preview:
+%%   - YouTube video player embedded via IFrame API
+%%   - Video streams directly from YouTube (no local storage)
+%%   - Below the player: a frame preview showing the exact frame
+%%     at the current timestamp. This gives the student transparency —
+%%     they can see exactly what the AI will analyze.
+%%
+%% RIGHT PANEL (40% width) — Chat Interface:
+%%   - Chat history showing conversation between student and AI
+%%   - Each AI response includes quality score badges (Clarity, ECT, UPT)
+%%   - Auto-detected timestamp shown above the input field
+%%     (captured from YouTube player, updates as video plays)
+%%   - Timestamp is editable — student can override if needed
+%%   - Text input field with an Ask button
+%%
+%% INTERACTION FLOW:
+%%   1. Student watches video, pauses at a confusing part
+%%   2. Timestamp auto-captures (e.g., 12:34)
+%%   3. Student types question in chat input
+%%   4. Hits Ask — timestamp freezes, question is sent
+%%   5. AI answer appears in chat with quality badges
+%%   6. Timestamp resets to auto-mode for the next question
+%%   7. Full chat history is preserved (not reset per question)
+%% ============================================================
+
+block-beta
+    columns 12
+
+    block:HEADER:12
+        columns 12
+        LOGO["EduVidQA"]:3
+        NAV["Gallery | About | GitHub"]:6
+        THEME["Dark/Light"]:3
+    end
+
+    block:MAIN:12
+        columns 12
+
+        block:LEFT:7
+            columns 1
+            PLAYER["YouTube Video Player\n(IFrame Embed)\n12:34 / 45:00"]
+            FRAME_PREVIEW["Current Frame Preview\n(auto-captured at 12:34)\nShows what AI will see"]
+        end
+
+        block:RIGHT:5
+            columns 1
+            CHAT_HEADER["Ask about this lecture"]
+            MSG1["AI: Hi! I'm your AI TA.\nAsk me anything about\nthis lecture."]
+            MSG2["You: What does this\nfunction do?\nat 12:34"]
+            MSG3["AI: The professor is\nexplaining insertion sort...\nClarity: 4.2 | ECT: 3.8"]
+            TIMESTAMP["Timestamp: 12:34 (editable)\n(auto-detected from player)"]
+            INPUT["Type your question... [Ask]"]
+        end
+    end

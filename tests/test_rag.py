@@ -1,15 +1,22 @@
 """Unit tests for the RAG pipeline (Session B)."""
 
-import shutil
-import tempfile
-
 import pytest
 
+from pipeline.embeddings import EmbeddingModel
 from pipeline.models import VideoSegment
 from pipeline.rag import LectureIndex, _subchunk
 
+# Use a small model for fast CI tests
+_TEST_MODEL = "all-MiniLM-L6-v2"
+
 
 # ── Fixtures ──────────────────────────────────────────────────────
+
+
+@pytest.fixture(scope="session")
+def shared_embed_model():
+    """Load the small embedding model once per test session."""
+    return EmbeddingModel(model_name=_TEST_MODEL)
 
 
 @pytest.fixture()
@@ -100,21 +107,24 @@ class TestSubchunk:
 
 
 class TestLectureIndex:
-    def test_index_and_is_indexed(self, tmp_chroma, sample_segments):
-        index = LectureIndex(persist_dir=tmp_chroma)
+    def _make_index(self, tmp_chroma, embed_model):
+        return LectureIndex(persist_dir=tmp_chroma, embedding_model=embed_model)
+
+    def test_index_and_is_indexed(self, tmp_chroma, sample_segments, shared_embed_model):
+        index = self._make_index(tmp_chroma, shared_embed_model)
         count = index.index_segments(sample_segments)
 
         assert count == len(sample_segments)
         assert index.is_indexed("test123")
         assert not index.is_indexed("nonexistent")
 
-    def test_index_empty(self, tmp_chroma):
-        index = LectureIndex(persist_dir=tmp_chroma)
+    def test_index_empty(self, tmp_chroma, shared_embed_model):
+        index = self._make_index(tmp_chroma, shared_embed_model)
         assert index.index_segments([]) == 0
 
-    def test_re_index_overwrites(self, tmp_chroma, sample_segments):
+    def test_re_index_overwrites(self, tmp_chroma, sample_segments, shared_embed_model):
         """Re-indexing the same video should cleanly replace old data."""
-        index = LectureIndex(persist_dir=tmp_chroma)
+        index = self._make_index(tmp_chroma, shared_embed_model)
         index.index_segments(sample_segments)
         # Index again with fewer segments
         count = index.index_segments(sample_segments[:2])
@@ -123,8 +133,8 @@ class TestLectureIndex:
 
     # ── Retrieval ─────────────────────────────────────────────────
 
-    def test_retrieve_relevant(self, tmp_chroma, sample_segments):
-        index = LectureIndex(persist_dir=tmp_chroma)
+    def test_retrieve_relevant(self, tmp_chroma, sample_segments, shared_embed_model):
+        index = self._make_index(tmp_chroma, shared_embed_model)
         index.index_segments(sample_segments)
 
         result = index.retrieve(
@@ -148,8 +158,8 @@ class TestLectureIndex:
         ranks = [c.rank for c in result.contexts]
         assert ranks == list(range(1, len(ranks) + 1))
 
-    def test_retrieve_cnn_query(self, tmp_chroma, sample_segments):
-        index = LectureIndex(persist_dir=tmp_chroma)
+    def test_retrieve_cnn_query(self, tmp_chroma, sample_segments, shared_embed_model):
+        index = self._make_index(tmp_chroma, shared_embed_model)
         index.index_segments(sample_segments)
 
         result = index.retrieve(
@@ -159,15 +169,15 @@ class TestLectureIndex:
         top_text = result.contexts[0].segment.transcript_text.lower()
         assert "convolutional" in top_text or "convolution" in top_text
 
-    def test_retrieve_not_indexed_raises(self, tmp_chroma):
-        index = LectureIndex(persist_dir=tmp_chroma)
+    def test_retrieve_not_indexed_raises(self, tmp_chroma, shared_embed_model):
+        index = self._make_index(tmp_chroma, shared_embed_model)
         with pytest.raises(ValueError, match="not been indexed"):
             index.retrieve("anything", video_id="no_such_video")
 
     # ── Deletion ──────────────────────────────────────────────────
 
-    def test_delete_video(self, tmp_chroma, sample_segments):
-        index = LectureIndex(persist_dir=tmp_chroma)
+    def test_delete_video(self, tmp_chroma, sample_segments, shared_embed_model):
+        index = self._make_index(tmp_chroma, shared_embed_model)
         index.index_segments(sample_segments)
 
         assert index.delete_video("test123") is True
@@ -176,8 +186,8 @@ class TestLectureIndex:
 
     # ── Frame paths round-trip ────────────────────────────────────
 
-    def test_frame_paths_preserved(self, tmp_chroma, sample_segments):
-        index = LectureIndex(persist_dir=tmp_chroma)
+    def test_frame_paths_preserved(self, tmp_chroma, sample_segments, shared_embed_model):
+        index = self._make_index(tmp_chroma, shared_embed_model)
         index.index_segments(sample_segments)
 
         result = index.retrieve("backpropagation", video_id="test123", top_k=1)

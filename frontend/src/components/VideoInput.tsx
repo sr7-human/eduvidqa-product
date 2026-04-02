@@ -36,7 +36,7 @@ export default function VideoInput({ onSubmit, isLoading }: Props) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.1 }}
       onSubmit={handleSubmit}
-      className="bg-dark-card border border-dark-border rounded-2xl p-6 space-y-5"
+      className="bg-dark-card border border-dark-border rounded-2xl p-4 sm:p-6 space-y-4 sm:space-y-5"
     >
       {/* YouTube URL */}
       <div>

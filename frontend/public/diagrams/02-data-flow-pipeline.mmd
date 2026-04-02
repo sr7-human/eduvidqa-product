@@ -1,0 +1,67 @@
+%% ============================================================
+%% DATA FLOW PIPELINE — EduVidQA
+%% ============================================================
+%%
+%% This diagram shows data flowing through three phases:
+%%
+%% PHASE 1 — INGESTION (runs once when a video is first added):
+%%   A YouTube URL comes in. We download the full .mp4 using yt-dlp.
+%%   From that .mp4, two things happen in parallel:
+%%   - Transcript is extracted via youtube-transcript-api (or Whisper fallback)
+%%   - Frames are extracted at 1 frame per second (3,600 for a 60-min video)
+%%   Then SSIM (Structural Similarity Index) compares consecutive frames.
+%%   Frames that are >92% similar to the previous kept frame are discarded.
+%%   This reduces 3,600 frames down to ~30-200 unique keyframes.
+%%   Finally, the .mp4 is deleted to save storage.
+%%
+%% PHASE 2 — EMBEDDING (runs once, right after ingestion):
+%%   Each unique keyframe is embedded using Gemini Embedding 2 (free API).
+%%   Since the API allows 6 images per request, N keyframes need only
+%%   ceil(N/6) API calls (e.g., 50 keyframes = 9 calls).
+%%   Transcript chunks (120-second segments) are embedded using BGE-M3
+%%   which runs locally on CPU (no API needed).
+%%   Both sets of embeddings go into ChromaDB — a unified vector space
+%%   where text and images live together.
+%%
+%% PHASE 3 — QUERY (runs every time a student asks a question):
+%%   The student's question is embedded using BGE-M3.
+%%   ChromaDB does hybrid search — finds the most similar transcript
+%%   chunks AND the most visually relevant keyframes.
+%%   These are sent to Llama 4 Scout (a vision-language model on Groq)
+%%   which sees both the frames and transcript to generate an answer.
+%%   The answer is then scored for quality (Clarity, ECT, UPT).
+%%
+%% KEY INSIGHT: Phases 1 and 2 are ONE-TIME costs per video.
+%% Phase 3 is the only thing that runs per question, and it's fast
+%% (vector search + one API call = 2-3 seconds total).
+%% ============================================================
+
+flowchart LR
+    subgraph P1["Phase 1: Ingestion (One-time)"]
+        direction TB
+        A1["YouTube URL"] --> A2["Download .mp4\n(yt-dlp)"]
+        A2 --> A3["Extract Transcript\n(youtube-transcript-api)"]
+        A2 --> A4["Extract 1 frame/sec\n(OpenCV)"]
+        A4 --> A5["SSIM Dedup\n(~5 sec, local CPU)"]
+        A5 --> A6["N Keyframes\n(30-200 unique)"]
+        A2 --> A7["Delete .mp4"]
+    end
+    subgraph P2["Phase 2: Embedding (One-time)"]
+        direction TB
+        B1["Keyframes"] --> B2["Gemini Embed 2\n(ceil N/6 API calls)"]
+        B3["Transcript Chunks\n(120-sec segments)"] --> B4["BGE-M3\n(local CPU)"]
+        B2 --> B5["ChromaDB\n(unified vector space)"]
+        B4 --> B5
+    end
+    subgraph P3["Phase 3: Query (Every question)"]
+        direction TB
+        C1["Question + Timestamp"] --> C2["Embed Question\n(BGE-M3)"]
+        C2 --> C3["Hybrid Search\n(text + visual)"]
+        C3 --> C4["Top-K frames + transcript"]
+        C4 --> C5["Llama 4 Scout VLM\n(Groq API)"]
+        C5 --> C6["Answer"]
+        C6 --> C7["Quality Score\n(Clarity/ECT/UPT)"]
+    end
+    A6 --> B1
+    A3 --> B3
+    B5 --> C3

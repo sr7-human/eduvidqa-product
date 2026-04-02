@@ -1,0 +1,84 @@
+%% ============================================================
+%% SYSTEM ARCHITECTURE — EduVidQA
+%% ============================================================
+%%
+%% This diagram shows the complete system from the student's browser
+%% down to the storage layer. Here is how it works:
+%%
+%% 1. The STUDENT opens the app in their browser (React or Streamlit).
+%%    A YouTube video is embedded using the IFrame API.
+%%    The IFrame API auto-captures the current timestamp as the
+%%    student watches and pauses the video.
+%%
+%% 2. When the student types a question and hits Ask, the frontend
+%%    sends the question + timestamp + video_id to the BACKEND
+%%    (a FastAPI server hosted on HuggingFace Spaces for free).
+%%
+%% 3. The backend has two sub-systems:
+%%    a) INGESTION PIPELINE — runs once per video. Downloads the .mp4,
+%%       extracts transcript, extracts 1 frame/sec, runs SSIM dedup
+%%       to find unique keyframes, then deletes the .mp4.
+%%    b) MULTIMODAL RAG — embeds transcript chunks (BGE-M3, local CPU)
+%%       and keyframe images (Gemini Embedding 2, free API) into
+%%       ChromaDB. At query time, does hybrid search across both.
+%%
+%% 4. The retrieved context (transcript + keyframes) is sent to an
+%%    LLM via free API. Primary: Groq (Llama 4 Scout 17B, vision-capable).
+%%    Fallback: Gemini 2.0 Flash.
+%%
+%% 5. The answer is scored for quality (Clarity, ECT, UPT) and
+%%    returned to the frontend with source timestamps.
+%%
+%% 6. STORAGE is minimal: only keyframe JPEGs (~2.5 MB/video),
+%%    transcript CSV (~20 KB), and embeddings (~1.5 MB). Full .mp4
+%%    is deleted after processing. YouTube is the video host.
+%%
+%% TOTAL COST: $0 (all services on free tiers)
+%% ============================================================
+
+graph TB
+    subgraph CLIENT["Client (Browser)"]
+        UI["React / Streamlit UI\nYouTube IFrame + Chat Panel"]
+        YT_API["YouTube IFrame API\nplayer.getCurrentTime()"]
+    end
+    subgraph BACKEND["Backend (FastAPI)"]
+        API["API Gateway\n/process-video\n/ask\n/health"]
+        subgraph INGEST["Ingestion Pipeline"]
+            DL["yt-dlp\nDownload .mp4"]
+            TRANS["youtube-transcript-api\nExtract Transcript"]
+            FRAMES["OpenCV\nExtract 1 frame/sec"]
+            SSIM["SSIM Dedup\n3600 → N keyframes"]
+        end
+        subgraph RAG["Multimodal RAG"]
+            TXT_EMB["BGE-M3\nText Embeddings"]
+            VIS_EMB["Gemini Embedding 2\nFrame Embeddings"]
+            CHROMA["ChromaDB\nVector Store"]
+            RETRIEVE["Hybrid Retriever"]
+        end
+    end
+    subgraph LLM["LLM Inference"]
+        GROQ["Groq API\nLlama 4 Scout 17B"]
+        GEMINI["Gemini 2.0 Flash\nFallback"]
+    end
+    subgraph STORAGE["Persistent Storage"]
+        KF["Keyframes ~2.5 MB"]
+        TR["Transcripts ~20 KB"]
+        VDB["Embeddings ~1.5 MB"]
+    end
+    UI -->|"question + timestamp"| API
+    YT_API -->|"auto-capture"| UI
+    API --> DL
+    DL --> FRAMES
+    DL --> TRANS
+    FRAMES --> SSIM
+    SSIM --> KF
+    TRANS --> TR
+    KF --> VIS_EMB
+    TR --> TXT_EMB
+    TXT_EMB --> CHROMA
+    VIS_EMB --> CHROMA
+    CHROMA --> RETRIEVE
+    RETRIEVE --> GROQ
+    RETRIEVE --> GEMINI
+    GROQ --> API
+    API --> UI

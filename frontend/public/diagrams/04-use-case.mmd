@@ -1,0 +1,85 @@
+%% ============================================================
+%% UML USE CASE DIAGRAM — EduVidQA
+%% ============================================================
+%%
+%% This diagram identifies WHO uses the system and WHAT they can do.
+%%
+%% ACTORS:
+%%   - Student: The primary user. Watches lectures, asks questions,
+%%     views AI answers, checks quality scores, browses chat history.
+%%   - Admin/Professor: Adds new videos to the system.
+%%
+%% STUDENT USE CASES:
+%%   1. Browse Video Gallery — see available indexed lectures
+%%   2. Watch Lecture Video — embedded YouTube player
+%%   3. Ask Question with Timestamp — the core interaction
+%%   4. View AI Answer — see the generated response
+%%   5. View Quality Scores — Clarity, ECT, UPT badges
+%%   6. View Chat History — scroll through past Q&A
+%%   7. Edit Timestamp — override the auto-detected time
+%%
+%% ADMIN USE CASES:
+%%   8. Add New Video — submit a YouTube URL for ingestion
+%%
+%% INCLUDED (INTERNAL) USE CASES:
+%%   When a question is asked, the system internally:
+%%   - Checks if the video is indexed; if not, triggers ingestion
+%%   - Ingestion includes: extract transcript, extract keyframes,
+%%     SSIM dedup, embed frames, embed text
+%%   - Answering includes: retrieve context, generate answer,
+%%     score quality
+%%
+%% RELATIONSHIPS:
+%%   - "Ask Question" INCLUDES "Add New Video" (auto-ingest if needed)
+%%   - "View AI Answer" EXTENDS to "View Quality Scores" (optional)
+%% ============================================================
+
+graph TB
+    subgraph ACTORS["Actors"]
+        STUDENT["Student"]
+        ADMIN["Admin / Professor"]
+    end
+
+    subgraph SYSTEM["EduVidQA System"]
+        UC1(("Browse Video\nGallery"))
+        UC2(("Watch Lecture\nVideo"))
+        UC3(("Ask Question\nwith Timestamp"))
+        UC4(("View AI\nAnswer"))
+        UC5(("View Quality\nScores"))
+        UC6(("Add New\nVideo"))
+        UC7(("Process &\nIndex Video"))
+        UC8(("View Chat\nHistory"))
+        UC9(("Edit\nTimestamp"))
+    end
+
+    subgraph INCLUDES["Included Use Cases"]
+        INC1(("Extract\nTranscript"))
+        INC2(("Extract\nKeyframes"))
+        INC3(("SSIM\nDedup"))
+        INC4(("Embed\nFrames"))
+        INC5(("Embed\nText"))
+        INC6(("Retrieve\nContext"))
+        INC7(("Generate\nAnswer"))
+        INC8(("Score\nQuality"))
+    end
+
+    STUDENT --> UC1
+    STUDENT --> UC2
+    STUDENT --> UC3
+    STUDENT --> UC4
+    STUDENT --> UC5
+    STUDENT --> UC8
+    STUDENT --> UC9
+    ADMIN --> UC6
+
+    UC3 -.->|includes| UC6
+    UC6 -.->|includes| UC7
+    UC7 -.->|includes| INC1
+    UC7 -.->|includes| INC2
+    INC2 -.->|includes| INC3
+    INC3 -.->|includes| INC4
+    INC1 -.->|includes| INC5
+    UC3 -.->|includes| INC6
+    INC6 -.->|includes| INC7
+    INC7 -.->|includes| INC8
+    UC4 -.->|extends| UC5

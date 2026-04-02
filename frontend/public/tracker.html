@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EduVidQA — MVP Sprint Tracker</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0a0e1a;--bg2:#111827;--bg3:#1e293b;--text:#e2e8f0;--text2:#94a3b8;--text3:#64748b;--accent:#6366f1;--accent2:#818cf8;--green:#10b981;--amber:#f59e0b;--rose:#f43f5e;--cyan:#06b6d4;--radius:14px}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);line-height:1.7}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:var(--bg2)}::-webkit-scrollbar-thumb{background:var(--accent);border-radius:4px}
+
+.nav{position:fixed;top:0;left:0;right:0;z-index:1000;background:rgba(10,14,26,0.92);backdrop-filter:blur(20px);border-bottom:1px solid rgba(99,102,241,0.2);display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:56px}
+.nav-logo{font-weight:800;font-size:1.15rem;background:linear-gradient(135deg,var(--accent2),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.nav-badge{font-size:.65rem;background:var(--green);color:#fff;padding:2px 8px;border-radius:12px;margin-left:8px;font-weight:600;vertical-align:middle;-webkit-text-fill-color:#fff}
+.nav-right{display:flex;gap:1rem;align-items:center}.nav-right a{color:var(--text2);font-size:.8rem;text-decoration:none}.nav-right a:hover{color:var(--accent2)}
+
+.hero{padding:80px 1.5rem 20px;text-align:center;background:radial-gradient(ellipse at 50% 0%,rgba(16,185,129,0.06) 0%,transparent 60%)}
+.hero h1{font-size:clamp(1.5rem,4vw,2.4rem);font-weight:800;background:linear-gradient(135deg,var(--green),var(--cyan),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:.3rem}
+.hero p{color:var(--text2);font-size:.95rem;max-width:600px;margin:0 auto}
+
+.stats{display:flex;gap:1rem;justify-content:center;padding:1.5rem;flex-wrap:wrap}
+.stat{background:var(--bg2);border:1px solid rgba(99,102,241,0.12);border-radius:var(--radius);padding:1rem 1.5rem;text-align:center;min-width:120px}
+.stat-num{font-size:1.8rem;font-weight:800}
+.stat-label{font-size:.7rem;text-transform:uppercase;letter-spacing:2px;color:var(--text3);margin-top:2px}
+.stat-green .stat-num{color:var(--green)}
+.stat-amber .stat-num{color:var(--amber)}
+.stat-rose .stat-num{color:var(--rose)}
+.stat-cyan .stat-num{color:var(--cyan)}
+
+.progress-bar{max-width:800px;margin:0 auto 2rem;padding:0 1.5rem}
+.progress-track{background:var(--bg3);border-radius:8px;height:12px;overflow:hidden}
+.progress-fill{height:100%;border-radius:8px;background:linear-gradient(90deg,var(--green),var(--cyan));transition:width 0.5s ease}
+.progress-label{display:flex;justify-content:space-between;font-size:.75rem;color:var(--text3);margin-top:4px}
+
+.container{max-width:900px;margin:0 auto;padding:0 1.5rem 4rem}
+
+.sprint-header{display:flex;align-items:center;gap:.8rem;margin:2rem 0 1rem}
+.sprint-badge{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:2px;padding:4px 12px;border-radius:20px}
+
+.task{background:var(--bg2);border:1px solid rgba(99,102,241,0.1);border-radius:var(--radius);padding:1.2rem 1.5rem;margin-bottom:.8rem;transition:border-color 0.2s}
+.task:hover{border-color:rgba(99,102,241,0.3)}
+.task-top{display:flex;align-items:center;gap:.8rem;margin-bottom:.6rem;flex-wrap:wrap}
+.task-num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;flex-shrink:0}
+.task-title{font-weight:700;font-size:1rem;flex:1}
+.task-status{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;padding:3px 10px;border-radius:12px}
+.task-desc{color:var(--text2);font-size:.85rem;line-height:1.7;padding-left:2.4rem}
+.task-detail{margin-top:.5rem;padding-left:2.4rem}
+.task-detail li{color:var(--text3);font-size:.8rem;list-style:none;padding-left:1rem;position:relative;margin-bottom:.2rem}
+.task-detail li::before{content:"→";position:absolute;left:0;color:var(--accent);font-weight:700}
+.task-assignee{font-size:.7rem;color:var(--text3);padding-left:2.4rem;margin-top:.4rem}
+
+/* Status colors */
+.status-done{background:rgba(16,185,129,0.15);color:var(--green);border-color:rgba(16,185,129,0.3)}
+.status-done .task-num{background:var(--green);color:#fff}
+.status-progress{background:rgba(245,158,11,0.15);color:var(--amber);border-color:rgba(245,158,11,0.3)}
+.status-progress .task-num{background:var(--amber);color:#fff}
+.status-todo .task-num{background:var(--bg3);color:var(--text3)}
+.status-todo .task-status{background:rgba(100,116,139,0.15);color:var(--text3)}
+
+.footer{text-align:center;padding:2rem;border-top:1px solid rgba(99,102,241,0.1);color:var(--text3);font-size:.78rem}
+
+@media(max-width:768px){.stats{flex-direction:column;align-items:center}.task-top{flex-direction:column;align-items:flex-start}.task-desc,.task-detail,.task-assignee{padding-left:0}}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-logo">🎓 EduVidQA <span class="nav-badge">MVP Sprint</span></div>
+  <div class="nav-right">
+    <a href="/">App</a>
+    <a href="/diagrams/index.html">Architecture</a>
+    <a href="https://sr7-human.github.io/eduvidqa-explained/">Paper</a>
+    <a href="https://github.com/sr7-human/eduvidqa-product" target="_blank">GitHub</a>
+  </div>
+</nav>
+
+<section class="hero">
+  <h1>MVP Sprint Tracker</h1>
+  <p>Real-time progress on building the EduVidQA Minimum Viable Product — an AI Teaching Assistant for YouTube Lectures.</p>
+</section>
+
+<div class="stats" id="stats"></div>
+<div class="progress-bar">
+  <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+  <div class="progress-label"><span id="progressText"></span><span id="progressPct"></span></div>
+</div>
+
+<div class="container" id="tasks"></div>
+
+<div class="footer">
+  EduVidQA — EMNLP 2025 · IIT Kharagpur · Manager: Main Session · Workers: Sub-sessions
+</div>
+
+<script>
+const TASKS = [
+  {
+    id: 1, sprint: 0, status: "done",
+    title: "Clone AutoTA + Groq Vision Integration",
+    desc: "Cloned beingdutta/AutoTA-Application-For-Students. Replaced OpenAI GPT-4o with Groq Llama 4 Scout 17B (free vision model). Streamlit app running locally at localhost:8501 with 3 sample CS lecture videos.",
+    details: [
+      "Swapped OpenAI API → Groq API in chatbot/llm_answer.py",
+      "Fixed BrokenPipeError (traceback.print_exc → format_exc)",
+      "Tested: Groq vision model sees frame + transcript → accurate answers",
+      "3 videos: Insertion Sort, Perceptron, Unit Testing (Khan Academy)"
+    ],
+    assignee: "Main Session"
+  },
+  {
+    id: 2, sprint: 0, status: "done",
+    title: "Architecture Design + Diagrams",
+    desc: "Designed complete system architecture (11 diagrams), folder structure, data model, and system design principles audit. Created interactive diagram viewer website.",
+    details: [
+      "11 Mermaid diagrams: System Arch, Data Flow, UI Wireframe, Use Case, Class, Sequence, Deployment, Keyframe Pipeline, Hybrid Frames, 10-sec Chunking, System Design Principles",
+      "Folder structure: data/videos/ (temp), data/processed/{video_id}/ (permanent), data/chroma/ (vector DB)",
+      "22/25 system design principles mapped to the architecture",
+      "Interactive viewer at diagrams/index.html with dark theme + tabs"
+    ],
+    assignee: "Main Session"
+  },
+  {
+    id: 3, sprint: 1, status: "done",
+    title: "SSIM Keyframe Extraction Module",
+    desc: "Build pipeline/keyframes.py — extracts 1 frame/sec from video, runs SSIM deduplication to find unique keyframes, saves JPEGs with timestamps to data/processed/{video_id}/keyframes/.",
+    details: [
+      "Input: video file path (.mp4)",
+      "Extract 1 frame per second using OpenCV (cv2.VideoCapture)",
+      "Compare consecutive frames using SSIM (skimage.metrics.structural_similarity)",
+      "Threshold: 0.92 — above = skip (same slide), below = keep (new content)",
+      "Save kept frames as kf_SSSSSS.jpg (timestamp-encoded filename)",
+      "Generate keyframes/manifest.json with metadata per frame",
+      "Expected: ~5 seconds processing for 60-min video on CPU",
+      "Test with 3 AutoTA sample videos to validate keyframe counts"
+    ],
+    assignee: "Worker Session A"
+  },
+  {
+    id: 4, sprint: 1, status: "done",
+    title: "10-Second Transcript Chunking Module",
+    desc: "Build pipeline/chunking.py — downloads transcript via youtube-transcript-api, splits into 10-second chunks, links chunks to keyframes by timestamp overlap, saves to data/processed/{video_id}/transcript/.",
+    details: [
+      "Input: YouTube video ID",
+      "Download transcript using youtube-transcript-api (Whisper fallback)",
+      "Split into 10-second non-overlapping chunks",
+      "Each chunk: {chunk_id, start_time, end_time, text, linked_keyframe_ids}",
+      "Link keyframes to chunks: keyframe at 35s → belongs to chunk 30-40",
+      "Save full.txt (complete transcript) and chunks.json (structured chunks)",
+      "60-min video = 360 chunks"
+    ],
+    assignee: "Worker Session A"
+  },
+  {
+    id: 5, sprint: 1, status: "done",
+    title: "Gemini Embedding 2 Integration",
+    desc: "Build pipeline/embeddings.py — embeds both transcript chunks AND keyframe images using Gemini Embedding 2 (gemini-embedding-2-preview) in a unified vector space. Replaces BGE-M3.",
+    details: [
+      "Use google-genai SDK (already installed)",
+      "embed_text(text) → 768-dim vector (output_dimensionality=768 for storage efficiency)",
+      "embed_image(jpeg_path) → 768-dim vector (same space as text!)",
+      "Batch images: 6 per API call (API limit), so 50 keyframes = 9 calls",
+      "Batch text: multiple chunks per call",
+      "All embeddings in SAME space — enables cross-modal search",
+      "Store in ChromaDB with metadata: {video_id, type: 'chunk'|'keyframe'|'digest', timestamp, ...}"
+    ],
+    assignee: "Worker Session B"
+  },
+  {
+    id: 6, sprint: 1, status: "done",
+    title: "ChromaDB Indexing + Hybrid Retrieval",
+    desc: "Build pipeline/rag.py (v2) — indexes chunks, keyframes, and digest into ChromaDB. At query time, performs hybrid retrieval: ranked 10-sec chunks + nearest keyframes + digest, filtered by video_id.",
+    details: [
+      "One ChromaDB collection for all videos, partitioned by video_id metadata filter",
+      "Index: 360 chunk embeddings + N keyframe embeddings + 1 digest embedding per video",
+      "Retrieve: embed question → cosine search → return top-K results",
+      "Rank chunks by proximity to the asked timestamp (nearest chunk first)",
+      "Also return keyframes linked to those chunks + semantically similar keyframes",
+      "Always include the digest in retrieval results",
+      "Return: {ranked_chunks, relevant_keyframes, digest, live_frame_path}"
+    ],
+    assignee: "Worker Session B"
+  },
+  {
+    id: 7, sprint: 1, status: "done",
+    title: "Lecture Digest Generation",
+    desc: "Build pipeline/digest.py — generates a comprehensive Lecture Digest from the full transcript + all keyframes using the VLM. Not a summary (not shortened), but a detailed knowledge document.",
+    details: [
+      "Input: full transcript text + all keyframe JPEG paths",
+      "Send to Groq Llama 4 Scout (vision): 'Create a detailed digest of this lecture'",
+      "Digest captures: what was spoken (transcript) + what was shown (keyframes)",
+      "NOT shortened — comprehensive, detailed, structured",
+      "Save as data/processed/{video_id}/digest.txt",
+      "Embed via Gemini Embedding 2, store in ChromaDB"
+    ],
+    assignee: "Worker Session B"
+  },
+  {
+    id: 8, sprint: 1, status: "done",
+    title: "Live Frame Extraction + Answer Pipeline",
+    desc: "Build pipeline/answer.py — at query time, extracts a LIVE FRAME at the exact timestamp (ephemeral), combines with retrieved context, sends to VLM for answer generation + quality scoring.",
+    details: [
+      "Extract live frame at exact timestamp from stored video or nearest keyframe",
+      "Live frame is EPHEMERAL — used once, never saved, discarded after answer",
+      "Assemble context: live frame + ranked chunks + stored keyframes + digest + question",
+      "Send to Groq Llama 4 Scout (vision model)",
+      "Score answer quality: Clarity, ECT, UPT (via separate Groq call)",
+      "Return: {answer, sources, quality_scores, model_name, generation_time}"
+    ],
+    assignee: "Worker Session C"
+  },
+  {
+    id: 9, sprint: 2, status: "done",
+    title: "Frontend: React + YouTube IFrame + Chat",
+    desc: "Build the new frontend with split-screen layout: YouTube player (left) + chat panel (right). Auto-timestamp capture, live frame preview, quality badges, chat history.",
+    details: [
+      "React + Vite + Tailwind (dark theme matching diagrams site)",
+      "YouTube IFrame API: embed player, poll getCurrentTime() every 500ms",
+      "Auto-timestamp: updates as student seeks, freezes when chat focused, editable",
+      "Live frame preview below video: shows what AI will analyze",
+      "Chat panel: full history, quality badges (Clarity/ECT/UPT) per answer",
+      "POST /ask with {video_id, question, timestamp} on submit",
+      "Loading state with step indicators",
+      "Mobile responsive (Pixel 10 tested)"
+    ],
+    assignee: "Worker Session C"
+  },
+  {
+    id: 10, sprint: 2, status: "done",
+    title: "FastAPI Backend Integration",
+    desc: "Wire all pipeline modules together in backend/app.py — endpoints: /process-video (ingest), /ask (query), /health. Update all Pydantic models.",
+    details: [
+      "POST /process-video: download → chunk → keyframe → embed → digest → cleanup .mp4",
+      "POST /ask: live frame + hybrid retrieval + VLM answer + quality scoring",
+      "GET /health: model status, indexed video count",
+      "Lazy loading for all heavy modules",
+      "CORS configured for frontend",
+      "Error handling for private/age-restricted videos"
+    ],
+    assignee: "Worker Session C"
+  },
+  {
+    id: 11, sprint: 3, status: "todo",
+    title: "Deploy: HF Spaces + Vercel",
+    desc: "Deploy backend to HuggingFace Spaces (free, with ZeroGPU). Deploy frontend to Vercel (free). Configure environment variables.",
+    details: [
+      "Backend: Dockerfile for HF Spaces, configure .env with API keys",
+      "Frontend: vercel.json with API proxy to HF Spaces",
+      "Test: full E2E from Vercel frontend → HF Spaces backend",
+      "Ensure CORS, HTTPS, and security headers are correct"
+    ],
+    assignee: "Worker Session D"
+  },
+  {
+    id: 12, sprint: 3, status: "todo",
+    title: "Demo: Ingest 3 Videos + E2E Test",
+    desc: "Ingest 3 sample CS lecture videos, test the full pipeline end-to-end, record demo for professor.",
+    details: [
+      "Video 1: Insertion Sort (oZgbwa8lvDE) — already in AutoTA",
+      "Video 2: Perceptron Learning (VRcixOuG-TU) — already in AutoTA",
+      "Video 3: A longer NPTEL lecture (find one ~30-60 min)",
+      "Test: ask 5+ questions per video at different timestamps",
+      "Verify: keyframes extracted, chunks ranked correctly, digest accurate",
+      "Verify: quality scores reasonable (Clarity > 3.5)",
+      "Record: screen recording of demo for professor"
+    ],
+    assignee: "Worker Session D"
+  }
+];
+
+const SPRINTS = [
+  { name: "Sprint 0: Foundation", color: "#10b981", bg: "rgba(16,185,129,0.12)" },
+  { name: "Sprint 1: Backend Pipeline", color: "#6366f1", bg: "rgba(99,102,241,0.12)" },
+  { name: "Sprint 2: Frontend + Integration", color: "#f59e0b", bg: "rgba(245,158,11,0.12)" },
+  { name: "Sprint 3: Deploy + Demo", color: "#f43f5e", bg: "rgba(244,63,94,0.12)" }
+];
+
+// Stats
+const done = TASKS.filter(t => t.status === 'done').length;
+const progress = TASKS.filter(t => t.status === 'progress').length;
+const todo = TASKS.filter(t => t.status === 'todo').length;
+const total = TASKS.length;
+const pct = Math.round((done / total) * 100);
+
+document.getElementById('stats').innerHTML = `
+  <div class="stat stat-cyan"><div class="stat-num">${total}</div><div class="stat-label">Total Tasks</div></div>
+  <div class="stat stat-green"><div class="stat-num">${done}</div><div class="stat-label">Completed</div></div>
+  <div class="stat stat-amber"><div class="stat-num">${progress}</div><div class="stat-label">In Progress</div></div>
+  <div class="stat stat-rose"><div class="stat-num">${todo}</div><div class="stat-label">Remaining</div></div>
+`;
+document.getElementById('progressFill').style.width = pct + '%';
+document.getElementById('progressText').textContent = `${done} of ${total} tasks completed`;
+document.getElementById('progressPct').textContent = pct + '%';
+
+// Tasks grouped by sprint
+const tasksEl = document.getElementById('tasks');
+let html = '';
+let currentSprint = -1;
+TASKS.forEach(t => {
+  if (t.sprint !== currentSprint) {
+    currentSprint = t.sprint;
+    const s = SPRINTS[currentSprint];
+    html += `<div class="sprint-header">
+      <span class="sprint-badge" style="background:${s.bg};color:${s.color}">${s.name}</span>
+    </div>`;
+  }
+  const statusClass = t.status === 'done' ? 'status-done' : t.status === 'progress' ? 'status-progress' : 'status-todo';
+  const statusLabel = t.status === 'done' ? 'DONE' : t.status === 'progress' ? 'IN PROGRESS' : 'TODO';
+  const statusBg = t.status === 'done' ? 'rgba(16,185,129,0.15)' : t.status === 'progress' ? 'rgba(245,158,11,0.15)' : 'rgba(100,116,139,0.15)';
+  const statusColor = t.status === 'done' ? 'var(--green)' : t.status === 'progress' ? 'var(--amber)' : 'var(--text3)';
+  html += `
+    <div class="task ${statusClass}">
+      <div class="task-top">
+        <div class="task-num">${t.id}</div>
+        <div class="task-title">${t.title}</div>
+        <span class="task-status" style="background:${statusBg};color:${statusColor}">${statusLabel}</span>
+      </div>
+      <div class="task-desc">${t.desc}</div>
+      <ul class="task-detail">${t.details.map(d => `<li>${d}</li>`).join('')}</ul>
+      <div class="task-assignee">Assigned to: ${t.assignee}</div>
+    </div>`;
+});
+tasksEl.innerHTML = html;
+</script>
+</body>
+</html>

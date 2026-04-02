@@ -1,12 +1,24 @@
-"""EduVidQA FastAPI application — orchestrates Ingest → RAG → Inference."""
+"""EduVidQA FastAPI application — orchestrates Ingest → RAG → Answer → Score."""
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import shutil
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-import torch
+# Ensure .env is loaded before any other imports read env vars
+try:
+    from dotenv import load_dotenv
+
+    _env_path = Path(__file__).resolve().parent.parent / ".env"
+    load_dotenv(_env_path, override=True)
+except Exception:
+    pass
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -20,38 +32,25 @@ from backend.models import (
     QualityScoresResponse,
     SourceInfo,
 )
-from pipeline.ingest import ingest_video, parse_video_id
-from pipeline.rag import LectureIndex
+from pipeline.ingest import parse_video_id
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 # ---------------------------------------------------------------------------
-# Global singletons (initialised in lifespan)
+# Global singletons (initialised lazily)
 # ---------------------------------------------------------------------------
 
-_index: LectureIndex | None = None
-_engine = None  # QwenInference — lazy to avoid import cost at module level
+_index = None  # LectureIndex from rag_v2
 
 
-def _get_index() -> LectureIndex:
+def _get_index():
+    from pipeline.rag_v2 import LectureIndex
+
     global _index
     if _index is None:
         _index = LectureIndex(persist_dir=settings.CHROMA_DIR)
     return _index
-
-
-def _get_engine():
-    """Return (and lazily create) the QwenInference engine."""
-    global _engine
-    if _engine is None:
-        from pipeline.inference import QwenInference
-
-        _engine = QwenInference(
-            model_name=settings.MODEL_NAME,
-            quantize_4bit=settings.QUANTIZE_4BIT,
-        )
-    return _engine
 
 
 # ---------------------------------------------------------------------------
@@ -63,18 +62,10 @@ def _get_engine():
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
     logger.info("EduVidQA API starting up …")
-    # Always init the vector index (lightweight)
-    _get_index()
-    # Eagerly load the LLM unless LAZY_LOAD is set
     if not settings.LAZY_LOAD:
-        logger.info("Pre-loading inference model (set LAZY_LOAD=true to defer) …")
-        _get_engine()
+        logger.info("Pre-loading index (set LAZY_LOAD=true to defer) …")
+        _get_index()
     yield
-    # Shutdown — free GPU memory
-    global _engine
-    if _engine is not None:
-        _engine.unload()
-        _engine = None
     logger.info("EduVidQA API shut down.")
 
 
@@ -105,19 +96,25 @@ app.add_middleware(
 
 @app.get("/api/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
-    """Return system status: model loaded, GPU available, etc."""
+    """Return system status."""
+    indexed_count = 0
+    try:
+        idx = _get_index()
+        indexed_count = idx._col.count()
+    except Exception:
+        pass
+
     return HealthResponse(
         status="ok",
-        model_loaded=_engine is not None,
-        model_name=settings.MODEL_NAME,
-        gpu_available=torch.cuda.is_available(),
+        model_loaded=True,  # using API-based LLMs, always "loaded"
+        model_name="groq/llama-4-scout-17b",
+        gpu_available=False,
     )
 
 
 @app.post("/api/process-video", response_model=ProcessResponse)
 async def process_video(request: ProcessRequest) -> ProcessResponse:
-    """Download, transcribe, chunk, and index a video ahead of time."""
-    # Validate URL early
+    """Download, extract keyframes, chunk transcript, generate digest, and index."""
     try:
         video_id = parse_video_id(request.youtube_url)
     except ValueError as exc:
@@ -135,28 +132,129 @@ async def process_video(request: ProcessRequest) -> ProcessResponse:
             message="Video already indexed.",
         )
 
+    data_dir = settings.DATA_DIR
+    processed_dir = os.path.join(data_dir, "processed")
+
     try:
-        result = await ingest_video(request.youtube_url, output_dir=settings.DATA_DIR)
-    except RuntimeError as exc:
+        # Step 1: Download video
+        video_path = _download_video(video_id, data_dir)
+
+        # Step 2: Extract keyframes (Session A)
+        from pipeline.keyframes import extract_keyframes
+
+        kf_manifest = extract_keyframes(
+            video_path=video_path,
+            video_id=video_id,
+            output_dir=processed_dir,
+        )
+
+        # Step 3: Chunk transcript (Session A)
+        from pipeline.chunking import chunk_transcript
+
+        chunks = chunk_transcript(
+            video_id=video_id,
+            output_dir=processed_dir,
+            keyframe_manifest=kf_manifest,
+        )
+
+        # Step 4: Generate digest (Session B) — non-fatal if API rate-limited
+        digest = ""
+        try:
+            from pipeline.digest import generate_digest
+
+            digest = generate_digest(video_id=video_id, data_dir=processed_dir)
+        except Exception as exc:
+            logger.warning("Digest generation failed (non-fatal, indexing without digest): %s", exc)
+            # Check if a cached digest.txt exists from a previous partial run
+            digest_path = Path(processed_dir) / video_id / "digest.txt"
+            if digest_path.exists():
+                digest = digest_path.read_text()
+                logger.info("Using cached digest from previous run")
+
+        # Step 5: Index in ChromaDB (Session B)
+        total = index.index_video(
+            video_id=video_id,
+            chunks=chunks,
+            keyframe_manifest=kf_manifest,
+            digest=digest,
+        )
+
+        # Step 6: Delete .mp4 to save disk
+        try:
+            vid_dir = Path(data_dir) / "videos" / video_id
+            if vid_dir.is_dir():
+                shutil.rmtree(vid_dir)
+        except Exception as exc:
+            logger.warning("Failed to clean up video dir: %s", exc)
+
+        return ProcessResponse(
+            video_id=video_id,
+            title=f"Video {video_id}",
+            duration=chunks[-1]["end_time"] if chunks else 0,
+            segment_count=total,
+            message="Video processed and indexed successfully.",
+        )
+
+    except Exception as exc:
+        logger.error("Processing failed: %s", exc, exc_info=True)
         detail = str(exc)
         if "private" in detail.lower() or "age" in detail.lower():
             raise HTTPException(status_code=403, detail=detail)
-        raise HTTPException(status_code=400, detail=detail)
+        raise HTTPException(status_code=500, detail=detail)
 
-    seg_count = index.index_segments(result.segments)
 
-    return ProcessResponse(
-        video_id=result.metadata.video_id,
-        title=result.metadata.title,
-        duration=result.metadata.duration,
-        segment_count=seg_count,
-        message="Video processed and indexed successfully.",
-    )
+def _download_video(video_id: str, data_dir: str) -> str:
+    """Download video .mp4. Tries yt-dlp first, falls back to pytubefix."""
+    vid_dir = Path(data_dir) / "videos" / video_id
+    vid_dir.mkdir(parents=True, exist_ok=True)
+    mp4_path = vid_dir / f"{video_id}.mp4"
+
+    if mp4_path.exists():
+        return str(mp4_path)
+
+    url = f"https://www.youtube.com/watch?v={video_id}"
+
+    # --- Attempt 1: yt-dlp ---
+    try:
+        import yt_dlp
+
+        ydl_opts = {
+            "format": "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360]/best",
+            "outtmpl": str(mp4_path),
+            "no_playlist": True,
+            "merge_output_format": "mp4",
+            "quiet": True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+
+        if mp4_path.exists():
+            return str(mp4_path)
+    except Exception as exc:
+        logger.warning("yt-dlp download failed (%s), trying pytubefix …", exc)
+
+    # --- Attempt 2: pytubefix ---
+    try:
+        from pytubefix import YouTube
+
+        yt = YouTube(url)
+        stream = yt.streams.filter(progressive=True, file_extension="mp4").order_by("resolution").first()
+        if stream is None:
+            stream = yt.streams.filter(file_extension="mp4").first()
+        if stream is None:
+            raise RuntimeError("No suitable mp4 stream found")
+        stream.download(output_path=str(vid_dir), filename=f"{video_id}.mp4")
+        if mp4_path.exists():
+            return str(mp4_path)
+    except Exception as exc:
+        logger.error("pytubefix download also failed: %s", exc)
+
+    raise RuntimeError(f"Could not download video {video_id} — both yt-dlp and pytubefix failed")
 
 
 @app.post("/api/ask", response_model=AskResponse)
 async def ask_question(request: AskRequest) -> AskResponse:
-    """Full pipeline: URL + question → AI answer."""
+    """Full pipeline: URL + question + timestamp → AI answer."""
     # 1. Parse video ID
     try:
         video_id = parse_video_id(request.youtube_url)
@@ -165,56 +263,87 @@ async def ask_question(request: AskRequest) -> AskResponse:
 
     index = _get_index()
 
-    # 2. Ingest if not already indexed
+    # 2. Auto-ingest if not indexed
     if not index.is_indexed(video_id):
         try:
-            result = await ingest_video(request.youtube_url, output_dir=settings.DATA_DIR)
-        except RuntimeError as exc:
-            detail = str(exc)
-            if "private" in detail.lower() or "age" in detail.lower():
-                raise HTTPException(status_code=403, detail=detail)
-            raise HTTPException(status_code=400, detail=detail)
-        index.index_segments(result.segments)
-
-    # 3. Retrieve relevant segments
-    try:
-        retrieval = index.retrieve(request.question, video_id, top_k=5)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-    # 4. Generate answer
-    engine = _get_engine()
-    if engine is None:
-        raise HTTPException(status_code=503, detail="Model not loaded. Retry shortly.")
+            await process_video(ProcessRequest(youtube_url=request.youtube_url))
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Auto-ingest failed: {exc}")
 
     t0 = time.perf_counter()
-    answer_result = engine.generate_answer(retrieval)
+
+    # 3. Extract live frame at exact timestamp
+    from pipeline.live_frame import extract_live_frame
+
+    live_frame = extract_live_frame(
+        video_id=video_id,
+        timestamp=request.timestamp,
+        data_dir=os.path.join(settings.DATA_DIR, "processed"),
+    )
+
+    # 4. Retrieve relevant chunks + keyframes + digest
+    retrieval = index.retrieve(
+        question=request.question,
+        video_id=video_id,
+        timestamp=request.timestamp,
+        top_k=10,
+    )
+
+    # 5. Generate answer
+    from pipeline.answer import generate_answer
+
+    try:
+        result = generate_answer(
+            question=request.question,
+            video_id=video_id,
+            timestamp=request.timestamp,
+            retrieval_result=retrieval,
+            live_frame_path=live_frame,
+            groq_api_key=settings.GROQ_API_KEY,
+            gemini_api_key=settings.GEMINI_API_KEY,
+        )
+    except Exception as exc:
+        logger.error("Answer generation failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Answer generation failed: {exc}")
+
     elapsed = time.perf_counter() - t0
 
-    # 5. Build response
+    # 6. Quality scoring (optional)
+    quality = None
+    if not request.skip_quality_eval:
+        try:
+            from pipeline.evaluate_v2 import score_answer
+
+            scores = score_answer(
+                request.question, result["answer"],
+                groq_api_key=settings.GROQ_API_KEY,
+            )
+            quality = QualityScoresResponse(
+                clarity=scores["clarity"],
+                ect=scores["ect"],
+                upt=scores["upt"],
+            )
+        except Exception as exc:
+            logger.warning("Quality scoring failed (non-fatal): %s", exc)
+
+    # 7. Build response
     sources = [
         SourceInfo(
             start_time=s["start_time"],
             end_time=s["end_time"],
             relevance_score=s["relevance_score"],
         )
-        for s in answer_result.sources
+        for s in result.get("sources", [])
     ]
 
-    quality = None
-    if not request.skip_quality_eval and answer_result.quality_scores is not None:
-        quality = QualityScoresResponse(
-            clarity=answer_result.quality_scores.clarity,
-            ect=answer_result.quality_scores.ect,
-            upt=answer_result.quality_scores.upt,
-        )
-
     return AskResponse(
-        question=answer_result.question,
-        answer=answer_result.answer,
-        video_id=answer_result.video_id,
+        question=request.question,
+        answer=result["answer"],
+        video_id=video_id,
         sources=sources,
         quality_scores=quality,
-        model_name=answer_result.model_name,
+        model_name=result.get("model_name", "unknown"),
         generation_time_seconds=round(elapsed, 2),
     )

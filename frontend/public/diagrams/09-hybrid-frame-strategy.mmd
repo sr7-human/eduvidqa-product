@@ -1,0 +1,103 @@
+%% ============================================================
+%% HYBRID FRAME RETRIEVAL STRATEGY
+%% ============================================================
+%%
+%% This diagram shows what happens when a student asks a question
+%% about a specific time range. We combine THREE sources of frames
+%% to give the VLM (Vision Language Model) the best possible context.
+%%
+%% THE IDEA (originated by the user):
+%%   "What if we capture the boundary frames of the timestamp range
+%%   AND use the pre-stored keyframes within that range AND also
+%%   do semantic search to find conceptually relevant frames?"
+%%
+%% SOURCE 1 — RUNTIME BOUNDARY FRAMES:
+%%   When the student specifies a range (e.g., 2:00 to 5:00),
+%%   we extract the EXACT frames at the start and end timestamps
+%%   from the nearest stored keyframe. These boundary frames show
+%%   precisely what the student was looking at.
+%%
+%% SOURCE 2 — PRE-STORED KEYFRAMES (from SSIM):
+%%   During ingestion, SSIM already identified all unique keyframes.
+%%   We filter these by the user's time range (2:00 to 5:00) and
+%%   include any keyframes that fall within. For example:
+%%     - Keyframe at 2:00 (slide at start)
+%%     - Keyframe at 3:15 (SSIM detected a slide change here)
+%%     - Keyframe at 4:00 (another change)
+%%   These capture visual transitions WITHIN the range.
+%%
+%% SOURCE 3 — SEMANTIC SEARCH (ChromaDB):
+%%   The student's question text is embedded (BGE-M3) and used
+%%   to search ChromaDB for the most semantically relevant keyframes.
+%%   This might find a frame from a completely different time in the
+%%   video if it's conceptually related. For example, the professor
+%%   might have drawn the same diagram earlier at 0:30.
+%%
+%% MERGE & DEDUP:
+%%   All frames from the three sources are collected.
+%%   Near-duplicates are removed (if runtime frame = stored keyframe).
+%%   Result: 3-5 unique, highly relevant frames.
+%%
+%% SEND TO VLM:
+%%   The merged frames + transcript context + question are sent
+%%   to Llama 4 Scout (via Groq, free). The model reasons over
+%%   all visual and textual evidence to produce an answer.
+%%
+%% WHY THIS IS BETTER THAN SINGLE-FRAME:
+%%   - Boundary frames = what student actually sees
+%%   - Pre-stored keyframes = visual transitions (e.g., new slide)
+%%   - Semantic search = conceptual relevance (might find earlier explanation)
+%%   - Combined = the AI has complete visual context, not just one snapshot
+%% ============================================================
+
+flowchart TB
+    subgraph QUERY["User Query: 2:00 → 5:00"]
+        Q1["Question: What is being explained?"]
+        Q2["Timestamp range: 2:00 to 5:00"]
+    end
+
+    subgraph LIVE["Runtime Extraction (Live)"]
+        L1["Frame at 2:00\n(START boundary)"]
+        L2["Frame at 5:00\n(END boundary)"]
+    end
+
+    subgraph STORED["Pre-stored Keyframes (from SSIM)"]
+        S1["Keyframe at 2:00\n(closest interval)"]
+        S2["Keyframe at 3:15\n(slide change detected)"]
+        S3["Keyframe at 4:00\n(next interval)"]
+    end
+
+    subgraph SEMANTIC["Semantic Search (ChromaDB)"]
+        SE1["Embed question text"]
+        SE2["Find keyframes by MEANING\n(cosine similarity)"]
+        SE3["Keyframe at 3:15\n(highest match: 89%)"]
+    end
+
+    subgraph MERGE["Merge All Relevant Frames"]
+        M1["Deduplicate\n(remove near-identical)"]
+        M2["Final: 3-4 unique frames\n+ transcript context"]
+    end
+
+    subgraph VLM["Send to Vision LLM"]
+        V1["Llama 4 Scout\n(frames + transcript + question)"]
+        V2["Answer"]
+    end
+
+    Q2 --> L1
+    Q2 --> L2
+    Q2 --> S1
+    Q2 --> S2
+    Q2 --> S3
+    Q1 --> SE1
+    SE1 --> SE2
+    SE2 --> SE3
+
+    L1 --> M1
+    L2 --> M1
+    S1 --> M1
+    S2 --> M1
+    S3 --> M1
+    SE3 --> M1
+    M1 --> M2
+    M2 --> V1
+    V1 --> V2

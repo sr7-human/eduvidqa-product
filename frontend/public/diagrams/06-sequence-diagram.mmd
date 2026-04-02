@@ -1,0 +1,108 @@
+%% ============================================================
+%% UML SEQUENCE DIAGRAM — EduVidQA
+%% ============================================================
+%%
+%% This diagram shows the exact order of events when a student
+%% uses EduVidQA, from opening the page to receiving an answer.
+%%
+%% PHASE 1 — VIDEO SELECTION & AUTO-INGEST:
+%%   1. Student opens the video page in their browser.
+%%   2. Frontend embeds the YouTube player via IFrame API.
+%%   3. Student pastes a YouTube URL.
+%%   4. Frontend sends POST /process-video to the backend.
+%%   5. Backend checks ChromaDB: is this video already indexed?
+%%   6. If NOT indexed: runs full ingestion pipeline —
+%%      download .mp4, extract transcript, extract frames,
+%%      SSIM dedup, embed keyframes (Gemini), embed text (BGE-M3),
+%%      store all embeddings in ChromaDB, delete the .mp4.
+%%   7. If ALREADY indexed: skip straight to "ready".
+%%   8. Backend responds: video is ready.
+%%
+%% PHASE 2 — WATCHING & ASKING:
+%%   9. Student watches the video, pauses at 12:34.
+%%   10. YouTube IFrame API reports getCurrentTime() = 754 seconds.
+%%   11. Frontend displays "Timestamp: 12:34" (auto-updating).
+%%   12. Student clicks the chat input — timestamp freezes.
+%%   13. Student types their question and clicks Ask.
+%%   14. Frontend sends POST /ask {video_id, question, timestamp: 754}.
+%%
+%% PHASE 3 — RETRIEVAL & ANSWER:
+%%   15. Backend embeds the question using BGE-M3.
+%%   16. ChromaDB performs hybrid search (text + visual cosine similarity).
+%%   17. Returns top-K transcript chunks and nearest keyframes.
+%%   18. Backend sends frames + transcript + question to Groq API
+%%       (Llama 4 Scout 17B, a vision-language model).
+%%   19. Groq returns the answer text.
+%%   20. Backend scores the answer: Clarity 4.2, ECT 3.8, UPT 4.0.
+%%   21. Backend returns answer + quality scores + source timestamps.
+%%   22. Frontend displays the answer with badges in the chat.
+%%   23. Timestamp resets to auto-mode for the next question.
+%% ============================================================
+
+sequenceDiagram
+    actor Student
+    participant UI as Frontend
+    participant YT as YouTube API
+    participant API as FastAPI
+    participant Ingest as Ingest Pipeline
+    participant VDB as ChromaDB
+    participant LLM as Groq Llama 4
+    participant Eval as Quality Eval
+
+    Note over Student,Eval: Phase 1: Video Selection & Auto-Ingest
+
+    Student->>UI: Opens video page
+    UI->>YT: Embed YouTube player
+    YT-->>UI: Player ready
+
+    Student->>UI: Pastes YouTube URL
+    UI->>API: POST /process-video {url}
+    API->>API: parse_video_id(url)
+    API->>VDB: is_indexed(video_id)?
+
+    alt Video NOT indexed
+        API->>Ingest: ingest_video(url)
+        Ingest->>Ingest: Download .mp4 (yt-dlp)
+        Ingest->>Ingest: Extract transcript (CSV)
+        Ingest->>Ingest: Extract 1 frame/sec
+        Ingest->>Ingest: SSIM dedup → N keyframes
+        Ingest->>Ingest: Embed keyframes (Gemini Embed 2)
+        Ingest->>Ingest: Embed transcript (BGE-M3)
+        Ingest->>VDB: Store embeddings
+        Ingest->>Ingest: Delete .mp4
+        Ingest-->>API: {video_id, title, segments}
+    else Already indexed
+        VDB-->>API: cached
+    end
+
+    API-->>UI: {video_id, status: ready}
+
+    Note over Student,Eval: Phase 2: Watching & Asking
+
+    Student->>YT: Watches video, pauses at 12:34
+    YT-->>UI: getCurrentTime() = 754 sec
+    UI->>UI: Display Timestamp 12:34 (auto-updating)
+
+    Student->>UI: Clicks chat input
+    UI->>UI: Freeze timestamp at 12:34
+    Student->>UI: Types question
+    Student->>UI: Clicks Ask
+
+    UI->>API: POST /ask {video_id, question, timestamp: 754}
+
+    Note over API,LLM: Phase 3: Retrieval & Answer
+
+    API->>VDB: retrieve(question, video_id, top_k=5)
+    VDB->>VDB: Embed question (BGE-M3)
+    VDB->>VDB: Cosine search (text + visual)
+    VDB-->>API: top transcript chunks + nearest keyframes
+
+    API->>LLM: generate_answer(frames + transcript + question)
+    LLM-->>API: answer_text
+
+    API->>Eval: score(question, answer)
+    Eval-->>API: {clarity: 4.2, ect: 3.8, upt: 4.0}
+
+    API-->>UI: {answer, sources, quality_scores}
+    UI-->>Student: Display answer + badges + source timestamps
+    UI->>UI: Reset timestamp to auto-mode
