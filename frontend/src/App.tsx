@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './contexts/AuthContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import { Landing } from './pages/Landing';
 import { Login } from './pages/Login';
 import { Library } from './pages/Library';
@@ -13,6 +14,7 @@ import { CookieBanner } from './components/CookieBanner';
 
 export default function App() {
   return (
+    <ThemeProvider>
     <AuthProvider>
       <BrowserRouter>
         <Toaster position="bottom-right" />
@@ -28,5 +30,6 @@ export default function App() {
         <CookieBanner />
       </BrowserRouter>
     </AuthProvider>
+    </ThemeProvider>
   );
 }

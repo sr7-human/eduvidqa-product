@@ -467,22 +467,30 @@ async def ask_question(
 
     t0 = time.perf_counter()
 
-    # 3. Extract live frame at exact timestamp
+    # 3. Extract live frame at exact timestamp (non-fatal)
     from pipeline.live_frame import extract_live_frame
 
-    live_frame = extract_live_frame(
-        video_id=video_id,
-        timestamp=body.timestamp,
-        data_dir=os.path.join(settings.DATA_DIR, "processed"),
-    )
+    live_frame = None
+    try:
+        live_frame = extract_live_frame(
+            video_id=video_id,
+            timestamp=body.timestamp,
+            data_dir=os.path.join(settings.DATA_DIR, "processed"),
+        )
+    except Exception as exc:
+        logger.warning("live_frame extraction failed (non-fatal): %s", exc)
 
     # 4. Retrieve relevant chunks + keyframes + digest
-    retrieval = index.retrieve(
-        question=body.question,
-        video_id=video_id,
-        timestamp=body.timestamp,
-        top_k=10,
-    )
+    retrieval: dict = {"ranked_chunks": [], "relevant_keyframes": [], "digest": ""}
+    try:
+        retrieval = index.retrieve(
+            question=body.question,
+            video_id=video_id,
+            timestamp=body.timestamp,
+            top_k=10,
+        )
+    except Exception as exc:
+        logger.error("Retrieval failed for %s — answering without context: %s", video_id, exc)
 
     # 5. Generate answer
     from pipeline.answer import generate_answer

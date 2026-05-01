@@ -3,9 +3,20 @@
 @tailwind utilities;
 
 html, body {
-  background-color: #0a0e1a;
-  color: #e2e8f0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   min-height: 100vh;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+/* Light mode default */
+html {
+  background-color: #ffffff;
+  color: #111827;
+}
+
+/* Dark mode — toggled by adding 'dark' class to <html> */
+html.dark {
+  background-color: #0a0e1a;
+  color: #e2e8f0;
 }

@@ -86,18 +86,18 @@ export function Library() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-[#0a0e1a]">
       <Navbar />
       <div className="max-w-5xl mx-auto p-6">
-        <h1 className="text-2xl font-bold mb-4 text-gray-900">My Library</h1>
+        <h1 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">My Library</h1>
 
         {dueCount > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6 flex items-center justify-between">
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-4 mb-6 flex items-center justify-between">
             <div>
-              <h3 className="font-semibold text-amber-800">
+              <h3 className="font-semibold text-amber-800 dark:text-amber-300">
                 📚 {dueCount} question{dueCount > 1 ? 's' : ''} due for review
               </h3>
-              <p className="text-sm text-amber-600">Keep your knowledge fresh</p>
+              <p className="text-sm text-amber-600 dark:text-amber-400">Keep your knowledge fresh</p>
             </div>
             <Link
               to="/review"
@@ -114,7 +114,7 @@ export function Library() {
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
             placeholder="Paste YouTube URL..."
-            className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleAdd();
             }}
@@ -130,9 +130,9 @@ export function Library() {
 
         {/* Video grid */}
         {loading ? (
-          <p className="text-gray-500 text-center py-12">Loading...</p>
+          <p className="text-gray-500 dark:text-gray-400 text-center py-12">Loading...</p>
         ) : videos.length === 0 ? (
-          <p className="text-gray-500 text-center py-12">
+          <p className="text-gray-500 dark:text-gray-400 text-center py-12">
             No videos yet. Add your first lecture!
           </p>
         ) : (
@@ -143,22 +143,22 @@ export function Library() {
                 onClick={() =>
                   v.status === 'ready' && navigate(`/watch/${v.video_id}`)
                 }
-                className={`bg-white border border-gray-200 rounded-lg p-4 transition ${
+                className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 transition ${
                   v.status === 'ready'
-                    ? 'cursor-pointer hover:shadow-md hover:border-blue-300'
+                    ? 'cursor-pointer hover:shadow-md hover:border-blue-300 dark:hover:border-blue-500'
                     : 'opacity-60'
                 }`}
               >
-                <p className="font-medium text-gray-900 mb-2 break-all">
+                <p className="font-medium text-gray-900 dark:text-white mb-2 break-all">
                   {v.title || v.video_id}
                 </p>
                 <span
                   className={`inline-block text-xs px-2 py-1 rounded ${
                     v.status === 'ready'
-                      ? 'bg-green-100 text-green-700'
+                      ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
                       : v.status === 'processing'
-                      ? 'bg-yellow-100 text-yellow-700'
-                      : 'bg-red-100 text-red-700'
+                      ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                      : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
                   }`}
                 >
                   {v.status}
