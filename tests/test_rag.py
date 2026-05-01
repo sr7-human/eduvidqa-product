@@ -65,10 +65,12 @@ def _short_vid(prefix: str = "tst") -> str:
 
 @pytest.fixture(scope="module")
 def jina_service():
-    pytest.importorskip("sentence_transformers")
+    # Despite the legacy name, this now returns a Gemini-backed EmbeddingService.
+    if not os.getenv("GEMINI_API_KEY"):
+        pytest.skip("GEMINI_API_KEY not set")
     from pipeline.embeddings import EmbeddingService
 
-    svc = EmbeddingService("jina")
+    svc = EmbeddingService()
     svc._ensure_loaded()
     return svc
 
