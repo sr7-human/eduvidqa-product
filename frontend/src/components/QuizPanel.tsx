@@ -92,6 +92,18 @@ export function QuizPanel({ questions, onClose }: Props) {
       </div>
 
       {/* Question */}
+      {question.bloom_level && (
+        <span className={`inline-block text-[10px] uppercase tracking-wider px-2 py-0.5 rounded mb-2 self-start ${
+          question.bloom_level === 'remember'   ? 'bg-gray-600 text-gray-100' :
+          question.bloom_level === 'understand' ? 'bg-blue-700 text-blue-100' :
+          question.bloom_level === 'apply'      ? 'bg-green-700 text-green-100' :
+          question.bloom_level === 'analyse'    ? 'bg-yellow-700 text-yellow-100' :
+          question.bloom_level === 'evaluate'   ? 'bg-purple-700 text-purple-100' :
+          'bg-gray-600 text-gray-100'
+        }`}>
+          {question.bloom_level}
+        </span>
+      )}
       <p className="font-medium mb-4 text-gray-100">{question.question_text}</p>
 
       {/* Options */}

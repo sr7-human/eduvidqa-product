@@ -44,6 +44,50 @@ export function Watch() {
   const [showQuiz, setShowQuiz] = useState(false);
   const [playerState, setPlayerState] = useState<'playing' | 'paused' | 'other'>('other');
 
+  // Layout state: chat panel width as a % of total (default 40%, range 20–70%).
+  const [chatPct, setChatPct] = useState<number>(() => {
+    const saved = Number(localStorage.getItem('eduvidqa.chatPct'));
+    return Number.isFinite(saved) && saved >= 20 && saved <= 70 ? saved : 40;
+  });
+  const dragRef = useRef<{ active: boolean; rectLeft: number; rectWidth: number }>({
+    active: false, rectLeft: 0, rectWidth: 0,
+  });
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('eduvidqa.chatPct', String(chatPct));
+  }, [chatPct]);
+
+  const startDrag = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    dragRef.current = { active: true, rectLeft: rect.left, rectWidth: rect.width };
+    e.preventDefault();
+  }, []);
+
+  useEffect(() => {
+    function onMove(e: MouseEvent | TouchEvent) {
+      if (!dragRef.current.active) return;
+      const clientX = 'touches' in e ? e.touches[0]?.clientX : (e as MouseEvent).clientX;
+      if (clientX == null) return;
+      const { rectLeft, rectWidth } = dragRef.current;
+      const offsetFromLeft = clientX - rectLeft;
+      const videoPct = Math.max(30, Math.min(80, (offsetFromLeft / rectWidth) * 100));
+      setChatPct(100 - videoPct);
+    }
+    function onUp() { dragRef.current.active = false; }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchmove', onMove);
+    window.addEventListener('touchend', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+    };
+  }, []);
+
   const effectiveTimestamp = autoMode ? currentTime : frozenTime;
 
   const handleTimeUpdate = useCallback((time: number) => {
@@ -120,12 +164,21 @@ export function Watch() {
     setQuizQuestions(null);
   }, []);
 
-  const handleCheckpointClick = useCallback((cp: Checkpoint) => {
+  const handleCheckpointClick = useCallback(async (cp: Checkpoint) => {
     if (playerRef.current) {
       playerRef.current.seekTo(cp.timestamp_seconds, true);
     }
     setCurrentTime(cp.timestamp_seconds);
-  }, []);
+    // Also load the quiz for THIS checkpoint
+    try {
+      const { questions } = await getQuiz(videoId, Math.floor(cp.timestamp_seconds));
+      if (questions && questions.length > 0) {
+        handleQuizReady(questions);
+      }
+    } catch (err) {
+      console.error('Quiz load failed for checkpoint:', err);
+    }
+  }, [videoId, handleQuizReady]);
 
   function handleFreeze() {
     setFrozenTime(currentTime);
@@ -169,16 +222,18 @@ export function Watch() {
     }
   }, [videoId]);
 
-  // Poll video status while processing
+  // Poll video status while still ingesting (processing OR transcript_ready)
   useEffect(() => {
-    if (!processingStatus || processingStatus === 'ready') return;
+    if (!processingStatus || processingStatus === 'ready' || processingStatus === 'failed') return;
     const interval = setInterval(async () => {
       try {
         const { status } = await getVideoStatus(videoId);
-        if (status !== 'processing') {
+        if (status !== processingStatus) {
           setProcessingStatus(status);
           if (status === 'ready') {
-            toast.success('Video ready! You can now ask questions.');
+            toast.success('Visual analysis ready — answers will now include keyframes!');
+          } else if (status === 'transcript_ready') {
+            toast('Transcript ready — you can ask questions now!', { icon: '📝' });
           } else if (status === 'failed') {
             toast.error('Video processing failed.');
           }
@@ -210,7 +265,10 @@ export function Watch() {
 
       const assistantMsg: ChatMessage = {
         role: 'assistant',
-        content: res.answer,
+        content:
+          processingStatus === 'transcript_ready'
+            ? `${res.answer}\n\n_\u26a0\ufe0f Visual analysis is still loading in the background \u2014 this answer is based on the transcript only. Ask again in a minute for a more visual answer._`
+            : res.answer,
         quality: res.quality_scores ?? undefined,
         sources: res.sources,
         model_name: res.model_name,
@@ -254,14 +312,22 @@ export function Watch() {
         </Link>
         {processingStatus === 'processing' && (
           <span className="ml-4 text-yellow-700">
-            ⏳ Video is being processed...
+            ⏳ Preparing transcript…
+          </span>
+        )}
+        {processingStatus === 'transcript_ready' && (
+          <span className="ml-4 text-blue-700">
+            📝 Transcript ready — visual analysis still loading. Answers may not reference on-screen visuals yet.
           </span>
         )}
       </div>
 
-      <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
-        {/* Left panel — Video (60%) */}
-        <div className="w-full md:w-[60%] flex flex-col border-b md:border-b-0 md:border-r border-dark-border overflow-y-auto">
+      <div ref={containerRef} className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden relative">
+        {/* Left panel — Video */}
+        <div
+          className="w-full flex flex-col border-b md:border-b-0 md:border-r border-dark-border overflow-y-auto"
+          style={{ flexBasis: `${100 - chatPct}%`, flexShrink: 0, flexGrow: 0 }}
+        >
           <div className="p-4 space-y-3">
             <YouTubePlayer
               videoId={videoId}
@@ -299,8 +365,19 @@ export function Watch() {
           </div>
         </div>
 
-        {/* Right panel — Chat or Quiz (40%) */}
-        <div className="w-full md:w-[40%] flex flex-col min-h-0 h-[50vh] md:h-auto">
+        {/* Drag handle (desktop only) */}
+        <div
+          onMouseDown={startDrag}
+          onTouchStart={startDrag}
+          className="hidden md:block w-1.5 cursor-col-resize bg-dark-border hover:bg-blue-500/60 active:bg-blue-500/80 flex-shrink-0"
+          title="Drag to resize"
+        />
+
+        {/* Right panel — Chat or Quiz */}
+        <div
+          className="w-full flex flex-col min-h-0 h-[50vh] md:h-auto"
+          style={{ flexBasis: `${chatPct}%`, flexShrink: 0, flexGrow: 0 }}
+        >
           {showQuiz && quizQuestions ? (
             <QuizPanel questions={quizQuestions} onClose={handleQuizClose} />
           ) : (

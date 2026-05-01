@@ -83,6 +83,7 @@ export interface QuizQuestion {
   question_text: string;
   options: string[];
   difficulty: 'easy' | 'medium' | 'hard';
+  bloom_level?: 'remember' | 'understand' | 'apply' | 'analyse' | 'evaluate';
 }
 
 export interface AttemptResponse {
@@ -99,6 +100,7 @@ export interface ReviewQuestion {
   question_text: string;
   options: string[];
   next_review_at: string;
+  bloom_level?: 'remember' | 'understand' | 'apply' | 'analyse' | 'evaluate';
 }
 
 declare global {

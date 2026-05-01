@@ -48,7 +48,30 @@ def chunk_transcript(
             }
     """
     # ── 1. Fetch transcript ──────────────────────────────────────────
-    fetched = YouTubeTranscriptApi().fetch(video_id)
+    # Try English first (preferred). If unavailable, fall back to ANY
+    # available language — Gemini answer/embedding handles non-English text.
+    api = YouTubeTranscriptApi()
+    fetched = None
+    try:
+        fetched = api.fetch(video_id, languages=["en", "en-US", "en-GB"])
+    except Exception as primary_exc:
+        try:
+            transcript_list = api.list(video_id)
+            available_codes: list[str] = []
+            for t in transcript_list:
+                code = getattr(t, "language_code", None)
+                if code:
+                    available_codes.append(code)
+            if available_codes:
+                logger.warning(
+                    "No English transcript for %s; falling back to %s",
+                    video_id, available_codes[0],
+                )
+                fetched = api.fetch(video_id, languages=available_codes)
+            else:
+                raise primary_exc
+        except Exception:
+            raise primary_exc
     # Normalise to list[dict] for uniform access
     transcript = [
         {"text": s.text, "start": s.start, "duration": s.duration}

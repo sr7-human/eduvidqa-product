@@ -100,7 +100,18 @@ class EmbeddingService:
     # ── Public API ────────────────────────────────────────────────
 
     def get_dimension(self) -> int:
-        return 1024 if self._backend == "jina" else 768
+        # Both Jina CLIP v2 and gemini-embedding-2-preview produce 1024-dim vectors
+        # — keeping them aligned avoids any DB migration when switching backends.
+        return 1024
+
+    # ── Fallback helpers ──────────────────────────────────────────
+
+    def _fallback_to_jina(self, reason: str) -> None:
+        """Switch this service from Gemini → local Jina after API failure."""
+        logger.warning("Gemini embedding failed (%s) — falling back to local Jina CLIP v2.", reason)
+        self._backend = "jina"
+        self._model = None
+        self._load_jina()
 
     # ── Text ──────────────────────────────────────────────────────
 
@@ -109,8 +120,11 @@ class EmbeddingService:
         if self._backend == "jina":
             vec = self._model.encode(text, normalize_embeddings=True)
             return vec.tolist()
-        else:
+        try:
             return self._gemini_embed_text(text)
+        except Exception as exc:
+            self._fallback_to_jina(str(exc)[:120])
+            return self.embed_text(text)
 
     def embed_batch_text(self, texts: list[str]) -> list[list[float]]:
         self._ensure_loaded()
@@ -120,8 +134,11 @@ class EmbeddingService:
                 show_progress_bar=len(texts) > 50,
             )
             return vecs.tolist()
-        else:
-            return [self._gemini_embed_text(t) for t in texts]
+        try:
+            return self._gemini_embed_batch_text(texts)
+        except Exception as exc:
+            self._fallback_to_jina(str(exc)[:120])
+            return self.embed_batch_text(texts)
 
     # ── Images ────────────────────────────────────────────────────
 
@@ -133,8 +150,11 @@ class EmbeddingService:
             img = Image.open(image_path).convert("RGB")
             vec = self._model.encode(img, normalize_embeddings=True)
             return vec.tolist()
-        else:
+        try:
             return self._gemini_embed_image(image_path)
+        except Exception as exc:
+            self._fallback_to_jina(str(exc)[:120])
+            return self.embed_image(image_path)
 
     def embed_batch_images(self, paths: list[str]) -> list[list[float]]:
         self._ensure_loaded()
@@ -147,8 +167,11 @@ class EmbeddingService:
                 show_progress_bar=len(imgs) > 10,
             )
             return vecs.tolist()
-        else:
-            return [self._gemini_embed_image(p) for p in paths]
+        try:
+            return self._gemini_embed_batch_images(paths)
+        except Exception as exc:
+            self._fallback_to_jina(str(exc)[:120])
+            return self.embed_batch_images(paths)
 
     # ── Gemini helpers ────────────────────────────────────────────
 
@@ -158,9 +181,27 @@ class EmbeddingService:
         result = self._model.models.embed_content(
             model="gemini-embedding-2-preview",
             contents=text,
-            config=types.EmbedContentConfig(output_dimensionality=768),
+            config=types.EmbedContentConfig(output_dimensionality=1024),
         )
         return list(result.embeddings[0].values)
+
+    def _gemini_embed_batch_text(self, texts: list[str]) -> list[list[float]]:
+        """Batch text embedding via single API call (chunked at 100/batch)."""
+        from google.genai import types
+
+        if not texts:
+            return []
+        out: list[list[float]] = []
+        BATCH = 100  # Gemini embed_content per-request limit
+        for i in range(0, len(texts), BATCH):
+            chunk = texts[i : i + BATCH]
+            result = self._model.models.embed_content(
+                model="gemini-embedding-2-preview",
+                contents=chunk,
+                config=types.EmbedContentConfig(output_dimensionality=1024),
+            )
+            out.extend(list(e.values) for e in result.embeddings)
+        return out
 
     def _gemini_embed_image(self, image_path: str) -> list[float]:
         from google.genai import types
@@ -173,6 +214,30 @@ class EmbeddingService:
         result = self._model.models.embed_content(
             model="gemini-embedding-2-preview",
             contents=[types.Part.from_bytes(data=img_bytes, mime_type=mime)],
-            config=types.EmbedContentConfig(output_dimensionality=768),
+            config=types.EmbedContentConfig(output_dimensionality=1024),
         )
         return list(result.embeddings[0].values)
+
+    def _gemini_embed_batch_images(self, paths: list[str]) -> list[list[float]]:
+        """Batch image embedding via single API call (chunked at 50/batch to stay under request size limits)."""
+        from google.genai import types
+
+        if not paths:
+            return []
+        out: list[list[float]] = []
+        BATCH = 50  # smaller than text because images are heavier
+        for i in range(0, len(paths), BATCH):
+            chunk_paths = paths[i : i + BATCH]
+            parts = []
+            for p in chunk_paths:
+                mime = "image/png" if p.lower().endswith(".png") else "image/jpeg"
+                parts.append(
+                    types.Part.from_bytes(data=Path(p).read_bytes(), mime_type=mime)
+                )
+            result = self._model.models.embed_content(
+                model="gemini-embedding-2-preview",
+                contents=parts,
+                config=types.EmbedContentConfig(output_dimensionality=1024),
+            )
+            out.extend(list(e.values) for e in result.embeddings)
+        return out

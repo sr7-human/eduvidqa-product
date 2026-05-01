@@ -38,10 +38,19 @@ def get_cached_questions(
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, question_text, options, correct_answer, explanation, difficulty
+                SELECT id, question_text, options, correct_answer, explanation, difficulty, bloom_level
                 FROM questions
                 WHERE video_id = %s AND ts_bucket_30s = %s AND prompt_version = %s
-                ORDER BY question_text
+                ORDER BY
+                    CASE bloom_level
+                        WHEN 'remember'   THEN 1
+                        WHEN 'understand' THEN 2
+                        WHEN 'apply'      THEN 3
+                        WHEN 'analyse'    THEN 4
+                        WHEN 'evaluate'   THEN 5
+                        ELSE 6
+                    END,
+                    question_text
                 """,
                 (video_id, ts_bucket, prompt_version),
             )
@@ -59,6 +68,7 @@ def get_cached_questions(
             "correct_answer": r[3],
             "explanation": r[4],
             "difficulty": r[5],
+            "bloom_level": r[6] if len(r) > 6 else "understand",
         }
         for r in rows
     ]
@@ -81,9 +91,10 @@ def cache_questions(
                     """
                     INSERT INTO questions (
                         id, video_id, ts_bucket_30s, prompt_version,
-                        question_text, options, correct_answer, explanation, difficulty
+                        question_text, options, correct_answer, explanation,
+                        difficulty, bloom_level
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (video_id, ts_bucket_30s, prompt_version, question_text)
                     DO NOTHING
                     """,
@@ -97,6 +108,7 @@ def cache_questions(
                         q.get("correct_answer", "A"),
                         q.get("explanation", ""),
                         q.get("difficulty", "medium"),
+                        q.get("bloom_level", "understand"),
                     ),
                 )
         conn.commit()

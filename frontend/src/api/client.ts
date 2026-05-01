@@ -172,7 +172,7 @@ export async function getCheckpoints(videoId: string): Promise<Checkpoint[]> {
 export async function getQuiz(
   videoId: string,
   endTs: number,
-  count = 3,
+  count = 10,
 ): Promise<{ questions: QuizQuestion[] }> {
   return request<{ questions: QuizQuestion[] }>(
     `/api/videos/${videoId}/quiz`,

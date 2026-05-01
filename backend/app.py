@@ -182,6 +182,35 @@ def _update_video_status(video_id: str, status: str, detail: str | None = None) 
         conn.close()
 
 
+def _fetch_video_title(video_id: str) -> str | None:
+    """Fetch a YouTube video's title via the free oEmbed endpoint (no API key)."""
+    import json as _json
+    import urllib.request
+    url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = _json.loads(resp.read().decode("utf-8"))
+            title = data.get("title")
+            if isinstance(title, str) and title.strip():
+                return title.strip()[:300]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("oEmbed title fetch failed for %s: %s", video_id, exc)
+    return None
+
+
+def _set_video_title(video_id: str, title: str) -> None:
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE videos SET title = %s, updated_at = now() WHERE video_id = %s",
+                (title, video_id),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _link_user_video(user_id: str | None, video_id: str) -> None:
     """Track that this user has used this video. No-op if user_id falsy."""
     if not user_id:
@@ -234,7 +263,50 @@ async def process_video(
     background_tasks: BackgroundTasks,
     user_id: str = Depends(require_auth),
 ):
-    """Queue video ingest in background. Returns immediately."""
+    """Queue video ingest in background. Returns immediately.
+
+    If the URL is a playlist, queues ALL videos from that playlist instead.
+    """
+    # Playlist? -> bulk-queue every video in it
+    playlist_id = _extract_playlist_id(body.youtube_url)
+    if playlist_id:
+        try:
+            video_ids = _list_playlist_video_ids(playlist_id)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Could not read playlist: {exc}")
+        if not video_ids:
+            raise HTTPException(status_code=400, detail="Playlist has no videos.")
+
+        index = _get_index()
+        queued = 0
+        already = 0
+        for vid in video_ids:
+            try:
+                if index.is_indexed(vid):
+                    _link_user_video(user_id, vid)
+                    already += 1
+                    continue
+                status = _get_video_status(vid)
+                if status == "processing":
+                    already += 1
+                    continue
+                _register_video(vid)
+                _link_user_video(user_id, vid)
+                background_tasks.add_task(
+                    _ingest_video_bg, vid, f"https://www.youtube.com/watch?v={vid}", user_id,
+                )
+                queued += 1
+            except Exception as exc:
+                logger.warning("Failed to queue %s from playlist: %s", vid, exc)
+        return {
+            "playlist_id": playlist_id,
+            "total_videos": len(video_ids),
+            "queued": queued,
+            "already_present": already,
+            "message": f"Queued {queued} new video(s) from playlist ({already} already in library).",
+        }
+
+    # Single-video flow
     try:
         video_id = parse_video_id(body.youtube_url)
     except ValueError as exc:
@@ -260,18 +332,104 @@ async def process_video(
 
     # Register + queue background work
     _register_video(video_id)
+    _link_user_video(user_id, video_id)
     background_tasks.add_task(_ingest_video_bg, video_id, body.youtube_url, user_id)
     return {"video_id": video_id, "status": "processing", "message": "Processing started"}
 
 
+def _extract_playlist_id(url: str) -> str | None:
+    """Return the YouTube playlist ID from a URL if present, else None."""
+    import re
+    if not url:
+        return None
+    m = re.search(r"[?&]list=([A-Za-z0-9_-]+)", url)
+    if m:
+        pid = m.group(1)
+        # Skip 'mix' / 'radio' playlists which are infinite/auto-generated
+        if pid.startswith(("RD", "UL", "OL")):
+            return None
+        return pid
+    return None
+
+
+def _list_playlist_video_ids(playlist_id: str) -> list[str]:
+    """Use yt-dlp in flat-extract mode to enumerate video IDs of a playlist."""
+    import yt_dlp
+    url = f"https://www.youtube.com/playlist?list={playlist_id}"
+    opts = {
+        "quiet": True,
+        "skip_download": True,
+        "extract_flat": "in_playlist",
+        "playlist_items": "1-200",  # cap at 200 videos to be safe
+        "no_warnings": True,
+    }
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+    entries = (info or {}).get("entries") or []
+    ids: list[str] = []
+    for e in entries:
+        if not e:
+            continue
+        vid = e.get("id") or e.get("video_id")
+        if isinstance(vid, str) and len(vid) == 11:
+            ids.append(vid)
+    # Dedupe while preserving order
+    seen: set[str] = set()
+    return [v for v in ids if not (v in seen or seen.add(v))]
+
+
 def _ingest_video_bg(video_id: str, youtube_url: str, user_id: str) -> None:
-    """Background ingest — runs in a thread via FastAPI BackgroundTasks."""
+    """Background ingest — runs in a thread via FastAPI BackgroundTasks.
+
+    Two-phase flow for instant UX:
+    PHASE 1 (~10–20s): chunk transcript → embed → mark `transcript_ready`
+        User can now open the player and ask transcript-only questions.
+    PHASE 2 (background): download video → keyframes → embed → digest →
+        checkpoints → quiz pre-gen → mark `ready`.
+    """
     try:
         _update_video_status(video_id, "processing")
 
         index = _get_index()
         data_dir = settings.DATA_DIR
         processed_dir = os.path.join(data_dir, "processed")
+
+        # Step 0: Fetch + store the YouTube title (cheap oEmbed call)
+        try:
+            title = _fetch_video_title(video_id)
+            if title:
+                _set_video_title(video_id, title)
+                logger.info("Title for %s: %s", video_id, title)
+        except Exception as exc:
+            logger.warning("Title fetch failed (non-fatal): %s", exc)
+
+        # ════════════ PHASE 1: Transcript-only (fast) ════════════
+        from pipeline.chunking import chunk_transcript
+
+        chunks = chunk_transcript(
+            video_id=video_id,
+            output_dir=processed_dir,
+            keyframe_manifest=[],  # no keyframes yet — link them in phase 2
+        )
+
+        if chunks:
+            index.index_video(
+                video_id=video_id,
+                chunks=chunks,
+                keyframe_manifest=[],
+                digest="",
+                manage_status=False,
+            )
+            _update_video_status(video_id, "transcript_ready")
+            _link_user_video(user_id, video_id)
+            logger.info(
+                "Phase 1 done for %s: %d chunks indexed (transcript_ready)",
+                video_id, len(chunks),
+            )
+        else:
+            logger.warning("No transcript available for %s — skipping phase 1", video_id)
+
+        # ════════════ PHASE 2: Video download + keyframes (slow) ════════════
 
         # Step 1: Download video (non-fatal — cloud IPs often blocked by YouTube)
         video_path = None
@@ -297,14 +455,13 @@ def _ingest_video_bg(video_id: str, youtube_url: str, user_id: str) -> None:
             except Exception as exc:
                 logger.warning("Keyframe extraction failed (non-fatal): %s", exc)
 
-        # Step 3: Chunk transcript (always runs — uses youtube-transcript-api)
-        from pipeline.chunking import chunk_transcript
-
-        chunks = chunk_transcript(
-            video_id=video_id,
-            output_dir=processed_dir,
-            keyframe_manifest=kf_manifest,
-        )
+        # Step 3: Re-chunk transcript with keyframe links (idempotent via ON CONFLICT)
+        if kf_manifest:
+            chunks = chunk_transcript(
+                video_id=video_id,
+                output_dir=processed_dir,
+                keyframe_manifest=kf_manifest,
+            )
 
         # Step 4: Generate digest (non-fatal)
         digest = ""
@@ -318,12 +475,13 @@ def _ingest_video_bg(video_id: str, youtube_url: str, user_id: str) -> None:
             if digest_path.exists():
                 digest = digest_path.read_text()
 
-        # Step 5: Index in pgvector
+        # Step 5: Index keyframes + digest (chunks re-inserted as no-op via ON CONFLICT)
         index.index_video(
             video_id=video_id,
             chunks=chunks,
             keyframe_manifest=kf_manifest,
             digest=digest,
+            manage_status=False,
         )
 
         # Step 6: Place checkpoints (non-fatal)
@@ -349,17 +507,30 @@ def _ingest_video_bg(video_id: str, youtube_url: str, user_id: str) -> None:
         except Exception as exc:
             logger.warning("Checkpoint placement failed (non-fatal): %s", exc)
 
-        # Step 7: Pre-generate quiz for each checkpoint (non-fatal)
+        # Step 7: Pre-generate quizzes for ALL checkpoints in a SINGLE batched LLM call
         try:
-            from pipeline.quiz_cache import get_or_generate
+            from pipeline.quiz_gen import generate_quizzes_for_checkpoints
+            from pipeline.quiz_cache import (
+                cache_questions,
+                get_cached_questions,
+            )
 
+            # Only generate for checkpoints that don't already have a cached quiz
+            todo: list[float] = []
             for cp in checkpoints:
-                try:
-                    get_or_generate(video_id, cp["timestamp_seconds"], chunks)
-                except Exception as exc:
-                    logger.warning(
-                        "Quiz pre-gen at %.0fs failed: %s", cp["timestamp_seconds"], exc
-                    )
+                ts = float(cp["timestamp_seconds"])
+                if not get_cached_questions(video_id, int(ts // 30), 1):
+                    todo.append(ts)
+
+            if todo:
+                logger.info(
+                    "Batched quiz pre-gen for %s: %d checkpoint(s) in 1 LLM call",
+                    video_id, len(todo),
+                )
+                results = generate_quizzes_for_checkpoints(video_id, todo, chunks)
+                for ts, questions in results.items():
+                    if questions:
+                        cache_questions(video_id, int(ts // 30), 1, questions)
         except Exception as exc:
             logger.warning("Quiz pre-gen failed (non-fatal): %s", exc)
 
@@ -685,6 +856,7 @@ async def get_quiz(
                 "question_text": q["question_text"],
                 "options": q["options"],
                 "difficulty": q.get("difficulty", "medium"),
+                "bloom_level": q.get("bloom_level", "understand"),
             }
             for q in questions[: body.count]
         ]
@@ -723,9 +895,9 @@ async def submit_attempt(
                 cur.execute(
                     """
                     INSERT INTO review_queue (id, user_id, question_id, next_review_at)
-                    VALUES (%s, %s, %s, now() + interval '1 day')
+                    VALUES (%s, %s, %s, now() + interval '15 minutes')
                     ON CONFLICT (user_id, question_id) DO UPDATE SET
-                        next_review_at = now() + interval '1 day',
+                        next_review_at = now() + interval '15 minutes',
                         interval_days = 1, repetitions = 0
                     """,
                     (str(uuid.uuid4()), user_id, question_id),
@@ -751,7 +923,8 @@ async def get_review(user_id: str = Depends(require_auth)):
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT q.id, q.video_id, v.title, q.question_text, q.options, rq.next_review_at
+                SELECT q.id, q.video_id, v.title, q.question_text, q.options,
+                       rq.next_review_at, q.bloom_level
                 FROM review_queue rq
                 JOIN questions q ON rq.question_id = q.id
                 LEFT JOIN videos v ON q.video_id = v.video_id
@@ -773,6 +946,7 @@ async def get_review(user_id: str = Depends(require_auth)):
                 "question_text": r[3],
                 "options": r[4],
                 "next_review_at": str(r[5]),
+                "bloom_level": r[6],
             }
             for r in rows
         ],

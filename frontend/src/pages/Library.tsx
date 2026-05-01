@@ -17,7 +17,37 @@ export function Library() {
   const [urlInput, setUrlInput] = useState('');
   const [adding, setAdding] = useState(false);
   const [dueCount, setDueCount] = useState(0);
+  const [page, setPage] = useState(0);
+  const [search, setSearch] = useState('');
+  const PAGE_SIZE = 12;
   const navigate = useNavigate();
+
+  // Fuzzy filter: keep videos whose title (or video_id) contains every word
+  // of the search query in order — also tolerates 1 typo per word via a
+  // simple edit-distance check on each word.
+  const filteredVideos = (() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return videos;
+    const tokens = q.split(/\s+/).filter(Boolean);
+    const fuzzyMatch = (haystack: string, needle: string): boolean => {
+      if (haystack.includes(needle)) return true;
+      // tolerate 1 char of typo for needles >= 4 chars
+      if (needle.length < 4) return false;
+      for (let i = 0; i <= haystack.length - needle.length; i++) {
+        let mismatches = 0;
+        for (let j = 0; j < needle.length; j++) {
+          if (haystack[i + j] !== needle[j]) mismatches++;
+          if (mismatches > 1) break;
+        }
+        if (mismatches <= 1) return true;
+      }
+      return false;
+    };
+    return videos.filter((v) => {
+      const hay = `${(v.title || '').toLowerCase()} ${v.video_id.toLowerCase()}`;
+      return tokens.every((tok) => fuzzyMatch(hay, tok));
+    });
+  })();
 
   // Fetch videos on mount
   useEffect(() => {
@@ -36,15 +66,17 @@ export function Library() {
       });
   }, []);
 
-  // Poll processing videos every 2s
+  // Poll videos that aren't fully ready yet (processing OR transcript_ready)
   useEffect(() => {
-    const processing = videos.filter((v) => v.status === 'processing');
-    if (processing.length === 0) return;
+    const stillProcessing = videos.filter(
+      (v) => v.status === 'processing' || v.status === 'transcript_ready',
+    );
+    if (stillProcessing.length === 0) return;
     const interval = setInterval(async () => {
-      for (const v of processing) {
+      for (const v of stillProcessing) {
         try {
           const { status } = await getVideoStatus(v.video_id);
-          if (status !== 'processing') {
+          if (status !== v.status) {
             setVideos((prev) =>
               prev.map((pv) =>
                 pv.video_id === v.video_id ? { ...pv, status } : pv,
@@ -60,24 +92,24 @@ export function Library() {
   }, [videos]);
 
   const handleAdd = async () => {
-    const vid = extractVideoId(urlInput);
-    if (!vid) {
+    const isPlaylist = /[?&]list=([A-Za-z0-9_-]+)/.test(urlInput);
+    if (!isPlaylist && !extractVideoId(urlInput)) {
       toast.error('Invalid YouTube URL');
       return;
     }
     setAdding(true);
     try {
-      const res = await processVideo({ youtube_url: urlInput });
-      toast.success(res.message || 'Video submitted');
-      setVideos((prev) => [
-        {
-          video_id: res.video_id,
-          status: 'processing',
-          title: res.title ?? null,
-        },
-        ...prev.filter((v) => v.video_id !== res.video_id),
-      ]);
+      const res = await processVideo({ youtube_url: urlInput }) as Record<string, unknown>;
+      toast.success(String(res.message ?? 'Video submitted'));
       setUrlInput('');
+      // Reload library so any new videos (single or playlist) show up
+      try {
+        const fresh = await getMyVideos();
+        setVideos(fresh);
+        setPage(0);
+      } catch {
+        /* ignore reload error */
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to add video');
     } finally {
@@ -109,11 +141,11 @@ export function Library() {
         )}
 
         {/* Add video input */}
-        <div className="flex gap-2 mb-6">
+        <div className="flex gap-2 mb-4">
           <input
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
-            placeholder="Paste YouTube URL..."
+            placeholder="Paste YouTube URL or playlist..."
             className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleAdd();
@@ -128,44 +160,119 @@ export function Library() {
           </button>
         </div>
 
-        {/* Video grid */}
+        {/* Search box */}
+        {videos.length > 0 && (
+          <div className="mb-6">
+            <input
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+              placeholder="🔍 Search your videos..."
+              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+            />
+          </div>
+        )}
+
+        {/* Video gallery */}
         {loading ? (
           <p className="text-gray-500 dark:text-gray-400 text-center py-12">Loading...</p>
         ) : videos.length === 0 ? (
           <p className="text-gray-500 dark:text-gray-400 text-center py-12">
             No videos yet. Add your first lecture!
           </p>
+        ) : filteredVideos.length === 0 ? (
+          <p className="text-gray-500 dark:text-gray-400 text-center py-12">
+            No videos match “{search}”.
+          </p>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {videos.map((v) => (
-              <div
-                key={v.video_id}
-                onClick={() =>
-                  v.status === 'ready' && navigate(`/watch/${v.video_id}`)
-                }
-                className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 transition ${
-                  v.status === 'ready'
-                    ? 'cursor-pointer hover:shadow-md hover:border-blue-300 dark:hover:border-blue-500'
-                    : 'opacity-60'
-                }`}
-              >
-                <p className="font-medium text-gray-900 dark:text-white mb-2 break-all">
-                  {v.title || v.video_id}
-                </p>
-                <span
-                  className={`inline-block text-xs px-2 py-1 rounded ${
-                    v.status === 'ready'
-                      ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                      : v.status === 'processing'
-                      ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
-                      : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                  }`}
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              {filteredVideos.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((v) => {
+                const watchable = v.status === 'ready' || v.status === 'transcript_ready';
+                const thumb = `https://i.ytimg.com/vi/${v.video_id}/mqdefault.jpg`;
+                return (
+                  <div
+                    key={v.video_id}
+                    onClick={() => watchable && navigate(`/watch/${v.video_id}`)}
+                    className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden transition group ${
+                      watchable
+                        ? 'cursor-pointer hover:shadow-lg hover:border-blue-400 dark:hover:border-blue-500'
+                        : 'opacity-60'
+                    }`}
+                  >
+                    {/* Thumbnail with 16:9 aspect ratio */}
+                    <div className="relative w-full bg-gray-200 dark:bg-gray-900" style={{ paddingTop: '56.25%' }}>
+                      <img
+                        src={thumb}
+                        alt={v.title || v.video_id}
+                        className="absolute inset-0 w-full h-full object-cover"
+                        loading="lazy"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                      {/* Play icon overlay on hover (only if watchable) */}
+                      {watchable && (
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition bg-black/30">
+                          <div className="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center text-blue-600 text-2xl">
+                            ▶
+                          </div>
+                        </div>
+                      )}
+                      {/* Status badge over thumbnail */}
+                      <span
+                        className={`absolute top-2 right-2 text-[10px] font-medium px-2 py-0.5 rounded ${
+                          v.status === 'ready'
+                            ? 'bg-green-600 text-white'
+                            : v.status === 'transcript_ready'
+                            ? 'bg-blue-600 text-white'
+                            : v.status === 'processing'
+                            ? 'bg-yellow-500 text-white'
+                            : 'bg-red-600 text-white'
+                        }`}
+                      >
+                        {v.status === 'transcript_ready'
+                          ? 'watch now'
+                          : v.status === 'ready'
+                          ? 'ready'
+                          : v.status === 'processing'
+                          ? 'processing'
+                          : 'failed'}
+                      </span>
+                    </div>
+                    {/* Title */}
+                    <div className="p-3">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white line-clamp-2 leading-snug" title={v.title || v.video_id}>
+                        {v.title || v.video_id}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Pagination */}
+            {filteredVideos.length > PAGE_SIZE && (
+              <div className="flex items-center justify-center gap-3 mt-8">
+                <button
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 disabled:opacity-40 hover:bg-gray-100 dark:hover:bg-gray-800"
                 >
-                  {v.status}
+                  ← Prev
+                </button>
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  Page {page + 1} of {Math.ceil(filteredVideos.length / PAGE_SIZE)}
                 </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(Math.ceil(filteredVideos.length / PAGE_SIZE) - 1, p + 1))}
+                  disabled={(page + 1) * PAGE_SIZE >= filteredVideos.length}
+                  className="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 disabled:opacity-40 hover:bg-gray-100 dark:hover:bg-gray-800"
+                >
+                  Next →
+                </button>
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
       </div>
     </div>

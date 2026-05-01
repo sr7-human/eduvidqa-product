@@ -2,7 +2,10 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import type { ChatMessage, QualityScores } from '../types';
+import { normalizeMath } from '../utils/normalizeMath';
 
 // --- Sub-components ---
 
@@ -191,8 +194,11 @@ export default function ChatInterface({
                 {msg.role === 'assistant' && (
                   <>
                     <div className="prose prose-sm prose-invert prose-indigo max-w-none prose-headings:text-gray-100 prose-p:text-gray-300 prose-strong:text-white prose-code:text-indigo-300 prose-code:bg-dark-bg prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-pre:bg-dark-bg prose-pre:border prose-pre:border-dark-border prose-pre:overflow-x-auto prose-blockquote:border-accent prose-blockquote:text-gray-400 prose-li:text-gray-300">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {msg.content}
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm, remarkMath]}
+                        rehypePlugins={[rehypeKatex]}
+                      >
+                        {normalizeMath(msg.content)}
                       </ReactMarkdown>
                     </div>
                     {msg.quality && <QualityBadges scores={msg.quality} />}

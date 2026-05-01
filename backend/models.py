@@ -86,7 +86,7 @@ class HealthResponse(BaseModel):
 
 class QuizRequest(BaseModel):
     end_ts: float = Field(..., ge=0, le=21600, description="Timestamp up to which to quiz")
-    count: int = Field(default=3, ge=1, le=10, description="Number of questions")
+    count: int = Field(default=10, ge=1, le=15, description="Number of questions per checkpoint")
 
 
 class AttemptRequest(BaseModel):

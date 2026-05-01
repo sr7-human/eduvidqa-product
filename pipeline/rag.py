@@ -12,6 +12,7 @@ score), semantically matched keyframes, and the lecture digest.
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from typing import Any
 
@@ -35,12 +36,17 @@ class LectureIndex:
     def __init__(
         self,
         persist_dir: str | None = None,  # accepted for backward compat, ignored
-        embedding_model: str = "jina",
+        embedding_model: str | None = None,
         *,
         _embed_service: EmbeddingService | None = None,
         **kwargs: Any,
     ) -> None:
         self._dsn = get_database_url()
+        # Default: Gemini API (fast, no local model needed). Falls back to Jina
+        # automatically inside EmbeddingService if Gemini API fails.
+        # Override via EMBEDDING_BACKEND env var ("gemini" or "jina").
+        if embedding_model is None:
+            embedding_model = os.getenv("EMBEDDING_BACKEND", "gemini")
         self._backend = embedding_model
         self._embed = _embed_service or EmbeddingService(embedding_model)
 
@@ -52,12 +58,16 @@ class LectureIndex:
     # ── Indexing ─────────────────────────────────────────────────
 
     def is_indexed(self, video_id: str) -> bool:
-        """True if a `ready` row exists for this video_id."""
+        """True if a `transcript_ready` or `ready` row exists for this video_id.
+
+        Both states have transcript chunks indexed and can answer questions
+        (transcript_ready = no keyframes yet, ready = full multimodal index).
+        """
         try:
             with self._connect() as conn, conn.cursor() as cur:
                 cur.execute(
                     "SELECT EXISTS(SELECT 1 FROM videos "
-                    "WHERE video_id = %s AND status = 'ready')",
+                    "WHERE video_id = %s AND status IN ('transcript_ready','ready'))",
                     (video_id,),
                 )
                 return bool(cur.fetchone()[0])
@@ -71,28 +81,59 @@ class LectureIndex:
         chunks: list[dict],
         keyframe_manifest: list[dict],
         digest: str,
+        manage_status: bool = True,
     ) -> int:
         """Index all content for one video. Returns count of items stored.
 
         Inserts into ``videos`` (status=processing → ready), ``video_chunks``,
         and ``keyframe_embeddings``. Idempotent via ON CONFLICT.
+
+        Parameters
+        ----------
+        manage_status : bool
+            If True (default), this method sets status='processing' at start
+            and status='ready' at end. Set False when the caller manages
+            multi-phase status transitions (e.g. transcript_ready → ready).
         """
         total = 0
         digest_text = (digest or "").strip()[:8000]
 
-        # ── 1. Upsert video row to processing (fresh connection) ──
+        # ── 1. Upsert video row (status managed by caller if requested) ──
         with self._connect() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO videos (id, video_id, pipeline_version, status, digest)
-                VALUES (%s, %s, 1, 'processing', %s)
-                ON CONFLICT (video_id, pipeline_version) DO UPDATE
-                SET status = 'processing',
-                    digest = EXCLUDED.digest,
-                    updated_at = now()
-                """,
-                (str(uuid.uuid4()), video_id, digest_text),
-            )
+            if manage_status:
+                cur.execute(
+                    """
+                    INSERT INTO videos (id, video_id, pipeline_version, status, digest)
+                    VALUES (%s, %s, 1, 'processing', %s)
+                    ON CONFLICT (video_id, pipeline_version) DO UPDATE
+                    SET status = 'processing',
+                        digest = EXCLUDED.digest,
+                        updated_at = now()
+                    """,
+                    (str(uuid.uuid4()), video_id, digest_text),
+                )
+            elif digest_text:
+                # Caller manages status — only update digest if non-empty
+                cur.execute(
+                    """
+                    INSERT INTO videos (id, video_id, pipeline_version, status, digest)
+                    VALUES (%s, %s, 1, 'processing', %s)
+                    ON CONFLICT (video_id, pipeline_version) DO UPDATE
+                    SET digest = EXCLUDED.digest,
+                        updated_at = now()
+                    """,
+                    (str(uuid.uuid4()), video_id, digest_text),
+                )
+            else:
+                # Ensure row exists without changing status
+                cur.execute(
+                    """
+                    INSERT INTO videos (id, video_id, pipeline_version, status)
+                    VALUES (%s, %s, 1, 'processing')
+                    ON CONFLICT (video_id, pipeline_version) DO NOTHING
+                    """,
+                    (str(uuid.uuid4()), video_id),
+                )
 
         # ── 2. Embed transcript chunks (no DB connection held) ──
         chunk_rows: list[tuple] = []
@@ -183,11 +224,12 @@ class LectureIndex:
                 total += len(kf_rows)
 
             with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE videos SET status = 'ready', updated_at = now() "
-                    "WHERE video_id = %s AND pipeline_version = 1",
-                    (video_id,),
-                )
+                if manage_status:
+                    cur.execute(
+                        "UPDATE videos SET status = 'ready', updated_at = now() "
+                        "WHERE video_id = %s AND pipeline_version = 1",
+                        (video_id,),
+                    )
 
         logger.info("Indexed %d items total for video %s", total, video_id)
         return total
