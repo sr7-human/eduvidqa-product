@@ -1,3 +1,13 @@
+---
+title: EduVidQA
+emoji: 🎓
+colorFrom: blue
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # EduVidQA
 
 AI tutor for YouTube lectures. Every answer is traceable to a moment in the lecture.

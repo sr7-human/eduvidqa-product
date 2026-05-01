@@ -1,0 +1,32 @@
+# Backend & Python — not deployed to Vercel
+backend/
+pipeline/
+scripts/
+tests/
+supabase/
+notebooks/
+data/
+media/
+docs/
+interfaces/
+
+# Node modules (Vercel installs these itself)
+node_modules/
+frontend/node_modules/
+
+# Built artifacts (Vercel builds these)
+frontend/dist/
+
+# Dev files
+.venv/
+.env
+*.pyc
+__pycache__/
+conftest.py
+pyrightconfig.json
+
+# Large files
+*.mp4
+*.mp3
+*.wav
+*.sqlite3
