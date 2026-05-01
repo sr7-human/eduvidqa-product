@@ -28,7 +28,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from backend.auth import optional_auth, require_auth
+from backend.auth import optional_auth, require_admin, require_auth, verify_token, _admin_emails
 from pydantic import BaseModel, Field
 from backend.config import settings
 from backend.logging_config import request_id_var, setup_logging
@@ -1247,3 +1247,93 @@ def _validate_api_key(service: str, key_value: str) -> tuple[bool, str | None]:
                 return False, msg[:160]
         return False, msg[:160]
     return False, "Unknown service"
+
+
+# ── Admin: regenerate quiz cache ─────────────────────────────────
+
+
+@app.get("/api/users/me/whoami")
+async def whoami(token: dict | None = Depends(verify_token)):
+    """Lightweight identity probe used by the frontend to enable admin features."""
+    if token is None:
+        return {"authenticated": False, "is_admin": False, "email": None}
+    email = (token.get("email") or "").lower() or None
+    is_admin = bool(email and email in _admin_emails())
+    return {
+        "authenticated": True,
+        "is_admin": is_admin,
+        "email": email,
+        "user_id": token.get("sub"),
+    }
+
+
+@app.post("/api/admin/videos/{video_id}/quiz/regenerate")
+async def admin_regenerate_quiz(
+    video_id: str,
+    user_id: str = Depends(require_admin),
+):
+    """ADMIN ONLY: wipe the global quiz cache for this video and regenerate
+    using the admin's API keys. New questions become the new shared set for
+    every user of this video.
+    """
+    # Pull chunks + checkpoints
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT chunk_id, text, start_time, end_time FROM video_chunks WHERE video_id = %s",
+                (video_id,),
+            )
+            chunks = [
+                {"chunk_id": r[0], "text": r[1], "start_time": r[2], "end_time": r[3]}
+                for r in cur.fetchall()
+            ]
+            cur.execute(
+                "SELECT timestamp_seconds FROM checkpoints WHERE video_id = %s ORDER BY timestamp_seconds",
+                (video_id,),
+            )
+            cp_timestamps = [float(r[0]) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+    if not chunks:
+        raise HTTPException(status_code=404, detail="Video not indexed yet")
+    if not cp_timestamps:
+        raise HTTPException(status_code=404, detail="Video has no checkpoints")
+
+    # Wipe existing cache for this video
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM quiz_attempts WHERE question_id IN (SELECT id FROM questions WHERE video_id = %s)",
+                (video_id,),
+            )
+            cur.execute(
+                "DELETE FROM review_queue WHERE question_id IN (SELECT id FROM questions WHERE video_id = %s)",
+                (video_id,),
+            )
+            cur.execute("DELETE FROM questions WHERE video_id = %s", (video_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Regenerate using admin's keys (batched single LLM call)
+    from pipeline.quiz_gen import generate_quizzes_for_checkpoints
+    from pipeline.quiz_cache import cache_questions
+
+    with _ScopedAPIKeys(user_id, allow_server_fallback=False):
+        results = generate_quizzes_for_checkpoints(video_id, cp_timestamps, chunks)
+
+    total = 0
+    for ts, questions in results.items():
+        if questions:
+            cache_questions(video_id, int(ts // 30), 1, questions)
+            total += len(questions)
+
+    return {
+        "video_id": video_id,
+        "checkpoints": len(cp_timestamps),
+        "questions_generated": total,
+        "message": f"Regenerated {total} questions across {len(cp_timestamps)} checkpoints (will be shared with all users).",
+    }

@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Navbar } from '../components/Navbar';
 import YouTubePlayer from '../components/YouTubePlayer';
@@ -10,6 +10,8 @@ import {
   getCheckpoints,
   getQuiz,
   getVideoStatus,
+  whoami,
+  adminRegenerateQuiz,
   VideoProcessingError,
 } from '../api/client';
 import type { ChatMessage, Checkpoint, QuizQuestion, YTPlayer } from '../types';
@@ -22,6 +24,7 @@ export function Watch() {
   const { videoId: paramVideoId } = useParams<{ videoId: string }>();
   const videoId = paramVideoId ?? '3OmfTIf-SOU';
   const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const navigate = useNavigate();
 
   // Timestamp state
   const [currentTime, setCurrentTime] = useState(0);
@@ -43,6 +46,8 @@ export function Watch() {
   const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[] | null>(null);
   const [showQuiz, setShowQuiz] = useState(false);
   const [playerState, setPlayerState] = useState<'playing' | 'paused' | 'other'>('other');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   // Layout state: chat panel width as a % of total (default 40%, range 20–70%).
   const [chatPct, setChatPct] = useState<number>(() => {
@@ -174,11 +179,36 @@ export function Watch() {
       const { questions } = await getQuiz(videoId, Math.floor(cp.timestamp_seconds));
       if (questions && questions.length > 0) {
         handleQuizReady(questions);
+      } else {
+        toast('No quiz cached for this checkpoint yet.', { icon: 'ℹ️' });
       }
     } catch (err) {
       console.error('Quiz load failed for checkpoint:', err);
+      const status = (err as { status?: number })?.status;
+      const msg = err instanceof Error ? err.message : 'Failed to load quiz';
+      if (status === 402) {
+        toast(
+          (t) => (
+            <div className="flex items-center gap-3">
+              <span className="text-sm">{msg}</span>
+              <button
+                className="px-3 py-1 bg-blue-600 text-white rounded text-sm whitespace-nowrap"
+                onClick={() => {
+                  toast.dismiss(t.id);
+                  navigate('/settings');
+                }}
+              >
+                Add Key
+              </button>
+            </div>
+          ),
+          { duration: 8000 },
+        );
+      } else {
+        toast.error(msg);
+      }
     }
-  }, [videoId, handleQuizReady]);
+  }, [videoId, handleQuizReady, navigate]);
 
   function handleFreeze() {
     setFrozenTime(currentTime);
@@ -221,6 +251,13 @@ export function Watch() {
         });
     }
   }, [videoId]);
+
+  // Determine if current user is admin (controls visibility of regenerate button)
+  useEffect(() => {
+    whoami()
+      .then((w) => setIsAdmin(w.is_admin))
+      .catch(() => setIsAdmin(false));
+  }, []);
 
   // Poll video status while still ingesting (processing OR transcript_ready)
   useEffect(() => {
@@ -343,7 +380,33 @@ export function Watch() {
               onCheckpointClick={handleCheckpointClick}
             />
 
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              {isAdmin && (
+                <button
+                  onClick={async () => {
+                    if (!confirm('Regenerate ALL quizzes for this video? This wipes existing questions for every user and uses YOUR API keys to create new ones.')) return;
+                    setRegenerating(true);
+                    try {
+                      const r = await adminRegenerateQuiz(videoId);
+                      toast.success(r.message);
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : 'Regenerate failed');
+                    } finally {
+                      setRegenerating(false);
+                    }
+                  }}
+                  disabled={regenerating}
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs rounded-full disabled:opacity-50 flex items-center gap-1.5 shadow-md"
+                  title="Admin: regenerate quiz cache for all users"
+                >
+                  {regenerating ? (
+                    <span className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full" />
+                  ) : (
+                    '🔄'
+                  )}{' '}
+                  Regenerate
+                </button>
+              )}
               <TestMeButton
                 videoId={videoId}
                 currentTimestamp={Math.floor(effectiveTimestamp)}

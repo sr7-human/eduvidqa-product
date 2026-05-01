@@ -254,6 +254,25 @@ export async function deleteMyKey(
   return request(`/api/users/me/keys/${service}`, { method: 'DELETE' });
 }
 
+// ── Identity / admin ─────────────────────────────────────────────
+
+export interface WhoAmI {
+  authenticated: boolean;
+  is_admin: boolean;
+  email: string | null;
+  user_id?: string;
+}
+
+export async function whoami(): Promise<WhoAmI> {
+  return request<WhoAmI>(`/api/users/me/whoami`);
+}
+
+export async function adminRegenerateQuiz(
+  videoId: string,
+): Promise<{ video_id: string; checkpoints: number; questions_generated: number; message: string }> {
+  return request(`/api/admin/videos/${videoId}/quiz/regenerate`, { method: 'POST' });
+}
+
 export function extractVideoId(url: string): string | null {
   const patterns = [
     /(?:youtube\.com\/watch\?v=)([a-zA-Z0-9_-]{11})/,

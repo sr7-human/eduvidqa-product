@@ -72,3 +72,26 @@ async def require_auth(token: dict | None = Depends(verify_token)) -> str:
 async def optional_auth(token: dict | None = Depends(verify_token)) -> str | None:
     """Returns user_id or None (for demo/unauthenticated access)."""
     return token.get("sub") if token else None
+
+
+def _admin_emails() -> set[str]:
+    raw = os.getenv("ADMIN_EMAILS", "") or ""
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
+async def require_admin(token: dict | None = Depends(verify_token)) -> str:
+    """Returns user_id if email is in ADMIN_EMAILS, else 403."""
+    if token is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    email = (token.get("email") or "").lower()
+    if not email or email not in _admin_emails():
+        raise HTTPException(status_code=403, detail="Admin only")
+    return token["sub"]
+
+
+async def is_admin_email(token: dict | None = Depends(verify_token)) -> bool:
+    """Non-blocking helper: returns True if the user is an admin."""
+    if token is None:
+        return False
+    email = (token.get("email") or "").lower()
+    return bool(email and email in _admin_emails())
