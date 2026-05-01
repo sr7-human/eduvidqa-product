@@ -29,6 +29,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from backend.auth import optional_auth, require_auth
+from pydantic import BaseModel, Field
 from backend.config import settings
 from backend.logging_config import request_id_var, setup_logging
 from backend.models import (
@@ -239,6 +240,75 @@ def _link_user_video(user_id: str | None, video_id: str) -> None:
         conn.close()
 
 
+def _get_user_keys(user_id: str | None) -> dict[str, str]:
+    """Fetch this user's stored API keys (gemini, groq). Returns {} if none."""
+    if not user_id:
+        return {}
+    try:
+        conn = psycopg2.connect(_get_db_url())
+    except Exception as exc:
+        logger.warning("_get_user_keys connect failed: %s", exc)
+        return {}
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT service, key_value FROM user_api_keys WHERE user_id = %s",
+                (user_id,),
+            )
+            return {row[0]: row[1] for row in cur.fetchall()}
+    except Exception as exc:
+        logger.warning("_get_user_keys query failed: %s", exc)
+        return {}
+    finally:
+        conn.close()
+
+
+class _ScopedAPIKeys:
+    """Context manager that temporarily injects user-specific GEMINI_API_KEY /
+    GROQ_API_KEY into os.environ for the duration of a request, restoring the
+    server defaults afterwards.
+
+    Used so that downstream code (pipeline.answer, pipeline.quiz_gen,
+    pipeline.embeddings) — which reads keys via ``os.getenv`` — automatically
+    picks up the user's key without needing to thread arguments everywhere.
+    """
+
+    SERVICE_TO_ENV = {"gemini": "GEMINI_API_KEY", "groq": "GROQ_API_KEY"}
+
+    def __init__(self, user_id: str | None, allow_server_fallback: bool = False):
+        self.user_id = user_id
+        self.allow_server_fallback = allow_server_fallback
+        self._saved: dict[str, str | None] = {}
+
+    def __enter__(self):
+        keys = _get_user_keys(self.user_id) if self.user_id else {}
+        for service, env_name in self.SERVICE_TO_ENV.items():
+            self._saved[env_name] = os.environ.get(env_name)
+            user_key = keys.get(service)
+            if user_key:
+                os.environ[env_name] = user_key
+            elif not self.allow_server_fallback:
+                # User has no key for this service AND we're not allowed to
+                # fall back to the server's key — clear it so downstream code
+                # treats it as missing.
+                os.environ.pop(env_name, None)
+            # else: leave server key in place
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        for env_name, prev in self._saved.items():
+            if prev is None:
+                os.environ.pop(env_name, None)
+            else:
+                os.environ[env_name] = prev
+        return False
+
+
+def _user_has_any_key(user_id: str | None) -> bool:
+    keys = _get_user_keys(user_id)
+    return bool(keys.get("gemini") or keys.get("groq"))
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -270,6 +340,12 @@ async def process_video(
     # Playlist? -> bulk-queue every video in it
     playlist_id = _extract_playlist_id(body.youtube_url)
     if playlist_id:
+        # Playlists never include the demo, so a key is required
+        if not _user_has_any_key(user_id):
+            raise HTTPException(
+                status_code=402,
+                detail="Add a Gemini or Groq API key in Settings before processing playlists.",
+            )
         try:
             video_ids = _list_playlist_video_ids(playlist_id)
         except Exception as exc:
@@ -330,6 +406,13 @@ async def process_video(
     if status == "processing":
         return {"video_id": video_id, "status": "processing", "message": "Already being processed"}
 
+    # BYOK: non-demo videos require the user's own key (we won't burn server quota)
+    if video_id != DEMO_VIDEO_ID and not _user_has_any_key(user_id):
+        raise HTTPException(
+            status_code=402,
+            detail="Add a Gemini or Groq API key in Settings before processing videos. Your key is used for embeddings, quizzes and answers — we never store anyone else's keys against your quota.",
+        )
+
     # Register + queue background work
     _register_video(video_id)
     _link_user_video(user_id, video_id)
@@ -386,7 +469,16 @@ def _ingest_video_bg(video_id: str, youtube_url: str, user_id: str) -> None:
         User can now open the player and ask transcript-only questions.
     PHASE 2 (background): download video → keyframes → embed → digest →
         checkpoints → quiz pre-gen → mark `ready`.
+
+    Uses the user's API keys (from user_api_keys table) for embeddings + LLM.
+    For the demo video, falls back to the server's keys.
     """
+    is_demo = (video_id == DEMO_VIDEO_ID)
+    with _ScopedAPIKeys(user_id or None, allow_server_fallback=is_demo):
+        _ingest_video_bg_inner(video_id, youtube_url, user_id)
+
+
+def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str) -> None:
     try:
         _update_video_status(video_id, "processing")
 
@@ -631,10 +723,6 @@ async def ask_question(
     user_id: str | None = Depends(optional_auth),
 ) -> AskResponse:
     """Full pipeline: URL + question + timestamp → AI answer."""
-    # BYOK: Gemini key from request header, fallback to server .env
-    user_gemini_key = request.headers.get("X-Gemini-Key", "").strip()
-    gemini_key = user_gemini_key or settings.GEMINI_API_KEY
-
     # 1. Parse video ID
     try:
         video_id = parse_video_id(body.youtube_url)
@@ -644,6 +732,14 @@ async def ask_question(
     # Unauthenticated → only demo video allowed
     if user_id is None and video_id != DEMO_VIDEO_ID:
         raise HTTPException(status_code=401, detail="Sign in to ask questions on this video")
+
+    # BYOK: signed-in users on non-demo videos must supply their own key
+    is_demo = (video_id == DEMO_VIDEO_ID)
+    if user_id and not is_demo and not _user_has_any_key(user_id):
+        raise HTTPException(
+            status_code=402,
+            detail="Add a Gemini or Groq API key in Settings to use your own quota for non-demo videos.",
+        )
 
     # Track user-video link (best effort)
     if user_id:
@@ -697,19 +793,20 @@ async def ask_question(
     except Exception as exc:
         logger.error("Retrieval failed for %s — answering without context: %s", video_id, exc)
 
-    # 5. Generate answer
+    # 5. Generate answer (using user's keys if present, else server's for demo)
     from pipeline.answer import generate_answer
 
     try:
-        result = generate_answer(
-            question=body.question,
-            video_id=video_id,
-            timestamp=body.timestamp,
-            retrieval_result=retrieval,
-            live_frame_path=live_frame,
-            groq_api_key=settings.GROQ_API_KEY,
-            gemini_api_key=gemini_key,
-        )
+        with _ScopedAPIKeys(user_id, allow_server_fallback=is_demo):
+            result = generate_answer(
+                question=body.question,
+                video_id=video_id,
+                timestamp=body.timestamp,
+                retrieval_result=retrieval,
+                live_frame_path=live_frame,
+                groq_api_key=os.getenv("GROQ_API_KEY") or None,
+                gemini_api_key=os.getenv("GEMINI_API_KEY") or None,
+            )
     except Exception:
         logger.exception("Answer generation failed for %s", video_id)
         raise HTTPException(status_code=500, detail="Internal server error. Please try again.")
@@ -845,9 +942,17 @@ async def get_quiz(
     if not chunks:
         raise HTTPException(status_code=404, detail="Video not indexed")
 
+    is_demo = (video_id == DEMO_VIDEO_ID)
+    if not is_demo and not _user_has_any_key(user_id):
+        raise HTTPException(
+            status_code=402,
+            detail="Add a Gemini or Groq API key in Settings to generate quizzes for non-demo videos.",
+        )
+
     from pipeline.quiz_cache import get_or_generate
 
-    questions = get_or_generate(video_id, body.end_ts, chunks)
+    with _ScopedAPIKeys(user_id, allow_server_fallback=is_demo):
+        questions = get_or_generate(video_id, body.end_ts, chunks)
 
     return {
         "questions": [
@@ -1020,8 +1125,125 @@ async def delete_my_data(user_id: str = Depends(require_auth)):
             cur.execute("DELETE FROM review_queue WHERE user_id = %s", (user_id,))
             cur.execute("DELETE FROM quiz_attempts WHERE user_id = %s", (user_id,))
             cur.execute("DELETE FROM user_videos WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM user_api_keys WHERE user_id = %s", (user_id,))
         conn.commit()
     finally:
         conn.close()
     logger.info("Deleted all data for user %s", user_id)
     return {"message": "All your data has been deleted."}
+
+
+# ── User-managed API keys (BYOK) ────────────────────────────────
+
+
+def _mask_key(key: str) -> str:
+    if not key:
+        return ""
+    if len(key) <= 8:
+        return "*" * len(key)
+    return f"{key[:4]}…{key[-4:]}"
+
+
+@app.get("/api/users/me/keys")
+async def list_my_keys(user_id: str = Depends(require_auth)):
+    """Return which services this user has stored a key for, plus a masked preview."""
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT service, key_value, updated_at FROM user_api_keys WHERE user_id = %s",
+                (user_id,),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    return {
+        "keys": [
+            {"service": r[0], "masked": _mask_key(r[1]), "updated_at": str(r[2])}
+            for r in rows
+        ]
+    }
+
+
+class _KeyBody(BaseModel):
+    service: str = Field(..., pattern=r"^(gemini|groq)$")
+    key_value: str = Field(..., min_length=20, max_length=300)
+
+
+@app.post("/api/users/me/keys")
+async def upsert_my_key(body: _KeyBody, user_id: str = Depends(require_auth)):
+    """Validate then store a user's API key for a service."""
+    # Validate the key by making a tiny test call
+    valid, err = _validate_api_key(body.service, body.key_value)
+    if not valid:
+        raise HTTPException(status_code=400, detail=f"Invalid {body.service} key: {err}")
+
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO user_api_keys (id, user_id, service, key_value, updated_at)
+                VALUES (gen_random_uuid(), %s, %s, %s, now())
+                ON CONFLICT (user_id, service)
+                DO UPDATE SET key_value = EXCLUDED.key_value, updated_at = now()
+                """,
+                (user_id, body.service, body.key_value),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"service": body.service, "masked": _mask_key(body.key_value), "ok": True}
+
+
+@app.delete("/api/users/me/keys/{service}")
+async def delete_my_key(service: str, user_id: str = Depends(require_auth)):
+    if service not in ("gemini", "groq"):
+        raise HTTPException(status_code=400, detail="Unknown service")
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM user_api_keys WHERE user_id = %s AND service = %s",
+                (user_id, service),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"service": service, "deleted": True}
+
+
+def _validate_api_key(service: str, key_value: str) -> tuple[bool, str | None]:
+    """Make a cheap test call to verify the key works. Returns (ok, error_message)."""
+    try:
+        if service == "gemini":
+            from google import genai
+            from google.genai import types
+            client = genai.Client(api_key=key_value)
+            r = client.models.embed_content(
+                model="gemini-embedding-2-preview",
+                contents="ping",
+                config=types.EmbedContentConfig(output_dimensionality=1024),
+            )
+            if not r.embeddings or len(r.embeddings[0].values) != 1024:
+                return False, "Unexpected response shape"
+            return True, None
+        elif service == "groq":
+            from groq import Groq
+            client = Groq(api_key=key_value)
+            r = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": "ping"}],
+                max_tokens=5,
+            )
+            if not r.choices:
+                return False, "No response"
+            return True, None
+    except Exception as exc:  # noqa: BLE001
+        msg = str(exc)
+        # Surface the most useful chunk of the error
+        for marker in ("API key", "Invalid", "expired", "Forbidden", "Unauthorized", "401", "403"):
+            if marker.lower() in msg.lower():
+                return False, msg[:160]
+        return False, msg[:160]
+    return False, "Unknown service"

@@ -77,7 +77,15 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`API ${res.status}: ${body}`);
+    // FastAPI returns {"detail": "..."} — surface that as the error message.
+    let msg = body;
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed && typeof parsed.detail === 'string') msg = parsed.detail;
+    } catch { /* not JSON, keep raw */ }
+    const err = new Error(msg) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
   }
   return res.json() as Promise<T>;
 }
@@ -216,6 +224,34 @@ export async function submitReviewAttempt(
       body: JSON.stringify({ selected_answer: selectedAnswer }),
     },
   );
+}
+
+// ── User API keys (BYOK) ─────────────────────────────────────────
+
+export interface StoredKey {
+  service: 'gemini' | 'groq';
+  masked: string;
+  updated_at: string;
+}
+
+export async function listMyKeys(): Promise<{ keys: StoredKey[] }> {
+  return request<{ keys: StoredKey[] }>(`/api/users/me/keys`);
+}
+
+export async function saveMyKey(
+  service: 'gemini' | 'groq',
+  keyValue: string,
+): Promise<{ service: string; masked: string; ok: boolean }> {
+  return request(`/api/users/me/keys`, {
+    method: 'POST',
+    body: JSON.stringify({ service, key_value: keyValue }),
+  });
+}
+
+export async function deleteMyKey(
+  service: 'gemini' | 'groq',
+): Promise<{ service: string; deleted: boolean }> {
+  return request(`/api/users/me/keys/${service}`, { method: 'DELETE' });
 }
 
 export function extractVideoId(url: string): string | null {
