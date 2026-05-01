@@ -22,8 +22,8 @@ class Settings:
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "7860"))
 
-    # CORS — comma-separated allowed origins (default: allow all)
-    CORS_ORIGINS: list[str] = os.getenv("CORS_ORIGINS", "*").split(",")
+    # CORS — comma-separated allowed origins (default: local Vite dev server only)
+    CORS_ORIGINS: list[str] = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
 
     # Model — default to 3B for M2 Mac (7B needs CUDA 4-bit)
     MODEL_NAME: str = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-VL-3B-Instruct")

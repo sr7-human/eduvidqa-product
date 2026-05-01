@@ -55,8 +55,8 @@ def run():
     print("STEP 2: JINA CLIP v2 INDEXING (local, 1024-dim)")
     print("=" * 60)
 
-    from pipeline.embeddings_v2 import EmbeddingService
-    from pipeline.rag_v2 import LectureIndex
+    from pipeline.embeddings import EmbeddingService
+    from pipeline.rag import LectureIndex
 
     jina_svc = EmbeddingService("jina")
     jina_svc._ensure_loaded()

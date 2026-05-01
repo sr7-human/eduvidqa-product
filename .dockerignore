@@ -1,0 +1,11 @@
+.env
+.venv/
+data/
+media/
+notebooks/
+scripts/
+.git/
+__pycache__/
+*.pyc
+node_modules/
+frontend/node_modules/

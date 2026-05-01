@@ -66,6 +66,7 @@ def generate_answer(
     -------
     dict with keys: ``answer``, ``model_name``, ``generation_time``, ``sources``.
     """
+    _last_error: Exception | None = None
     groq_key = groq_api_key or os.getenv("GROQ_API_KEY", "")
     gemini_key = gemini_api_key or os.getenv("GEMINI_API_KEY", "")
 

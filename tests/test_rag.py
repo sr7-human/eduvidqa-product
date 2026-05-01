@@ -1,195 +1,235 @@
-"""Unit tests for the RAG pipeline (Session B)."""
+"""Integration tests for pipeline.rag (Supabase pgvector backend).
+
+Run:
+    .venv/bin/python -m pytest tests/test_rag.py -v -s
+
+Requires:
+    - DATABASE_URL set in .env (Supabase pooler connection string)
+    - Jina CLIP v2 cached locally (downloaded on first run)
+    - Optional: Session A output in data/processed/{video_id}/ for
+      file-based integration tests (skipped if missing).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import uuid
+from pathlib import Path
 
 import pytest
+from dotenv import load_dotenv
 
-from pipeline.embeddings import EmbeddingModel
-from pipeline.models import VideoSegment
-from pipeline.rag import LectureIndex, _subchunk
+load_dotenv(override=True)
 
-# Use a small model for fast CI tests
-_TEST_MODEL = "all-MiniLM-L6-v2"
+import psycopg2  # noqa: E402
 
-
-# ── Fixtures ──────────────────────────────────────────────────────
+DATA_DIR = "data/processed"
 
 
-@pytest.fixture(scope="session")
-def shared_embed_model():
-    """Load the small embedding model once per test session."""
-    return EmbeddingModel(model_name=_TEST_MODEL)
+# ── Helpers ──────────────────────────────────────────────────────
 
 
-@pytest.fixture()
-def tmp_chroma(tmp_path):
-    """Provide a temporary directory for ChromaDB storage."""
-    return str(tmp_path / "chroma")
+def _cleanup(video_id: str) -> None:
+    """Delete all rows for this video_id across the three tables."""
+    dsn = os.getenv("DATABASE_URL")
+    if not dsn:
+        return
+    with psycopg2.connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM video_chunks WHERE video_id=%s", (video_id,))
+        cur.execute("DELETE FROM keyframe_embeddings WHERE video_id=%s", (video_id,))
+        cur.execute("DELETE FROM videos WHERE video_id=%s", (video_id,))
 
 
-@pytest.fixture()
-def sample_segments() -> list[VideoSegment]:
-    """Return a small set of realistic lecture segments."""
-    return [
-        VideoSegment(
-            video_id="test123",
-            segment_index=0,
-            start_time=0,
-            end_time=120,
-            transcript_text=(
-                "Today we'll discuss backpropagation in neural networks. "
-                "Backpropagation is the backbone of training deep learning models. "
-                "It uses the chain rule of calculus to compute gradients layer by layer."
-            ),
-            frame_paths=["frame_0.jpg"],
-        ),
-        VideoSegment(
-            video_id="test123",
-            segment_index=1,
-            start_time=120,
-            end_time=240,
-            transcript_text=(
-                "Gradient descent works by computing partial derivatives of the loss "
-                "function with respect to each weight. We then update each weight by "
-                "subtracting a fraction of the gradient, controlled by the learning rate."
-            ),
-            frame_paths=["frame_1.jpg"],
-        ),
-        VideoSegment(
-            video_id="test123",
-            segment_index=2,
-            start_time=240,
-            end_time=360,
-            transcript_text=(
-                "Convolutional neural networks apply filters across spatial dimensions. "
-                "The convolution operation detects local features like edges and textures. "
-                "Pooling layers reduce spatial resolution while keeping important signals."
-            ),
-            frame_paths=["frame_2.jpg"],
-        ),
-        VideoSegment(
-            video_id="test123",
-            segment_index=3,
-            start_time=360,
-            end_time=480,
-            transcript_text=(
-                "Recurrent neural networks process sequential data. LSTMs introduce "
-                "gates — input, forget, and output gates — to handle long-term dependencies. "
-                "Transformers replaced RNNs by using self-attention mechanisms."
-            ),
-            frame_paths=["frame_3.jpg"],
-        ),
+def _row_counts(video_id: str) -> dict[str, int]:
+    dsn = os.getenv("DATABASE_URL")
+    with psycopg2.connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM videos WHERE video_id=%s", (video_id,))
+        v = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM video_chunks WHERE video_id=%s", (video_id,))
+        c = cur.fetchone()[0]
+        cur.execute(
+            "SELECT COUNT(*) FROM keyframe_embeddings WHERE video_id=%s", (video_id,)
+        )
+        k = cur.fetchone()[0]
+    return {"videos": v, "chunks": c, "keyframes": k}
+
+
+def _short_vid(prefix: str = "tst") -> str:
+    """Generate an 11-char test video_id (matches videos.video_id VARCHAR(11))."""
+    return (prefix + uuid.uuid4().hex)[:11]
+
+
+# ── Fixtures ─────────────────────────────────────────────────────
+
+
+@pytest.fixture(scope="module")
+def jina_service():
+    pytest.importorskip("sentence_transformers")
+    from pipeline.embeddings import EmbeddingService
+
+    svc = EmbeddingService("jina")
+    svc._ensure_loaded()
+    return svc
+
+
+@pytest.fixture
+def index(jina_service):
+    from pipeline.rag import LectureIndex
+
+    return LectureIndex(_embed_service=jina_service)
+
+
+# ── Basic interface tests ────────────────────────────────────────
+
+
+def test_persist_dir_kwarg_is_accepted(jina_service):
+    """Backward-compat: persist_dir kwarg must not raise."""
+    from pipeline.rag import LectureIndex
+
+    LectureIndex(persist_dir="/tmp/ignored", _embed_service=jina_service)
+
+
+def test_is_indexed_unknown_returns_false(index):
+    assert index.is_indexed("ZZZZZZZZZZZ") is False
+
+
+# ── Index + retrieve round-trip ──────────────────────────────────
+
+
+def test_index_video_inserts_rows(index):
+    vid = _short_vid()
+    chunks = [
+        {
+            "chunk_id": "tc0",
+            "start_time": 0.0,
+            "end_time": 10.0,
+            "text": "Unit testing verifies individual functions in isolation.",
+            "linked_keyframe_ids": [],
+        },
+        {
+            "chunk_id": "tc1",
+            "start_time": 10.0,
+            "end_time": 20.0,
+            "text": "Integration testing checks how modules interact together.",
+            "linked_keyframe_ids": [],
+        },
     ]
+    try:
+        total = index.index_video(vid, chunks, [], "Testing lecture digest")
+        assert total == 2
+        assert index.is_indexed(vid) is True
+        counts = _row_counts(vid)
+        assert counts == {"videos": 1, "chunks": 2, "keyframes": 0}
+    finally:
+        _cleanup(vid)
 
 
-# ── Sub-chunking ──────────────────────────────────────────────────
-
-
-class TestSubchunk:
-    def test_short_text_not_split(self):
-        text = "This is short."
-        chunks = _subchunk(text)
-        assert len(chunks) == 1
-        assert chunks[0] == text
-
-    def test_long_text_split(self):
-        sentences = ["Sentence number %d is here." % i for i in range(200)]
-        text = " ".join(sentences)
-        chunks = _subchunk(text)
-        assert len(chunks) > 1
-        # Each chunk should be ≤ 500 words (roughly)
-        for c in chunks:
-            assert len(c.split()) <= 600  # allow slight overshoot from overlap
-
-    def test_empty_text(self):
-        assert _subchunk("") == [""]
-
-
-# ── Indexing ──────────────────────────────────────────────────────
-
-
-class TestLectureIndex:
-    def _make_index(self, tmp_chroma, embed_model):
-        return LectureIndex(persist_dir=tmp_chroma, embedding_model=embed_model)
-
-    def test_index_and_is_indexed(self, tmp_chroma, sample_segments, shared_embed_model):
-        index = self._make_index(tmp_chroma, shared_embed_model)
-        count = index.index_segments(sample_segments)
-
-        assert count == len(sample_segments)
-        assert index.is_indexed("test123")
-        assert not index.is_indexed("nonexistent")
-
-    def test_index_empty(self, tmp_chroma, shared_embed_model):
-        index = self._make_index(tmp_chroma, shared_embed_model)
-        assert index.index_segments([]) == 0
-
-    def test_re_index_overwrites(self, tmp_chroma, sample_segments, shared_embed_model):
-        """Re-indexing the same video should cleanly replace old data."""
-        index = self._make_index(tmp_chroma, shared_embed_model)
-        index.index_segments(sample_segments)
-        # Index again with fewer segments
-        count = index.index_segments(sample_segments[:2])
-        assert count == 2
-        assert index.is_indexed("test123")
-
-    # ── Retrieval ─────────────────────────────────────────────────
-
-    def test_retrieve_relevant(self, tmp_chroma, sample_segments, shared_embed_model):
-        index = self._make_index(tmp_chroma, shared_embed_model)
-        index.index_segments(sample_segments)
-
+def test_retrieve_returns_relevant_chunks(index):
+    vid = _short_vid()
+    chunks = [
+        {
+            "chunk_id": "rc0",
+            "start_time": 0.0,
+            "end_time": 10.0,
+            "text": "Gradient descent moves parameters downhill on the loss surface.",
+            "linked_keyframe_ids": [],
+        },
+        {
+            "chunk_id": "rc1",
+            "start_time": 10.0,
+            "end_time": 20.0,
+            "text": "The learning rate controls step size in gradient descent.",
+            "linked_keyframe_ids": [],
+        },
+        {
+            "chunk_id": "rc2",
+            "start_time": 50.0,
+            "end_time": 60.0,
+            "text": "Convolution applies a filter sliding across the input image.",
+            "linked_keyframe_ids": [],
+        },
+    ]
+    try:
+        index.index_video(vid, chunks, [], "ML lecture digest body")
         result = index.retrieve(
-            "How does backpropagation work?", video_id="test123", top_k=3
+            "What is gradient descent?", vid, timestamp=5.0, top_k=2
         )
+        assert isinstance(result, dict)
+        assert "ranked_chunks" in result
+        assert "relevant_keyframes" in result
+        assert "digest" in result
+        assert len(result["ranked_chunks"]) == 2
+        top = result["ranked_chunks"][0]
+        assert "relevance_score" in top
+        assert "gradient" in top["text"].lower()
+        assert result["digest"].startswith("ML lecture")
+    finally:
+        _cleanup(vid)
 
-        assert len(result.contexts) <= 3
-        assert result.query == "How does backpropagation work?"
-        assert result.video_id == "test123"
-        assert result.total_segments > 0
 
-        # Top result should mention backpropagation
-        top = result.contexts[0]
-        assert "backpropagation" in top.segment.transcript_text.lower()
-
-        # Results are sorted by descending relevance
-        scores = [c.relevance_score for c in result.contexts]
-        assert scores == sorted(scores, reverse=True)
-
-        # Ranks are 1-based
-        ranks = [c.rank for c in result.contexts]
-        assert ranks == list(range(1, len(ranks) + 1))
-
-    def test_retrieve_cnn_query(self, tmp_chroma, sample_segments, shared_embed_model):
-        index = self._make_index(tmp_chroma, shared_embed_model)
-        index.index_segments(sample_segments)
-
+def test_retrieve_temporal_reranking(index):
+    """Two chunks with similar semantic match — the temporally closer
+    one should outrank the far one when timestamp targets it."""
+    vid = _short_vid()
+    chunks = [
+        {
+            "chunk_id": "n0",
+            "start_time": 0.0,
+            "end_time": 10.0,
+            "text": "Backpropagation computes gradients via the chain rule.",
+            "linked_keyframe_ids": [],
+        },
+        {
+            "chunk_id": "n1",
+            "start_time": 500.0,
+            "end_time": 510.0,
+            "text": "Backpropagation computes gradients via the chain rule.",
+            "linked_keyframe_ids": [],
+        },
+    ]
+    try:
+        index.index_video(vid, chunks, [], "")
         result = index.retrieve(
-            "What are convolutional neural networks?", video_id="test123", top_k=2
+            "How does backpropagation work?", vid, timestamp=505.0, top_k=2
         )
-        assert len(result.contexts) <= 2
-        top_text = result.contexts[0].segment.transcript_text.lower()
-        assert "convolutional" in top_text or "convolution" in top_text
+        rc = result["ranked_chunks"]
+        assert len(rc) == 2
+        # Chunk near timestamp=505 (n1) should rank above the far one (n0).
+        assert rc[0]["chunk_id"] == "n1"
+    finally:
+        _cleanup(vid)
 
-    def test_retrieve_not_indexed_raises(self, tmp_chroma, shared_embed_model):
-        index = self._make_index(tmp_chroma, shared_embed_model)
-        with pytest.raises(ValueError, match="not been indexed"):
-            index.retrieve("anything", video_id="no_such_video")
 
-    # ── Deletion ──────────────────────────────────────────────────
+def test_retrieve_unknown_video_returns_empty(index):
+    result = index.retrieve("anything", "AAAAAAAAAAA", timestamp=0.0)
+    assert result["ranked_chunks"] == []
+    assert result["relevant_keyframes"] == []
+    assert result["digest"] == ""
 
-    def test_delete_video(self, tmp_chroma, sample_segments, shared_embed_model):
-        index = self._make_index(tmp_chroma, shared_embed_model)
-        index.index_segments(sample_segments)
 
-        assert index.delete_video("test123") is True
-        assert not index.is_indexed("test123")
-        assert index.delete_video("test123") is False  # already gone
+# ── Optional: real video data (skipped if absent) ────────────────
 
-    # ── Frame paths round-trip ────────────────────────────────────
 
-    def test_frame_paths_preserved(self, tmp_chroma, sample_segments, shared_embed_model):
-        index = self._make_index(tmp_chroma, shared_embed_model)
-        index.index_segments(sample_segments)
+def _have_video(video_id: str) -> bool:
+    p = Path(DATA_DIR) / video_id / "transcript" / "chunks.json"
+    return p.is_file()
 
-        result = index.retrieve("backpropagation", video_id="test123", top_k=1)
-        seg = result.contexts[0].segment
-        assert seg.frame_paths == ["frame_0.jpg"]
+
+@pytest.mark.skipif(
+    not _have_video("3OmfTIf-SOU"),
+    reason="Session A data missing for 3OmfTIf-SOU",
+)
+def test_index_real_video_chunks(index):
+    video_id = "3OmfTIf-SOU"
+    test_vid = _short_vid("rv")
+    chunks = json.loads(
+        (Path(DATA_DIR) / video_id / "transcript" / "chunks.json").read_text()
+    )
+    try:
+        total = index.index_video(test_vid, chunks, [], f"digest for {video_id}")
+        assert total == len(chunks)
+        result = index.retrieve("what is unit testing", test_vid, 20.0, top_k=3)
+        assert len(result["ranked_chunks"]) > 0
+    finally:
+        _cleanup(test_vid)

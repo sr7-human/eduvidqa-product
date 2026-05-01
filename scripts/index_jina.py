@@ -6,8 +6,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dotenv import load_dotenv
 load_dotenv()
 
-from pipeline.embeddings_v2 import EmbeddingService
-from pipeline.rag_v2 import LectureIndex
+from pipeline.embeddings import EmbeddingService
+from pipeline.rag import LectureIndex
 
 DATA_DIR = "data/processed"
 VIDEOS = sys.argv[1:] if len(sys.argv) > 1 else ["3OmfTIf-SOU", "VRcixOuG-TU", "oZgbwa8lvDE"]

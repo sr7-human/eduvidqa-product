@@ -103,7 +103,7 @@ class MultiKeyGeminiEmbedder:
     def _ensure_loaded(self):
         pass  # already loaded
 
-from pipeline.rag_v2 import LectureIndex
+from pipeline.rag import LectureIndex
 
 multi_gemini = MultiKeyGeminiEmbedder(GEMINI_KEYS)
 gemini_idx = LectureIndex(persist_dir="data/chroma", embedding_model="gemini", _embed_service=multi_gemini)
@@ -122,7 +122,7 @@ print("\n" + "=" * 60)
 print("STEP 3: RETRIEVAL VERIFICATION")
 print("=" * 60)
 
-from pipeline.embeddings_v2 import EmbeddingService
+from pipeline.embeddings import EmbeddingService
 
 jina_svc = EmbeddingService("jina")
 jina_svc._ensure_loaded()

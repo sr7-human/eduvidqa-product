@@ -1,0 +1,129 @@
+"""Global quiz cache: (video_id, ts_bucket_30s, prompt_version) -> questions."""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import uuid
+
+import psycopg2
+
+logger = logging.getLogger(__name__)
+
+
+def _db_url() -> str:
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        raise RuntimeError("DATABASE_URL env var not set")
+    return url
+
+
+def _coerce_options(opts) -> list:
+    if isinstance(opts, list):
+        return opts
+    if isinstance(opts, str):
+        try:
+            return json.loads(opts)
+        except json.JSONDecodeError:
+            return [opts]
+    return list(opts) if opts else []
+
+
+def get_cached_questions(
+    video_id: str, ts_bucket: int, prompt_version: int = 1
+) -> list[dict] | None:
+    """Return cached questions or None on cache miss."""
+    conn = psycopg2.connect(_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, question_text, options, correct_answer, explanation, difficulty
+                FROM questions
+                WHERE video_id = %s AND ts_bucket_30s = %s AND prompt_version = %s
+                ORDER BY question_text
+                """,
+                (video_id, ts_bucket, prompt_version),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        return None
+    return [
+        {
+            "id": str(r[0]),
+            "question_text": r[1],
+            "options": _coerce_options(r[2]),
+            "correct_answer": r[3],
+            "explanation": r[4],
+            "difficulty": r[5],
+        }
+        for r in rows
+    ]
+
+
+def cache_questions(
+    video_id: str,
+    ts_bucket: int,
+    prompt_version: int,
+    questions: list[dict],
+) -> None:
+    """Insert generated questions into the global cache (idempotent)."""
+    if not questions:
+        return
+    conn = psycopg2.connect(_db_url())
+    try:
+        with conn.cursor() as cur:
+            for q in questions:
+                cur.execute(
+                    """
+                    INSERT INTO questions (
+                        id, video_id, ts_bucket_30s, prompt_version,
+                        question_text, options, correct_answer, explanation, difficulty
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (video_id, ts_bucket_30s, prompt_version, question_text)
+                    DO NOTHING
+                    """,
+                    (
+                        str(uuid.uuid4()),
+                        video_id,
+                        ts_bucket,
+                        prompt_version,
+                        q["question_text"],
+                        json.dumps(q.get("options", [])),
+                        q.get("correct_answer", "A"),
+                        q.get("explanation", ""),
+                        q.get("difficulty", "medium"),
+                    ),
+                )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_or_generate(
+    video_id: str,
+    timestamp: float,
+    chunks: list[dict],
+    prompt_version: int = 1,
+) -> list[dict]:
+    """Cache check -> generate on miss -> store -> return cached rows (with IDs)."""
+    ts_bucket = int(timestamp // 30)
+    cached = get_cached_questions(video_id, ts_bucket, prompt_version)
+    if cached:
+        logger.info("Quiz cache HIT: %s@bucket%s", video_id, ts_bucket)
+        return cached
+
+    logger.info("Quiz cache MISS: %s@bucket%s — generating", video_id, ts_bucket)
+    from pipeline.quiz_gen import generate_quiz_questions
+
+    questions = generate_quiz_questions(video_id, timestamp, chunks)
+    if not questions:
+        return []
+
+    cache_questions(video_id, ts_bucket, prompt_version, questions)
+    refreshed = get_cached_questions(video_id, ts_bucket, prompt_version)
+    return refreshed if refreshed else questions

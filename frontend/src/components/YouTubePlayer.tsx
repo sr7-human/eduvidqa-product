@@ -6,6 +6,7 @@ interface Props {
   onTimeUpdate: (time: number) => void;
   onReady: () => void;
   onSeek?: (player: YTPlayer) => void;
+  onStateChange?: (state: number) => void;
 }
 
 let apiLoaded = false;
@@ -29,7 +30,7 @@ function loadYouTubeAPI(): Promise<void> {
   });
 }
 
-export default function YouTubePlayer({ videoId, onTimeUpdate, onReady, onSeek }: Props) {
+export default function YouTubePlayer({ videoId, onTimeUpdate, onReady, onSeek, onStateChange }: Props) {
   const playerRef = useRef<YTPlayer | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -38,9 +39,11 @@ export default function YouTubePlayer({ videoId, onTimeUpdate, onReady, onSeek }
   const onTimeUpdateRef = useRef(onTimeUpdate);
   const onReadyRef = useRef(onReady);
   const onSeekRef = useRef(onSeek);
+  const onStateChangeRef = useRef(onStateChange);
   onTimeUpdateRef.current = onTimeUpdate;
   onReadyRef.current = onReady;
   onSeekRef.current = onSeek;
+  onStateChangeRef.current = onStateChange;
 
   const startPolling = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
@@ -76,8 +79,8 @@ export default function YouTubePlayer({ videoId, onTimeUpdate, onReady, onSeek }
             if (onSeekRef.current) onSeekRef.current(event.target);
             startPolling();
           },
-          onStateChange: () => {
-            // keep polling active regardless of state
+          onStateChange: (event) => {
+            onStateChangeRef.current?.(event.data);
           },
         },
       });

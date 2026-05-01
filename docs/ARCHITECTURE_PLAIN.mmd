@@ -1,0 +1,107 @@
+%% EduVidQA — How It Works (plain-English version)
+%% A friendly walkthrough of the same system shown in ARCHITECTURE.mmd
+%% Render with: https://mermaid.live  or  VS Code Mermaid preview
+
+flowchart TB
+    %% ============ THE PEOPLE ============
+    subgraph PEOPLE["👥 People using the app"]
+        STUDENT["🧑‍🎓 A student<br/>opens the website on<br/>their laptop or phone"]
+    end
+
+    %% ============ THE WEBSITE ============
+    subgraph WEBSITE["🖥️ The Website (what you see)"]
+        PAGES["The pages:<br/>• Welcome page<br/>• Sign-in<br/>• My library of lectures<br/>• Watch + ask questions<br/>• Practice quizzes<br/>• Settings"]
+    end
+
+    %% ============ THE FRONT DESK ============
+    subgraph RECEPTION["🏨 The Reception Desk"]
+        FRONTDESK["Checks your ID badge<br/>(makes sure you're logged in)<br/><br/>Passes your request to<br/>the right team in the back"]
+    end
+
+    %% ============ THE FILING ROOM ============
+    subgraph LIBRARY["📚 The Big Shared Library"]
+        SHELF["Lecture notebooks<br/>One notebook per lecture.<br/>Made ONCE, then shared<br/>with every student forever."]
+        MYBOOKS["Your personal bookmarks<br/>• which lectures you've added<br/>• where you paused last<br/>• your quiz scores<br/>• questions to review"]
+        WAITLIST["The waiting list<br/>'Lectures still being prepared'"]
+        IDDESK["ID badge office<br/>Sign in with Google or email.<br/>Issues your badge."]
+        IMAGES["Picture gallery<br/>Snapshots taken from each lecture<br/>(so the AI can show you<br/>exactly what was on screen)"]
+        NEWS["Live announcement board<br/>Tells your screen the moment<br/>your lecture is ready"]
+    end
+
+    %% ============ THE KITCHEN ============
+    subgraph KITCHEN["👨‍🍳 The Back Kitchen"]
+        WAITER["The Waiter<br/>Takes your question,<br/>fetches the answer fast<br/>(usually a few seconds)"]
+        CHEF["The Prep Chef<br/>Does the slow heavy work<br/>behind the scenes:<br/>• watches new lectures<br/>• takes snapshots<br/>• writes summary notes<br/>• prepares quiz questions"]
+        FRIDGE[("Tiny scratch space<br/>The lecture video sits here<br/>only while being prepared,<br/>then is thrown away.")]
+    end
+
+    %% ============ OUTSIDE HELPERS ============
+    subgraph HELPERS["🌐 Outside Helpers (we don't own these)"]
+        YOUTUBE["📺 YouTube<br/>where the lecture videos come from"]
+        BRAIN1["🧠 Fast AI brain<br/>answers your questions<br/>in a few seconds"]
+        BRAIN2["🧠 Backup AI brain<br/>steps in if the fast one is busy"]
+        TAGGER["🏷️ Lecture indexer<br/>turns words and pictures<br/>into 'fingerprints' the<br/>library can search by meaning"]
+    end
+
+    %% ============ THE WATCHTOWER ============
+    subgraph WATCH["🔎 The Watchtower"]
+        ALARMS["Catches problems<br/>and writes them down<br/>so we can fix them"]
+    end
+
+    %% ============ FLOWS ============
+    STUDENT -->|opens browser| PAGES
+    PAGES -->|"Show ID"| IDDESK
+    PAGES -->|"asks question /<br/>adds a lecture"| FRONTDESK
+    PAGES -.->|"listens for<br/>'your lecture is ready!'"| NEWS
+
+    FRONTDESK -->|"checks badge"| IDDESK
+    FRONTDESK -->|"look up notes"| SHELF
+    FRONTDESK -->|"save bookmark / score"| MYBOOKS
+    FRONTDESK -->|"add to waiting list<br/>(only if not already there)"| WAITLIST
+    FRONTDESK -->|"ask AI for the answer"| BRAIN1
+    FRONTDESK -.->|"if busy, ask backup"| BRAIN2
+    FRONTDESK -->|"grab a snapshot"| IMAGES
+
+    WAITLIST -->|"next job, please"| CHEF
+    CHEF -->|"download the lecture"| YOUTUBE
+    CHEF --> FRIDGE
+    CHEF -->|"take snapshots, write notes"| FRIDGE
+    CHEF -->|"file the snapshots"| IMAGES
+    CHEF -->|"make searchable fingerprints"| TAGGER
+    CHEF -->|"put the notebook on the shelf"| SHELF
+    CHEF -->|"prepare quiz questions"| BRAIN1
+    CHEF -->|"mark lecture as READY"| SHELF
+    SHELF -.->|"announce: it's ready!"| NEWS
+
+    FRONTDESK --> ALARMS
+    CHEF --> ALARMS
+    PAGES --> ALARMS
+
+    %% ============ THE BIG IDEAS ============
+    classDef rule fill:#fff7d6,stroke:#b8860b,stroke-width:1px,color:#000
+    R1["💡 A lecture is prepared<br/>only ONCE for everyone.<br/>The 1,000th student to add it<br/>watches instantly — no waiting."]:::rule
+    R2["💡 Quiz questions are also<br/>shared — two students who<br/>pause at the same moment<br/>get the same quiz."]:::rule
+    R3["💡 Slow work never makes<br/>you wait. The waiter is fast;<br/>the chef cooks in the back."]:::rule
+    R4["💡 Your bookmarks and<br/>scores are private to you<br/>and only you can see them."]:::rule
+
+    SHELF -.- R1
+    BRAIN1 -.- R2
+    CHEF -.- R3
+    MYBOOKS -.- R4
+
+    %% ============ STYLES ============
+    classDef people fill:#e1f5ff,stroke:#0369a1,color:#000
+    classDef site fill:#000,stroke:#fff,color:#fff
+    classDef desk fill:#fce7f3,stroke:#9d174d,color:#000
+    classDef library fill:#3ecf8e,stroke:#1f7a4d,color:#000
+    classDef kitchen fill:#fde68a,stroke:#b45309,color:#000
+    classDef helpers fill:#f3e8ff,stroke:#6b21a8,color:#000
+    classDef watch fill:#fee2e2,stroke:#991b1b,color:#000
+
+    class STUDENT people
+    class PAGES site
+    class FRONTDESK desk
+    class SHELF,MYBOOKS,WAITLIST,IDDESK,IMAGES,NEWS library
+    class WAITER,CHEF,FRIDGE kitchen
+    class YOUTUBE,BRAIN1,BRAIN2,TAGGER helpers
+    class ALARMS watch

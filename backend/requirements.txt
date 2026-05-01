@@ -9,7 +9,7 @@ youtube-transcript-api
 yt-dlp
 ffmpeg-python
 sentence-transformers
-chromadb
+# chromadb removed in H2 — replaced by Supabase pgvector
 transformers>=4.45.0
 bitsandbytes
 accelerate

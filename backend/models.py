@@ -2,23 +2,43 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
+
+_YOUTUBE_URL_PATTERN = re.compile(
+    r"(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]{11})"
+)
 
 
 # ── Requests ─────────────────────────────────────────────────────────
 
 
 class AskRequest(BaseModel):
-    youtube_url: str = Field(..., description="Full YouTube URL")
-    timestamp: float = Field(..., ge=0, description="Position in seconds")
-    question: str = Field(..., min_length=1, description="Student's question")
+    youtube_url: str = Field(..., max_length=200, description="Full YouTube URL")
+    timestamp: float = Field(..., ge=0, le=21600, description="Position in seconds (max 6 hours)")
+    question: str = Field(..., min_length=1, max_length=2048, description="Student's question")
     skip_quality_eval: bool = Field(
         default=False, description="Skip quality scoring to save time"
     )
 
+    @field_validator("youtube_url")
+    @classmethod
+    def validate_youtube_url(cls, v: str) -> str:
+        if not _YOUTUBE_URL_PATTERN.search(v):
+            raise ValueError("Invalid YouTube URL")
+        return v
+
 
 class ProcessRequest(BaseModel):
-    youtube_url: str = Field(..., description="Full YouTube URL to pre-process")
+    youtube_url: str = Field(..., max_length=200, description="Full YouTube URL to pre-process")
+
+    @field_validator("youtube_url")
+    @classmethod
+    def validate_youtube_url(cls, v: str) -> str:
+        if not _YOUTUBE_URL_PATTERN.search(v):
+            raise ValueError("Invalid YouTube URL")
+        return v
 
 
 # ── Responses ────────────────────────────────────────────────────────
@@ -59,3 +79,17 @@ class HealthResponse(BaseModel):
     model_loaded: bool
     model_name: str
     gpu_available: bool
+
+
+# ── Quiz / Review ────────────────────────────────────────────────────
+
+
+class QuizRequest(BaseModel):
+    end_ts: float = Field(..., ge=0, le=21600, description="Timestamp up to which to quiz")
+    count: int = Field(default=3, ge=1, le=10, description="Number of questions")
+
+
+class AttemptRequest(BaseModel):
+    selected_answer: str = Field(
+        ..., max_length=1, pattern=r"^[A-D]$", description="Selected option A-D"
+    )

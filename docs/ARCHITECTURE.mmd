@@ -1,0 +1,105 @@
+%% EduVidQA — Target Architecture (multi-tenant, $0/mo MVP)
+%% Render with: https://mermaid.live  or  VS Code Mermaid preview
+%% Companion: ROADMAP.md
+
+flowchart TB
+    %% ============ CLIENT ============
+    subgraph CLIENT["🌐 Browser (any device)"]
+        UI["React + Vite + Tailwind SPA<br/>Routes: / · /login · /library<br/>/watch/:id · /review · /settings"]
+    end
+
+    %% ============ EDGE / CDN ============
+    subgraph VERCEL["▲ Vercel (Frontend host · free)"]
+        STATIC["Static SPA bundle<br/>+ CDN edge cache"]
+    end
+
+    %% ============ AUTH + DB + STORAGE ============
+    subgraph SUPABASE["🟩 Supabase (free tier)"]
+        AUTH["Auth<br/>Google OAuth + magic link<br/>JWT issuer"]
+        subgraph PG["Postgres + extensions"]
+            GLOBAL["Global tables (shared, write-once)<br/>• videos (video_id PK, status, pipeline_version)<br/>• video_chunks (pgvector 1024-dim, HNSW)<br/>• checkpoints + questions"]
+            USER["Per-user tables (RLS by user_id)<br/>• user_videos (library, last_watched_sec)<br/>• quiz_attempts<br/>• review_queue"]
+            QUEUE["pgmq queue<br/>• ingest_jobs<br/>• quiz_jobs"]
+        end
+        STORAGE["Storage bucket: videos/<br/>keyframes/&lt;video_id&gt;/*.jpg<br/>(CDN, signed URLs)"]
+        REALTIME["Realtime channel<br/>videos.status changes"]
+    end
+
+    %% ============ API + WORKER ============
+    subgraph CONTAINER["🐳 HF Space (Docker) or Fly.io · free"]
+        API["FastAPI · stateless<br/>POST /videos · GET /videos/:id<br/>POST /ask · POST /quiz<br/>POST /attempts · GET /review<br/>JWT verify · rate limit · CORS"]
+        WORKER["Background worker(s)<br/>consumes pgmq jobs<br/>• ingest pipeline<br/>• quiz generation"]
+        TMPDISK[("/tmp ephemeral<br/>video.mp4 lives here<br/>~minutes, then deleted")]
+    end
+
+    %% ============ EXTERNAL SERVICES ============
+    subgraph EXT["External APIs"]
+        YT["YouTube<br/>(yt-dlp + captions)"]
+        GROQ["Groq<br/>Llama-4 Scout VLM<br/>+ Llama 3.3 70B judge"]
+        GEMINI["Gemini<br/>2.0 Flash fallback<br/>+ digest gen"]
+        JINA["Jina CLIP v2<br/>(local model, embeddings)"]
+    end
+
+    %% ============ OBSERVABILITY ============
+    subgraph OBS["Observability"]
+        SENTRY["Sentry<br/>errors (FE + BE)"]
+        LOGS["Structured logs<br/>+ cost / latency metrics"]
+    end
+
+    %% ============ FLOWS ============
+    UI -->|HTTPS| STATIC
+    STATIC -->|JWT cookie| AUTH
+    UI -->|"REST + Bearer JWT"| API
+    UI -->|"WebSocket subscribe"| REALTIME
+
+    API -->|verify JWT| AUTH
+    API -->|"SELECT pgvector<br/>(answer path)"| GLOBAL
+    API -->|"SELECT/INSERT (per-user)"| USER
+    API -->|"INSERT ON CONFLICT<br/>DO NOTHING<br/>(dedup lock)"| GLOBAL
+    API -->|"enqueue job"| QUEUE
+    API -->|"fast LLM call<br/>(answer)"| GROQ
+    API -.->|fallback| GEMINI
+    API -->|signed URL fetch| STORAGE
+
+    QUEUE -->|"poll"| WORKER
+    WORKER -->|download .mp4| YT
+    WORKER --> TMPDISK
+    WORKER -->|extract keyframes<br/>chunk transcript| TMPDISK
+    WORKER -->|upload keyframes| STORAGE
+    WORKER -->|embed chunks| JINA
+    WORKER -->|"INSERT video_chunks"| GLOBAL
+    WORKER -->|"gen checkpoint quizzes"| GROQ
+    WORKER -->|"UPDATE status='ready'"| GLOBAL
+    GLOBAL -.->|trigger| REALTIME
+
+    API --> LOGS
+    WORKER --> LOGS
+    UI --> SENTRY
+    API --> SENTRY
+
+    %% ============ KEY INVARIANTS ============
+    classDef invariant fill:#fff7d6,stroke:#b8860b,stroke-width:1px,color:#000
+    INV1["🔑 One video → processed once globally<br/>dedup via UNIQUE (video_id, pipeline_version)"]:::invariant
+    INV2["🔑 Quiz cache key is global, not per-user<br/>(video_id, ts_bucket_30s, prompt_version)"]:::invariant
+    INV3["🔑 No long work in HTTP handlers<br/>everything heavy → pgmq → worker"]:::invariant
+    INV4["🔑 user_id is partition key<br/>on every user-owned row<br/>(future-shardable)"]:::invariant
+
+    GLOBAL -.- INV1
+    GROQ -.- INV2
+    QUEUE -.- INV3
+    USER -.- INV4
+
+    %% ============ STYLES ============
+    classDef client fill:#e1f5ff,stroke:#0369a1,color:#000
+    classDef vercel fill:#000,stroke:#fff,color:#fff
+    classDef supabase fill:#3ecf8e,stroke:#1f7a4d,color:#000
+    classDef container fill:#fde68a,stroke:#b45309,color:#000
+    classDef ext fill:#f3e8ff,stroke:#6b21a8,color:#000
+    classDef obs fill:#fee2e2,stroke:#991b1b,color:#000
+
+    class UI client
+    class STATIC vercel
+    class AUTH,GLOBAL,USER,QUEUE,STORAGE,REALTIME supabase
+    class API,WORKER,TMPDISK container
+    class YT,GROQ,GEMINI,JINA ext
+    class SENTRY,LOGS obs

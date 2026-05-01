@@ -30,7 +30,7 @@ export default function AnswerDisplay({ data }: Props) {
       )}
 
       <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 pt-2 border-t border-dark-border">
-        <span>⚡ Generated in {data.generation_time.toFixed(1)}s</span>
+        <span>⚡ Generated in {data.generation_time_seconds.toFixed(1)}s</span>
         <span>🤖 {data.model_name}</span>
       </div>
     </motion.div>

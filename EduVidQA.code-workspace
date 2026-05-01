@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "../EduVidQA"
+		},
+		{
+			"path": "../AutoTA"
+		},
+		{
+			"path": "."
+		}
+	],
+	"settings": {}
+}

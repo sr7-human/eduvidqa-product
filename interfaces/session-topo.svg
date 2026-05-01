@@ -1,0 +1,179 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 520" font-family="system-ui, -apple-system, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="116%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.12"/>
+    </filter>
+    <linearGradient id="gP1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#dc2626"/><stop offset="100%" stop-color="#b91c1c"/>
+    </linearGradient>
+    <linearGradient id="gDB" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <linearGradient id="gMig" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7c3aed"/><stop offset="100%" stop-color="#6d28d9"/>
+    </linearGradient>
+    <linearGradient id="gAuth" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#059669"/><stop offset="100%" stop-color="#047857"/>
+    </linearGradient>
+    <linearGradient id="gFE" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0891b2"/><stop offset="100%" stop-color="#0e7490"/>
+    </linearGradient>
+    <linearGradient id="gQuiz" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d97706"/><stop offset="100%" stop-color="#b45309"/>
+    </linearGradient>
+    <linearGradient id="gDeploy" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4f46e5"/><stop offset="100%" stop-color="#4338ca"/>
+    </linearGradient>
+    <linearGradient id="gPolish" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#be185d"/><stop offset="100%" stop-color="#9d174d"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1100" height="520" rx="12" fill="#f8fafc"/>
+  <text x="550" y="36" text-anchor="middle" font-size="18" font-weight="700" fill="#1e293b">EduVidQA — Session Topological Order</text>
+  <text x="550" y="56" text-anchor="middle" font-size="12" fill="#94a3b8">15 sessions across 4 phases · arrows show dependencies</text>
+
+  <!-- ═══ NODES ═══ -->
+  <!-- Column 1: x=60 -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="120" width="100" height="54" rx="10" fill="url(#gP1)"/>
+    <text x="90" y="143" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">F</text>
+    <text x="90" y="162" text-anchor="middle" font-size="8.5" fill="#fecaca">Security+Cleanup</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="40" y="220" width="100" height="54" rx="10" fill="url(#gDB)"/>
+    <text x="90" y="243" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">G</text>
+    <text x="90" y="262" text-anchor="middle" font-size="8.5" fill="#bfdbfe">Supabase Schema</text>
+  </g>
+
+  <!-- Column 2: x=220 -->
+  <g filter="url(#shadow)">
+    <rect x="200" y="120" width="100" height="54" rx="10" fill="url(#gMig)"/>
+    <text x="250" y="143" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">H1</text>
+    <text x="250" y="162" text-anchor="middle" font-size="8.5" fill="#ddd6fe">Rewrite rag.py</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="200" y="320" width="100" height="54" rx="10" fill="url(#gP1)"/>
+    <text x="250" y="343" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">J</text>
+    <text x="250" y="362" text-anchor="middle" font-size="8.5" fill="#fecaca">Contracts+Deploy</text>
+  </g>
+
+  <!-- Column 3: x=380 -->
+  <g filter="url(#shadow)">
+    <rect x="360" y="120" width="100" height="54" rx="10" fill="url(#gMig)"/>
+    <text x="410" y="143" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">H2</text>
+    <text x="410" y="162" text-anchor="middle" font-size="8.5" fill="#ddd6fe">Migrate Videos</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="360" y="420" width="100" height="54" rx="10" fill="url(#gQuiz)"/>
+    <text x="410" y="443" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">M1</text>
+    <text x="410" y="462" text-anchor="middle" font-size="8.5" fill="#fef3c7">Quiz Pipeline</text>
+  </g>
+
+  <!-- Column 4: x=540 -->
+  <g filter="url(#shadow)">
+    <rect x="520" y="120" width="100" height="54" rx="10" fill="url(#gAuth)"/>
+    <text x="570" y="143" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">I</text>
+    <text x="570" y="162" text-anchor="middle" font-size="8.5" fill="#a7f3d0">Auth+Worker+Rate</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="520" y="420" width="100" height="54" rx="10" fill="url(#gQuiz)"/>
+    <text x="570" y="443" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">M2</text>
+    <text x="570" y="462" text-anchor="middle" font-size="8.5" fill="#fef3c7">Quiz Endpoints</text>
+  </g>
+
+  <!-- Column 5: x=700 -->
+  <g filter="url(#shadow)">
+    <rect x="680" y="120" width="100" height="54" rx="10" fill="url(#gFE)"/>
+    <text x="730" y="143" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">K1</text>
+    <text x="730" y="162" text-anchor="middle" font-size="8.5" fill="#cffafe">Router+Auth UI</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="680" y="320" width="100" height="54" rx="10" fill="url(#gDeploy)"/>
+    <text x="730" y="343" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">L</text>
+    <text x="730" y="362" text-anchor="middle" font-size="8.5" fill="#c7d2fe">CI/CD + Deploy</text>
+  </g>
+
+  <!-- Column 6: x=860 -->
+  <g filter="url(#shadow)">
+    <rect x="840" y="120" width="100" height="54" rx="10" fill="url(#gFE)"/>
+    <text x="890" y="143" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">K2</text>
+    <text x="890" y="162" text-anchor="middle" font-size="8.5" fill="#cffafe">Library+Watch</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="840" y="320" width="100" height="54" rx="10" fill="url(#gQuiz)"/>
+    <text x="890" y="343" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">N1</text>
+    <text x="890" y="362" text-anchor="middle" font-size="8.5" fill="#fef3c7">Quiz UI</text>
+  </g>
+
+  <!-- Column 7: x=1000 -->
+  <g filter="url(#shadow)">
+    <rect x="980" y="220" width="100" height="54" rx="10" fill="url(#gQuiz)"/>
+    <text x="1030" y="243" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">N2</text>
+    <text x="1030" y="262" text-anchor="middle" font-size="8.5" fill="#fef3c7">Review+Toast</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="980" y="420" width="100" height="54" rx="10" fill="url(#gPolish)"/>
+    <text x="1030" y="443" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">O</text>
+    <text x="1030" y="462" text-anchor="middle" font-size="8.5" fill="#fbcfe8">Legal+README</text>
+  </g>
+
+  <!-- ═══ EDGES ═══ -->
+  <!-- F → H1 -->
+  <line x1="140" y1="147" x2="196" y2="147" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <!-- G → H1 -->
+  <path d="M 140 240 Q 170 240 170 200 Q 170 147 196 147" fill="none" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <!-- H1 → H2 -->
+  <line x1="300" y1="147" x2="356" y2="147" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <!-- H2 → I -->
+  <line x1="460" y1="147" x2="516" y2="147" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <!-- G → I -->
+  <path d="M 140 247 L 500 247 Q 540 247 540 200 Q 540 147 516 147" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="6,3" marker-end="url(#arrow)"/>
+  <!-- I → K1 -->
+  <line x1="620" y1="147" x2="676" y2="147" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <!-- F → J -->
+  <path d="M 90 174 L 90 340 Q 90 347 100 347 L 196 347" fill="none" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <!-- J → K1 -->
+  <path d="M 350 347 L 660 347 Q 680 347 700 300 Q 710 250 720 178" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="6,3" marker-end="url(#arrow)"/>
+  <!-- K1 → K2 -->
+  <line x1="780" y1="147" x2="836" y2="147" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <!-- K2 → N1 -->
+  <path d="M 890 174 L 890 316" fill="none" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <!-- K2 → L -->
+  <path d="M 840 174 Q 800 200 770 220 Q 745 240 740 316" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="6,3" marker-end="url(#arrow)"/>
+  <!-- J → L -->
+  <path d="M 350 340 Q 500 320 660 340 Q 710 345 720 340" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="6,3" marker-end="url(#arrow)"/>
+
+  <!-- H1 → M1 -->
+  <path d="M 260 174 Q 260 300 350 400 Q 370 425 356 445" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="6,3" marker-end="url(#arrow)"/>
+  <!-- I → M1 -->
+  <path d="M 560 174 Q 550 300 470 400 Q 450 430 460 445" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="6,3" marker-end="url(#arrow)"/>
+  <!-- M1 → M2 -->
+  <line x1="460" y1="447" x2="516" y2="447" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <!-- M2 → N1 -->
+  <path d="M 620 440 Q 730 410 830 370 Q 860 355 860 348" fill="none" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <!-- N1 → N2 -->
+  <path d="M 940 340 Q 960 320 980 290 Q 1000 265 1000 258" fill="none" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <!-- L → O -->
+  <path d="M 750 374 Q 780 420 850 445 Q 920 460 976 450" fill="none" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <!-- N2 → O -->
+  <path d="M 1030 274 L 1030 416" fill="none" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- ═══ LEGEND ═══ -->
+  <g transform="translate(40, 480)">
+    <rect x="0" y="0" width="12" height="12" rx="3" fill="url(#gP1)"/><text x="16" y="11" font-size="10" fill="#475569">Security</text>
+    <rect x="90" y="0" width="12" height="12" rx="3" fill="url(#gDB)"/><text x="106" y="11" font-size="10" fill="#475569">Supabase</text>
+    <rect x="180" y="0" width="12" height="12" rx="3" fill="url(#gMig)"/><text x="196" y="11" font-size="10" fill="#475569">Migration</text>
+    <rect x="270" y="0" width="12" height="12" rx="3" fill="url(#gAuth)"/><text x="286" y="11" font-size="10" fill="#475569">Auth</text>
+    <rect x="335" y="0" width="12" height="12" rx="3" fill="url(#gFE)"/><text x="351" y="11" font-size="10" fill="#475569">Frontend</text>
+    <rect x="420" y="0" width="12" height="12" rx="3" fill="url(#gQuiz)"/><text x="436" y="11" font-size="10" fill="#475569">Quiz</text>
+    <rect x="485" y="0" width="12" height="12" rx="3" fill="url(#gDeploy)"/><text x="501" y="11" font-size="10" fill="#475569">Deploy</text>
+    <rect x="560" y="0" width="12" height="12" rx="3" fill="url(#gPolish)"/><text x="576" y="11" font-size="10" fill="#475569">Polish</text>
+    <line x1="650" y1="6" x2="690" y2="6" stroke="#64748b" stroke-width="1.8"/><text x="696" y="11" font-size="10" fill="#475569">Required</text>
+    <line x1="760" y1="6" x2="800" y2="6" stroke="#64748b" stroke-width="1.4" stroke-dasharray="6,3"/><text x="806" y="11" font-size="10" fill="#475569">Also depends</text>
+  </g>
+</svg>

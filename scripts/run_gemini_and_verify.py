@@ -12,8 +12,8 @@ def load_chunks(vid): return json.loads((Path(DATA_DIR)/vid/"transcript"/"chunks
 def load_manifest(vid): return json.loads((Path(DATA_DIR)/vid/"keyframes"/"manifest.json").read_text())
 def load_digest(vid): return (Path(DATA_DIR)/vid/"digest.txt").read_text()
 
-from pipeline.embeddings_v2 import EmbeddingService
-from pipeline.rag_v2 import LectureIndex
+from pipeline.embeddings import EmbeddingService
+from pipeline.rag import LectureIndex
 
 # ── Gemini indexing ──────────────────────────────────────────────
 print("=" * 60)

@@ -1,4 +1,16 @@
-import type { AskRequest, AskResponse, HealthResponse, ProcessRequest, ProcessResponse } from '../types';
+import type {
+  AskRequest,
+  AskResponse,
+  AttemptResponse,
+  Checkpoint,
+  HealthResponse,
+  ProcessRequest,
+  ProcessResponse,
+  QuizQuestion,
+  ReviewQuestion,
+} from '../types';
+import { getGeminiKey } from '../components/SettingsModal';
+import { supabase } from '../lib/supabase';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 const USE_MOCK = import.meta.env.VITE_MOCK_API === 'true';
@@ -38,13 +50,30 @@ Key points:
     upt: 4.0,
   },
   model_name: 'llama-4-scout-17b',
-  generation_time: 2.3,
+  generation_time_seconds: 2.3,
 };
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const geminiKey = getGeminiKey();
+
+  // Get Supabase JWT (if user is signed in)
+  let authToken = '';
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    authToken = session?.access_token ?? '';
+  } catch {
+    /* no auth available */
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(geminiKey ? { 'X-Gemini-Key': geminiKey } : {}),
+    ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
+    ...(options?.headers as Record<string, string> ?? {}),
+  };
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers,
   });
   if (!res.ok) {
     const body = await res.text();
@@ -59,20 +88,54 @@ async function mockAsk(req: AskRequest): Promise<AskResponse> {
   return { ...MOCK_RESPONSE };
 }
 
+export class VideoProcessingError extends Error {
+  constructor(public videoId: string | null, message: string) {
+    super(message);
+    this.name = 'VideoProcessingError';
+  }
+}
+
 export async function askQuestion(req: AskRequest): Promise<AskResponse> {
   if (USE_MOCK) return mockAsk(req);
-  return await request<AskResponse>('/api/ask', {
+
+  const geminiKey = getGeminiKey();
+  let authToken = '';
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    authToken = session?.access_token ?? '';
+  } catch {
+    /* no auth available */
+  }
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(geminiKey ? { 'X-Gemini-Key': geminiKey } : {}),
+    ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
+  };
+  const res = await fetch(`${API_URL}/api/ask`, {
     method: 'POST',
+    headers,
     body: JSON.stringify(req),
   });
+  if (res.status === 202) {
+    const body = await res.json().catch(() => ({}));
+    throw new VideoProcessingError(
+      extractVideoId(req.youtube_url),
+      body?.detail ?? 'Video is being processed. Try again shortly.',
+    );
+  }
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`API ${res.status}: ${body}`);
+  }
+  return res.json() as Promise<AskResponse>;
 }
 
 export async function checkHealth(): Promise<HealthResponse> {
-  if (USE_MOCK) return { status: 'ok', model_loaded: true, gpu_available: false };
+  if (USE_MOCK) return { status: 'ok', model_loaded: true, model_name: 'mock', gpu_available: false };
   try {
     return await request<HealthResponse>('/api/health');
   } catch {
-    return { status: 'error', model_loaded: false, gpu_available: false };
+    return { status: 'error', model_loaded: false, model_name: '', gpu_available: false };
   }
 }
 
@@ -81,6 +144,78 @@ export async function processVideo(req: ProcessRequest): Promise<ProcessResponse
     method: 'POST',
     body: JSON.stringify(req),
   });
+}
+
+export interface UserVideo {
+  video_id: string;
+  status: string;
+  title?: string | null;
+  [key: string]: unknown;
+}
+
+export async function getMyVideos(): Promise<UserVideo[]> {
+  return request<UserVideo[]>('/api/users/me/videos');
+}
+
+export async function getVideoStatus(
+  videoId: string,
+): Promise<{ video_id: string; status: string }> {
+  return request<{ video_id: string; status: string }>(
+    `/api/videos/${videoId}/status`,
+  );
+}
+
+export async function getCheckpoints(videoId: string): Promise<Checkpoint[]> {
+  return request<Checkpoint[]>(`/api/videos/${videoId}/checkpoints`);
+}
+
+export async function getQuiz(
+  videoId: string,
+  endTs: number,
+  count = 3,
+): Promise<{ questions: QuizQuestion[] }> {
+  return request<{ questions: QuizQuestion[] }>(
+    `/api/videos/${videoId}/quiz`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ end_ts: endTs, count }),
+    },
+  );
+}
+
+export async function submitAttempt(
+  questionId: string,
+  selectedAnswer: string,
+): Promise<AttemptResponse> {
+  return request<AttemptResponse>(
+    `/api/quizzes/${questionId}/attempt`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ selected_answer: selectedAnswer }),
+    },
+  );
+}
+
+export async function getReviewQueue(): Promise<{
+  due_count: number;
+  questions: ReviewQuestion[];
+}> {
+  return request<{ due_count: number; questions: ReviewQuestion[] }>(
+    '/api/users/me/review',
+  );
+}
+
+export async function submitReviewAttempt(
+  questionId: string,
+  selectedAnswer: string,
+): Promise<{ is_correct: boolean; correct_answer: string; explanation: string }> {
+  return request<{ is_correct: boolean; correct_answer: string; explanation: string }>(
+    `/api/review/${questionId}/attempt`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ selected_answer: selectedAnswer }),
+    },
+  );
 }
 
 export function extractVideoId(url: string): string | null {

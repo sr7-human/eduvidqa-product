@@ -199,9 +199,9 @@ export default function ChatInterface({
                     {msg.sources && (
                       <SourceLinks sources={msg.sources} onSeek={onSeek} />
                     )}
-                    {msg.generation_time && (
+                    {msg.generation_time_seconds && (
                       <p className="text-xs text-gray-600 mt-2">
-                        ⚡ {msg.generation_time.toFixed(1)}s · {msg.model_name}
+                        ⚡ {msg.generation_time_seconds.toFixed(1)}s · {msg.model_name}
                       </p>
                     )}
                   </>

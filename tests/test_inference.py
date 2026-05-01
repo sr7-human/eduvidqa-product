@@ -155,16 +155,16 @@ class TestParseScores:
 
         raw = '{"clarity": 4, "ect": 3, "upt": 5}'
         scores = _parse_scores(raw)
-        assert scores.clarity == 4.0
-        assert scores.ect == 3.0
-        assert scores.upt == 5.0
+        assert scores["clarity"] == 4.0
+        assert scores["ect"] == 3.0
+        assert scores["upt"] == 5.0
 
     def test_parse_json_in_text(self):
         from pipeline.evaluate import _parse_scores
 
         raw = 'Here are the scores: {"clarity": 3.5, "ect": 2, "upt": 4} Done.'
         scores = _parse_scores(raw)
-        assert scores.clarity == 3.5
+        assert scores["clarity"] == 3.5
 
     def test_parse_invalid_raises(self):
         from pipeline.evaluate import _parse_scores

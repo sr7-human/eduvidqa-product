@@ -1,159 +1,92 @@
-"""Quality evaluation: score answers on Clarity / ECT / UPT using Likert scales."""
+"""Quality scoring v2: score answers on Clarity / ECT / UPT.
+
+Uses Groq Llama 3.3 70B (text-only, fast) as the judge model.
+Mirrors the EduVidQA paper's evaluation methodology.
+"""
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import re
-
-from pipeline.models import QualityScores
-from pipeline.prompts import EVAL_PROMPT_TEMPLATE
 
 logger = logging.getLogger(__name__)
 
+_SCORING_PROMPT = """\
+Rate the following answer to a student's question on three scales (1-5):
 
-def _parse_scores(text: str) -> QualityScores:
-    """Extract QualityScores from LLM JSON output, with fallback regex parsing."""
-    # Try direct JSON parse first
+1. CLARITY (1-5): Is the answer clear, well-organized, and free of unnecessary jargon?
+   1=jargon-filled, incoherent | 5=crystal clear, beginner-friendly
+
+2. ECT (1-5): Does the answer Encourage Critical Thinking?
+   1=purely factual | 5=challenges assumptions, invites deeper exploration
+
+3. UPT (1-5): Does the answer Use Pedagogical Techniques?
+   1=no examples | 5=rich examples, analogies, scaffolding, step-by-step
+
+Question: {question}
+Answer: {answer}
+
+Respond ONLY with JSON: {{"clarity": X, "ect": X, "upt": X}}\
+"""
+
+
+def _parse_scores(text: str) -> dict:
+    """Extract scores from LLM output. Tries JSON first, then regex."""
+    # Direct JSON parse
     try:
-        # Find the first JSON object in the response
         match = re.search(r"\{[^}]+\}", text)
         if match:
             data = json.loads(match.group())
-            return QualityScores(
-                clarity=float(data["clarity"]),
-                ect=float(data["ect"]),
-                upt=float(data["upt"]),
-            )
+            return {
+                "clarity": float(data["clarity"]),
+                "ect": float(data["ect"]),
+                "upt": float(data["upt"]),
+            }
     except (json.JSONDecodeError, KeyError, ValueError):
         pass
 
-    # Fallback: look for "clarity": N patterns
-    clarity = _extract_number(text, "clarity")
-    ect = _extract_number(text, "ect")
-    upt = _extract_number(text, "upt")
+    # Regex fallback
+    scores = {}
+    for key in ("clarity", "ect", "upt"):
+        m = re.search(rf'"{key}"\s*:\s*(\d+(?:\.\d+)?)', text, re.IGNORECASE)
+        if m:
+            scores[key] = float(m.group(1))
 
-    if clarity and ect and upt:
-        return QualityScores(clarity=clarity, ect=ect, upt=upt)
+    if len(scores) == 3:
+        return scores
 
-    raise ValueError(f"Could not parse quality scores from LLM output: {text!r}")
-
-
-def _extract_number(text: str, key: str) -> float | None:
-    match = re.search(rf'"{key}"\s*:\s*(\d+(?:\.\d+)?)', text, re.IGNORECASE)
-    return float(match.group(1)) if match else None
+    raise ValueError(f"Could not parse quality scores from: {text!r}")
 
 
-class QualityEvaluator:
-    """Score answers on Clarity/ECT/UPT using the EduVidQA Likert scales."""
+def score_answer(
+    question: str,
+    answer: str,
+    groq_api_key: str | None = None,
+) -> dict:
+    """Score an answer on Clarity/ECT/UPT using Groq Llama 3.3 70B.
 
-    def __init__(self, method: str = "hf_inference") -> None:
-        """
-        Args:
-            method: One of
-                - ``"hf_inference"``: HuggingFace free Inference API (Qwen2.5-72B-Instruct)
-                - ``"local"``: Use the local Qwen2.5-VL-7B (less accurate, no API needed)
-                - ``"groq"``: Groq free API (Llama 3.3 70B, fast)
-        """
-        if method not in ("hf_inference", "local", "groq"):
-            raise ValueError(f"Unknown evaluation method: {method}")
-        self.method = method
-        self._client = None
+    Returns
+    -------
+    dict : ``{"clarity": float, "ect": float, "upt": float}``
+        Each value 1-5.
+    """
+    api_key = groq_api_key or os.getenv("GROQ_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY not set — cannot score answer")
 
-    # ------------------------------------------------------------------ #
-    # Public API
-    # ------------------------------------------------------------------ #
+    from groq import Groq
 
-    def score(self, question: str, answer: str) -> QualityScores:
-        """Score an answer on Clarity/ECT/UPT. Returns QualityScores."""
-        prompt = EVAL_PROMPT_TEMPLATE.format(question=question, answer=answer)
+    client = Groq(api_key=api_key)
+    prompt = _SCORING_PROMPT.format(question=question, answer=answer)
 
-        if self.method == "hf_inference":
-            raw = self._call_hf(prompt)
-        elif self.method == "groq":
-            raw = self._call_groq(prompt)
-        elif self.method == "local":
-            raw = self._call_local(prompt)
-        else:
-            raise ValueError(self.method)
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=100,
+        temperature=0.1,
+    )
 
-        return _parse_scores(raw)
-
-    # ------------------------------------------------------------------ #
-    # Backend implementations
-    # ------------------------------------------------------------------ #
-
-    def _call_hf(self, prompt: str) -> str:
-        """Use HuggingFace free Inference API with Qwen2.5-72B-Instruct."""
-        import os
-
-        from huggingface_hub import InferenceClient
-
-        token = os.environ.get("HF_TOKEN") or None
-        client = InferenceClient(
-            api_key=token,
-        )
-        response = client.chat.completions.create(
-            model="Qwen/Qwen2.5-72B-Instruct",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=100,
-            temperature=0.1,
-        )
-        return response.choices[0].message.content
-
-    def _call_groq(self, prompt: str) -> str:
-        """Use Groq free API with Llama 3.3 70B."""
-        import os
-
-        import httpx
-
-        api_key = os.environ.get("GROQ_API_KEY")
-        if not api_key:
-            raise RuntimeError("GROQ_API_KEY environment variable is not set")
-        resp = httpx.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}"},
-            json={
-                "model": "llama-3.3-70b-versatile",
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 100,
-                "temperature": 0.1,
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"]
-
-    def _call_local(self, prompt: str) -> str:
-        """Use the locally-loaded Qwen2.5-VL-7B for evaluation (less accurate)."""
-        from pipeline.inference import QwenInference
-
-        if self._client is None:
-            self._client = QwenInference(quantize_4bit=True)
-
-        from pipeline.models import RetrievedContext, RetrievalResult, VideoSegment
-
-        # Wrap the eval prompt as a single-segment retrieval result
-        dummy_result = RetrievalResult(
-            query=prompt,
-            video_id="eval",
-            contexts=[
-                RetrievedContext(
-                    segment=VideoSegment(
-                        video_id="eval",
-                        segment_index=0,
-                        start_time=0,
-                        end_time=0,
-                        transcript_text="",
-                        frame_paths=[],
-                    ),
-                    relevance_score=1.0,
-                    rank=1,
-                )
-            ],
-            total_segments=1,
-        )
-        result = self._client.generate_answer(
-            dummy_result, max_new_tokens=100, temperature=0.1
-        )
-        return result.answer
+    raw = response.choices[0].message.content or ""
+    return _parse_scores(raw)

@@ -1,8 +1,10 @@
 .env
+.DS_Store
 .venv/
 __pycache__/
 *.pyc
 data/
+media/
 .gradio/
 frontend/node_modules/
 frontend/dist/
