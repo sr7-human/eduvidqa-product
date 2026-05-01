@@ -392,7 +392,29 @@ def _download_video(video_id: str, data_dir: str) -> str:
 
     url = f"https://www.youtube.com/watch?v={video_id}"
 
-    # --- Attempt 1: yt-dlp with browser impersonation (bypasses cloud IP blocks) ---
+    # --- Attempt 1: yt-dlp with Chrome impersonation (bypasses cloud IP blocks) ---
+    try:
+        import yt_dlp
+        from yt_dlp.networking.impersonate import ImpersonateTarget
+
+        ydl_opts = {
+            "format": "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360]/best",
+            "outtmpl": str(mp4_path),
+            "no_playlist": True,
+            "merge_output_format": "mp4",
+            "quiet": True,
+            "impersonate": ImpersonateTarget("chrome"),
+            "extractor_args": {"youtube": {"player_client": ["web", "default"]}},
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+
+        if mp4_path.exists():
+            return str(mp4_path)
+    except Exception as exc:
+        logger.warning("yt-dlp impersonate failed (%s), retrying without impersonation …", exc)
+
+    # --- Attempt 1b: yt-dlp without impersonation (fallback) ---
     try:
         import yt_dlp
 
@@ -402,11 +424,6 @@ def _download_video(video_id: str, data_dir: str) -> str:
             "no_playlist": True,
             "merge_output_format": "mp4",
             "quiet": True,
-            # Impersonate a real browser to bypass YouTube's bot detection on cloud IPs
-            "impersonate": "chrome",
-            "http_headers": {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            },
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
@@ -414,7 +431,7 @@ def _download_video(video_id: str, data_dir: str) -> str:
         if mp4_path.exists():
             return str(mp4_path)
     except Exception as exc:
-        logger.warning("yt-dlp download failed (%s), trying pytubefix …", exc)
+        logger.warning("yt-dlp (no impersonate) failed (%s), trying pytubefix …", exc)
 
     # --- Attempt 2: pytubefix ---
     try:

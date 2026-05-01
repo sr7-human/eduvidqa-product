@@ -12,6 +12,7 @@ eval_type_backport  # Python 3.9 compat for X|None syntax in Pydantic
 # ── Session A: Ingestion ────────────────────────────────────────
 youtube-transcript-api
 yt-dlp==2026.3.17
+curl_cffi>=0.10,<0.15
 ffmpeg-python
 Pillow==12.1.1
 

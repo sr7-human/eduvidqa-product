@@ -5,7 +5,12 @@ RUN groupadd -r app && useradd -r -g app -d /app -s /sbin/nologin app
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg git \
+    ffmpeg git curl unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js 20 — used by yt-dlp as JS runtime for YouTube extraction
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
