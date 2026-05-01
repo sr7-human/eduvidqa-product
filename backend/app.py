@@ -273,19 +273,31 @@ def _ingest_video_bg(video_id: str, youtube_url: str, user_id: str) -> None:
         data_dir = settings.DATA_DIR
         processed_dir = os.path.join(data_dir, "processed")
 
-        # Step 1: Download video
-        video_path = _download_video(video_id, data_dir)
+        # Step 1: Download video (non-fatal — cloud IPs often blocked by YouTube)
+        video_path = None
+        try:
+            video_path = _download_video(video_id, data_dir)
+        except Exception as exc:
+            logger.warning(
+                "Video download failed for %s (will proceed transcript-only): %s",
+                video_id, exc,
+            )
 
-        # Step 2: Extract keyframes
+        # Step 2: Extract keyframes (non-fatal — requires .mp4)
         from pipeline.keyframes import extract_keyframes
 
-        kf_manifest = extract_keyframes(
-            video_path=video_path,
-            video_id=video_id,
-            output_dir=processed_dir,
-        )
+        kf_manifest: list[dict] = []
+        if video_path:
+            try:
+                kf_manifest = extract_keyframes(
+                    video_path=video_path,
+                    video_id=video_id,
+                    output_dir=processed_dir,
+                )
+            except Exception as exc:
+                logger.warning("Keyframe extraction failed (non-fatal): %s", exc)
 
-        # Step 3: Chunk transcript
+        # Step 3: Chunk transcript (always runs — uses youtube-transcript-api)
         from pipeline.chunking import chunk_transcript
 
         chunks = chunk_transcript(
@@ -380,7 +392,7 @@ def _download_video(video_id: str, data_dir: str) -> str:
 
     url = f"https://www.youtube.com/watch?v={video_id}"
 
-    # --- Attempt 1: yt-dlp ---
+    # --- Attempt 1: yt-dlp with browser impersonation (bypasses cloud IP blocks) ---
     try:
         import yt_dlp
 
@@ -390,6 +402,11 @@ def _download_video(video_id: str, data_dir: str) -> str:
             "no_playlist": True,
             "merge_output_format": "mp4",
             "quiet": True,
+            # Impersonate a real browser to bypass YouTube's bot detection on cloud IPs
+            "impersonate": "chrome",
+            "http_headers": {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            },
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
