@@ -175,17 +175,24 @@ class LectureIndex:
             if valid:
                 logger.info("Embedding %d keyframes for %s …", len(valid), video_id)
                 vecs = self._embed.embed_batch_images([k["file"] for k in valid])
+                # Upload each keyframe to Supabase Storage in parallel-friendly batches
+                # so the public URL (rather than a local file path) is what we persist.
+                # This makes keyframes accessible from any backend (local + HF Spaces).
+                from pipeline.storage import upload_keyframe_batch
+                public_urls = upload_keyframe_batch(video_id, valid)
                 import math
-                for kf, vec in zip(valid, vecs):
+                for kf, vec, public_url in zip(valid, vecs, public_urls):
                     if any((v is None) or math.isnan(float(v)) or math.isinf(float(v)) for v in vec):
                         logger.warning("Skipping keyframe %s: NaN/Inf in embedding", kf["frame_id"])
                         continue
+                    # Prefer the Supabase URL; fall back to local path if upload failed.
+                    storage_path = public_url or kf["file"]
                     kf_rows.append((
                         str(uuid.uuid4()),
                         video_id,
                         str(kf["frame_id"]),
                         float(kf["timestamp"]),
-                        kf["file"],
+                        storage_path,
                         _vec_literal(vec),
                     ))
 

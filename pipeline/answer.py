@@ -54,7 +54,23 @@ def _fmt_timestamp(seconds: float) -> str:
 
 
 def _read_image_b64(path: str) -> str | None:
-    """Read an image file and return base64 string, or None on failure."""
+    """Read an image (file path OR public URL) and return base64 string, or None on failure."""
+    if not path:
+        return None
+    # URL → fetch via HTTP
+    if path.startswith(("http://", "https://")):
+        try:
+            import urllib.request
+
+            with urllib.request.urlopen(path, timeout=8) as resp:
+                data = resp.read()
+            if not data:
+                return None
+            return base64.b64encode(data).decode("utf-8")
+        except Exception as exc:
+            logger.warning("Failed to fetch image URL %s: %s", path[:80], exc)
+            return None
+    # Local file path
     p = Path(path)
     if not p.is_file() or p.stat().st_size == 0:
         return None
