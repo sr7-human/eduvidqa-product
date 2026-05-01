@@ -8,6 +8,7 @@ import {
   processVideo,
   getVideoStatus,
   extractVideoId,
+  listMyKeys,
   type UserVideo,
 } from '../api/client';
 
@@ -19,6 +20,8 @@ export function Library() {
   const [dueCount, setDueCount] = useState(0);
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState('');
+  const [hasKey, setHasKey] = useState<boolean | null>(null); // null = unknown
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const PAGE_SIZE = 12;
   const navigate = useNavigate();
 
@@ -64,6 +67,21 @@ export function Library() {
       .catch(() => {
         /* no review data */
       });
+  }, []);
+
+  // Check whether user has any API key stored (BYOK)
+  useEffect(() => {
+    listMyKeys()
+      .then((r) => {
+        const has = r.keys.length > 0;
+        setHasKey(has);
+        // Show onboarding modal once per browser session if no keys
+        if (!has && !sessionStorage.getItem('byok-onboarding-seen')) {
+          setShowOnboarding(true);
+          sessionStorage.setItem('byok-onboarding-seen', '1');
+        }
+      })
+      .catch(() => setHasKey(null));
   }, []);
 
   // Poll videos that aren't fully ready yet (processing OR transcript_ready)
@@ -120,8 +138,82 @@ export function Library() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#0a0e1a]">
       <Navbar />
+
+      {/* Onboarding modal (shows once per session for users without keys) */}
+      {showOnboarding && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setShowOnboarding(false)}
+        >
+          <div
+            className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-5xl mb-3">👋</div>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+              Welcome to EduVidQA!
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed mb-4">
+              Before adding your first video, please add a free <strong>Google Gemini</strong>{' '}
+              or <strong>Groq</strong> API key in Settings. Your key is used to:
+            </p>
+            <ul className="text-sm text-gray-600 dark:text-gray-300 space-y-1.5 mb-5 ml-4 list-disc">
+              <li>Generate embeddings to search your videos</li>
+              <li>Answer your questions intelligently</li>
+              <li>Create personalised quizzes</li>
+            </ul>
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-5">
+              <p className="text-xs text-blue-800 dark:text-blue-300 leading-relaxed">
+                <strong>Free.</strong> Both Gemini and Groq have generous free tiers — your
+                key, your quota. We never share or store keys against other users.
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                onClick={() => {
+                  setShowOnboarding(false);
+                  navigate('/settings');
+                }}
+                className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium"
+              >
+                Add API Key
+              </button>
+              <button
+                onClick={() => setShowOnboarding(false)}
+                className="flex-1 px-4 py-2.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-sm"
+              >
+                Try the demo first
+              </button>
+            </div>
+            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-4 text-center">
+              You can still watch + ask questions on the demo video without a key.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-5xl mx-auto p-6">
         <h1 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">My Library</h1>
+
+        {/* Persistent banner if no key (always shown until they add one) */}
+        {hasKey === false && (
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-4 mb-6 flex items-start sm:items-center justify-between gap-3 flex-col sm:flex-row">
+            <div className="flex-1">
+              <h3 className="font-semibold text-amber-900 dark:text-amber-200 text-sm">
+                🔑 No API key yet
+              </h3>
+              <p className="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
+                Add a free Gemini or Groq key to process your own videos. The demo video works without one.
+              </p>
+            </div>
+            <Link
+              to="/settings"
+              className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm whitespace-nowrap font-medium"
+            >
+              Add Key
+            </Link>
+          </div>
+        )}
 
         {dueCount > 0 && (
           <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-4 mb-6 flex items-center justify-between">
