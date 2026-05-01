@@ -99,7 +99,7 @@ export function Library() {
     }
     setAdding(true);
     try {
-      const res = await processVideo({ youtube_url: urlInput }) as Record<string, unknown>;
+      const res = (await processVideo({ youtube_url: urlInput })) as unknown as Record<string, unknown>;
       toast.success(String(res.message ?? 'Video submitted'));
       setUrlInput('');
       // Reload library so any new videos (single or playlist) show up
