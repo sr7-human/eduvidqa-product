@@ -79,6 +79,30 @@ def extract_keyframes(
     duration_min = duration_s / 60.0 if duration_s > 0 else 1.0
     kf_per_min = len(kept) / duration_min
 
+    # For long videos (≥2 hours), use a much lower SSIM threshold so only
+    # truly distinct slides are kept — avoids thousands of near-duplicate frames.
+    if duration_s >= 7200 and threshold > 0.5:
+        logger.info(
+            "Long video (%.1f hrs): lowering SSIM threshold from %.2f to 0.50",
+            duration_s / 3600, threshold,
+        )
+        kf_dir = Path(output_dir) / video_id / "keyframes"
+        if kf_dir.exists():
+            shutil.rmtree(kf_dir)
+        kept, duration_s = _extract_pass(
+            video_path, video_id, output_dir,
+            threshold=0.50,
+            resize_for_ssim=True,
+        )
+        kept = _cap_per_chunk(kept, chunk_seconds=10, max_per_chunk=_MAX_KF_PER_CHUNK)
+        kf_dir = Path(output_dir) / video_id / "keyframes"
+        kept_files = {k["file"] for k in kept}
+        for jpg in kf_dir.glob("kf_*.jpg"):
+            if str(jpg) not in kept_files:
+                jpg.unlink()
+        duration_min = duration_s / 60.0 if duration_s > 0 else 1.0
+        kf_per_min = len(kept) / duration_min
+
     if adaptive and kf_per_min > _MAX_KF_PER_MIN:
         logger.info(
             "Adaptive mode: %.1f kf/min exceeds cap (%d). "
