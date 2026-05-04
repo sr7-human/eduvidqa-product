@@ -78,6 +78,30 @@ export interface Checkpoint {
   topic_label: string;
 }
 
+export interface Chapter {
+  id: string;
+  idx: number;
+  start_time: number;
+  end_time: number;
+  title: string;
+  source: 'youtube' | 'synthetic';
+}
+
+export type QuizType = 'pretest' | 'mid_recall' | 'end_recall' | 'remediation';
+
+export interface QuizScheduleEvent {
+  timestamp: number;
+  type: QuizType;
+  chapter_id: string;
+  chapter_idx: number;
+  chapter_title: string;
+}
+
+export interface QuizSchedule {
+  events: QuizScheduleEvent[];
+  blocking_mode: 'mandatory' | 'optional';
+}
+
 export interface QuizQuestion {
   id: string;
   question_text: string;
@@ -86,10 +110,19 @@ export interface QuizQuestion {
   bloom_level?: 'remember' | 'understand' | 'apply' | 'analyse' | 'evaluate';
 }
 
+export interface OptionExplanations {
+  A?: string;
+  B?: string;
+  C?: string;
+  D?: string;
+}
+
 export interface AttemptResponse {
   is_correct: boolean;
   correct_answer: string;
   explanation: string;
+  option_explanations?: OptionExplanations | null;
+  quiz_type?: QuizType;
   added_to_review: boolean;
 }
 

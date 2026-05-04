@@ -263,6 +263,95 @@ const TASKS = [
       "Record: screen recording of demo for professor"
     ],
     assignee: "Worker Session D"
+  },
+  {
+    id: 13, sprint: 4, status: "done",
+    title: "Chapter-Based Quiz System — Backend APIs",
+    desc: "Added 7 new backend endpoints and helpers for chapter-aware quiz scheduling, chapter quiz fetching, quiz blocking mode resolution, and user quiz preferences.",
+    details: [
+      "GET /api/videos/{id}/chapters — ordered chapters (YouTube or synthesized)",
+      "GET /api/videos/{id}/quiz-schedule — timeline events for pretest/mid/end quizzes",
+      "GET /api/videos/{id}/chapter-quiz — fetch questions by chapter + quiz_type",
+      "GET/PUT /api/users/me/quiz-pref — user quiz blocking preference (3-state)",
+      "_resolve_blocking_mode() — admin default + user override (option C from spec)",
+      "Updated /attempt endpoint — returns per-option explanations + quiz_type",
+      "GET /api/video-preview — lightweight yt-dlp metadata probe for pre-ingest preview"
+    ],
+    assignee: "Worker Session E"
+  },
+  {
+    id: 14, sprint: 4, status: "done",
+    title: "Chapter-Based Quiz System — DB Migration",
+    desc: "Created chapters table, extended questions table with chapter-aware columns, added quiz blocking mode to videos, and user_quiz_prefs table with RLS policies.",
+    details: [
+      "chapters table: id, video_id, idx, start_time, end_time, title, source (youtube/synthetic)",
+      "questions: +chapter_id, +quiz_type (pretest/mid_recall/end_recall/remediation), +order_idx, +bloom_level, +option_explanations (JSONB), +misconception_tags",
+      "videos: +quiz_blocking_mode (mandatory/optional)",
+      "user_quiz_prefs table: user_id, pref (use_video_default/always_pause/never_pause)",
+      "RLS: chapters read-only for authenticated, user_quiz_prefs owner-only",
+      "Migration applied to Supabase (xucwewnohhucheyqkdjs)"
+    ],
+    assignee: "Worker Session E"
+  },
+  {
+    id: 15, sprint: 4, status: "done",
+    title: "Chapter-Based Quiz System — Frontend Components",
+    desc: "Built ChapterQuizModal (370 LOC) with per-quiz-type theming, per-option explanations with distractor analysis, and accordion UX. Added frontend types, API client functions, and Settings quiz pref toggle.",
+    details: [
+      "ChapterQuizModal: pretest (amber), mid_recall (blue), end_recall (green), remediation (purple)",
+      "Per-option explanations: correct ✅ + picked-wrong ❌ inline, other distractors in collapsible accordion",
+      "Fallback to legacy single explanation when option_explanations is null",
+      "Blocking mode: hides close/skip when mandatory",
+      "Frontend types: Chapter, QuizType, QuizScheduleEvent, QuizSchedule, OptionExplanations",
+      "API client: getChapters, getQuizSchedule, getChapterQuiz, getQuizPref, setQuizPref, getVideoPreview",
+      "Settings page: 3-option radio for quiz preference (use default / always pause / never pause)"
+    ],
+    assignee: "Worker Session E"
+  },
+  {
+    id: 16, sprint: 4, status: "done",
+    title: "Chapter-Based Quiz System — Watch.tsx Wiring",
+    desc: "Wired ChapterQuizModal into Watch page. Fetches quiz schedule on mount, detects timestamp crossings during playback, pauses video and pops quiz modal, resumes on close.",
+    details: [
+      "Imports ChapterQuizModal + getQuizSchedule + related types",
+      "Fetches quiz schedule alongside checkpoints on video load",
+      "handleTimeUpdate: detects forward timestamp crossings within 3s delta",
+      "Tracks completed events in a ref Set to avoid re-triggering",
+      "Pauses player and seeks to event timestamp on trigger",
+      "Resumes playback on modal close",
+      "One quiz at a time — no stacking"
+    ],
+    assignee: "Worker Session E"
+  },
+  {
+    id: 17, sprint: 4, status: "done",
+    title: "Chapter-Aware Quiz Generation Pipeline",
+    desc: "Extended pipeline/quiz_gen.py with 3 distinct prompt templates for pretest, mid-recall, and end-recall — each with different pedagogical nature, difficulty, Bloom distribution, and per-option explanation requirements.",
+    details: [
+      "Pretest: curiosity-triggering, easy-medium, remember/understand, prediction-style",
+      "Mid-recall: specific to just-learned content, medium, understand/apply",
+      "End-recall: synthesis across chapter, medium-hard, apply/analyse/evaluate",
+      "All prompts require option_explanations with distractor misconception naming",
+      "generate_chapter_quizzes(): selects context by chapter time range or mid-recall timestamp",
+      "_compute_mid_recall_count(): <6m=0, <12=1, <20=2, <30=3, ≥30=floor(min/8)-1 cap 5",
+      "_compute_chapter_count(): clamp(round(duration_min/12), 1, 8)"
+    ],
+    assignee: "Worker Session E"
+  },
+  {
+    id: 18, sprint: 4, status: "done",
+    title: "Add Video Preview Modal",
+    desc: "Added pre-ingest preview flow: metadata probe via yt-dlp (no download), shows duration + estimated sections + quiz mention before user confirms. Per spec: no raw question count (avoids quiz dread).",
+    details: [
+      "GET /api/video-preview: lightweight yt-dlp extract_info, returns title + duration + estimated chapters",
+      "Frontend: getVideoPreview() client function",
+      "Library.tsx: handleAdd now fetches preview first, shows modal, user confirms with 'Add to library'",
+      "Preview shows: '6h · ~8 sections · warm-up + recall quizzes throughout'",
+      "Duration formatted as hours+minutes or just minutes",
+      "Playlists skip preview and go straight to processing",
+      "Cancel button dismisses modal without ingesting"
+    ],
+    assignee: "Worker Session E"
   }
 ];
 
@@ -270,7 +359,8 @@ const SPRINTS = [
   { name: "Sprint 0: Foundation", color: "#10b981", bg: "rgba(16,185,129,0.12)" },
   { name: "Sprint 1: Backend Pipeline", color: "#6366f1", bg: "rgba(99,102,241,0.12)" },
   { name: "Sprint 2: Frontend + Integration", color: "#f59e0b", bg: "rgba(245,158,11,0.12)" },
-  { name: "Sprint 3: Deploy + Demo", color: "#f43f5e", bg: "rgba(244,63,94,0.12)" }
+  { name: "Sprint 3: Deploy + Demo", color: "#f43f5e", bg: "rgba(244,63,94,0.12)" },
+  { name: "Sprint 4: Chapter Quiz System", color: "#8b5cf6", bg: "rgba(139,92,246,0.12)" }
 ];
 
 // Stats

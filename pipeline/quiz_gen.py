@@ -355,3 +355,290 @@ def generate_quizzes_for_checkpoints(
                 out[ts] = []
 
     return out
+
+
+# ── Chapter-aware quiz generation (pretest / mid-recall / end-recall) ────────
+
+CHAPTER_QUIZ_PROMPTS: dict[str, str] = {
+    "pretest": """You are a quiz designer creating **pretest** questions for a chapter of an educational lecture.
+
+The learner has NOT watched this content yet. The purpose is to PRIME their brain — spark curiosity and activate prior knowledge so they pay attention during the chapter.
+
+Chapter title: {chapter_title}
+Chapter content:
+{context}
+
+Generate exactly {count} multiple-choice questions following these rules:
+
+NATURE — CURIOSITY-TRIGGERING / PREDICTION-STYLE:
+- Frame questions as "What do you think…", "Which of these would…", "Before watching, predict…"
+- Target prior knowledge the learner MIGHT have from everyday experience
+- Getting it wrong is expected and fine — that's the point
+
+DIFFICULTY: Easy to Medium only. The learner hasn't seen this content yet.
+BLOOM DISTRIBUTION:
+  - {count_remember} at level "remember" (prior knowledge recall)
+  - {count_understand} at level "understand" (intuitive reasoning)
+
+Each question must:
+- Be self-contained (no references to "the video" or "the lecturer")
+- Have exactly 4 options labelled "A: ...", "B: ...", "C: ...", "D: ..."
+- Have exactly one correct answer
+- Include `option_explanations` — an object with keys "A","B","C","D"
+  - For the CORRECT option: 1-2 sentences explaining why it's right, citing the lesson content
+  - For each WRONG option: 1-2 sentences explaining why it's wrong AND naming the specific misconception if applicable
+  - Do NOT just say "this is incorrect". Always explain WHY.
+
+Return ONLY a JSON array:
+[{{"question_text": "...",
+   "options": ["A: ...", "B: ...", "C: ...", "D: ..."],
+   "correct_answer": "A",
+   "explanation": "short reason the correct answer is correct",
+   "option_explanations": {{"A": "Correct because...", "B": "Wrong because...", "C": "Wrong because...", "D": "Wrong because..."}},
+   "difficulty": "easy|medium",
+   "bloom_level": "remember|understand"}}]""",
+
+    "mid_recall": """You are a quiz designer creating **mid-recall** questions for a specific section within a chapter.
+
+The learner JUST watched this content 5-10 minutes ago. The purpose is to LOCK IN the specific concept they just learned — test whether it stuck.
+
+Chapter title: {chapter_title}
+Relevant section content:
+{context}
+
+Generate exactly {count} multiple-choice questions following these rules:
+
+NATURE — SPECIFIC / "DID YOU GET IT?":
+- Questions should test the exact concept just covered, not general knowledge
+- Be specific: reference particular facts, formulas, examples from the content
+- If the content showed a truth table, test that truth table
+- If it defined a term, test that definition with a twist
+
+DIFFICULTY: Medium
+BLOOM DISTRIBUTION:
+  - {count_understand} at level "understand" (explain / paraphrase the concept)
+  - {count_apply} at level "apply" (use the concept in a new situation)
+
+Each question must:
+- Be self-contained (no references to "the video" or "the lecturer")
+- Have exactly 4 options labelled "A: ...", "B: ...", "C: ...", "D: ..."
+- Have exactly one correct answer
+- Include `option_explanations` — an object with keys "A","B","C","D"
+  - For the CORRECT option: 1-2 sentences explaining why it's right
+  - For each WRONG option: 1-2 sentences explaining why it's wrong AND naming the specific misconception
+  - Do NOT just say "this is incorrect". Always explain WHY.
+
+Return ONLY a JSON array:
+[{{"question_text": "...",
+   "options": ["A: ...", "B: ...", "C: ...", "D: ..."],
+   "correct_answer": "A",
+   "explanation": "short reason the correct answer is correct",
+   "option_explanations": {{"A": "Correct because...", "B": "Wrong because...", "C": "Wrong because...", "D": "Wrong because..."}},
+   "difficulty": "medium",
+   "bloom_level": "understand|apply"}}]""",
+
+    "end_recall": """You are a quiz designer creating **end-of-chapter recall** questions.
+
+The learner has finished this entire chapter. The purpose is to SYNTHESIZE — test whether they can combine multiple concepts from across the chapter, not just recall isolated facts.
+
+Chapter title: {chapter_title}
+Full chapter content:
+{context}
+
+Generate exactly {count} multiple-choice questions following these rules:
+
+NATURE — SYNTHESIS / INTEGRATION:
+- Questions should combine 2-3 concepts from the chapter
+- "Given what you learned about X and Y, which statement is true about Z?"
+- Compare and contrast different ideas from the chapter
+- Apply concepts to novel situations not directly shown in the lecture
+
+DIFFICULTY: Medium to Hard
+BLOOM DISTRIBUTION:
+  - {count_apply} at level "apply" (use concepts in a new context)
+  - {count_analyse} at level "analyse" (compare, contrast, identify cause-effect)
+  - {count_evaluate} at level "evaluate" (judge, critique, justify a choice)
+
+Each question must:
+- Be self-contained (no references to "the video" or "the lecturer")
+- Have exactly 4 options labelled "A: ...", "B: ...", "C: ...", "D: ..."
+- Have exactly one correct answer
+- Include `option_explanations` — an object with keys "A","B","C","D"
+  - For the CORRECT option: 1-2 sentences explaining why it's right
+  - For each WRONG option: 1-2 sentences explaining why it's wrong AND naming the specific misconception
+  - Do NOT just say "this is incorrect". Always explain WHY.
+
+Return ONLY a JSON array:
+[{{"question_text": "...",
+   "options": ["A: ...", "B: ...", "C: ...", "D: ..."],
+   "correct_answer": "A",
+   "explanation": "short reason the correct answer is correct",
+   "option_explanations": {{"A": "Correct because...", "B": "Wrong because...", "C": "Wrong because...", "D": "Wrong because..."}},
+   "difficulty": "medium|hard",
+   "bloom_level": "apply|analyse|evaluate"}}]""",
+}
+
+
+def _get_bloom_counts(quiz_type: str, count: int) -> dict[str, int]:
+    """Return per-level counts for a given quiz type and total question count."""
+    if quiz_type == "pretest":
+        # Split evenly between remember and understand
+        r = count // 2
+        return {"count_remember": r, "count_understand": count - r}
+    elif quiz_type == "mid_recall":
+        u = count // 2
+        return {"count_understand": u, "count_apply": count - u}
+    else:  # end_recall
+        a = max(1, count // 3)
+        an = max(1, count // 3)
+        e = count - a - an
+        return {"count_apply": a, "count_analyse": an, "count_evaluate": e}
+
+
+def _normalize_chapter_question(q: dict, quiz_type: str) -> dict:
+    """Normalize a chapter quiz question, including option_explanations."""
+    base = _normalize_question(q)
+    base["quiz_type"] = quiz_type
+
+    # option_explanations
+    oe = q.get("option_explanations")
+    if isinstance(oe, dict):
+        base["option_explanations"] = {
+            k: str(v).strip() for k, v in oe.items() if k in ("A", "B", "C", "D") and v
+        }
+        # Derive legacy explanation from correct answer's explanation
+        correct = base["correct_answer"]
+        if correct in base["option_explanations"]:
+            base["explanation"] = base["option_explanations"][correct]
+    else:
+        base["option_explanations"] = None
+
+    # misconception_tags — extract from distractor explanations if LLM included them
+    tags = q.get("misconception_tags")
+    if isinstance(tags, list):
+        base["misconception_tags"] = [str(t).strip() for t in tags if t]
+    else:
+        base["misconception_tags"] = None
+
+    return base
+
+
+def _get_chapter_chunks(
+    chunks: list[dict], start_time: float, end_time: float,
+) -> list[dict]:
+    """Get chunks that fall within a chapter's time range."""
+    return [
+        c for c in chunks
+        if float(c.get("start_time", 0)) >= start_time - 5
+        and float(c.get("start_time", 0)) < end_time + 5
+    ]
+
+
+def _compute_mid_recall_count(chapter_minutes: float) -> int:
+    """Determine how many mid-recall quiz blocks to place in a chapter."""
+    if chapter_minutes < 6:
+        return 0
+    if chapter_minutes < 12:
+        return 1
+    if chapter_minutes < 20:
+        return 2
+    if chapter_minutes < 30:
+        return 3
+    return min(5, max(1, int(chapter_minutes // 8) - 1))
+
+
+def _compute_chapter_count(duration_minutes: float) -> int:
+    """Compute target chapter count from video duration. Cap at 8."""
+    return max(1, min(8, round(duration_minutes / 12)))
+
+
+def generate_chapter_quizzes(
+    video_id: str,
+    chapter: dict,
+    chunks: list[dict],
+    quiz_type: str,
+    count: int = 5,
+    mid_recall_timestamp: float | None = None,
+) -> list[dict]:
+    """Generate quiz questions for a single chapter + quiz_type.
+
+    For mid_recall, pass the specific timestamp where the recall should fire;
+    only nearby chunks will be used as context.
+
+    Args:
+        video_id: YouTube video ID.
+        chapter: dict with keys: id, idx, start_time, end_time, title.
+        chunks: All chunks for the video.
+        quiz_type: One of "pretest", "mid_recall", "end_recall".
+        count: Number of questions to generate (default 5).
+        mid_recall_timestamp: For mid_recall only — the specific timestamp.
+
+    Returns:
+        List of normalized question dicts ready for DB insertion.
+    """
+    if quiz_type not in CHAPTER_QUIZ_PROMPTS:
+        raise ValueError(f"Unknown quiz_type: {quiz_type}")
+
+    start = float(chapter.get("start_time", 0))
+    end = float(chapter.get("end_time", 0))
+    title = chapter.get("title", f"Chapter {chapter.get('idx', '?')}")
+
+    # Select context chunks
+    if quiz_type == "mid_recall" and mid_recall_timestamp is not None:
+        # Use chunks near the specific mid-recall point (±60s)
+        selected = _select_context_chunks(chunks, mid_recall_timestamp)
+    else:
+        # Use all chunks in the chapter
+        selected = _get_chapter_chunks(chunks, start, end)
+
+    if not selected:
+        logger.warning("No chunks for %s quiz at chapter '%s'", quiz_type, title)
+        return []
+
+    context = _assemble_context(selected)
+    bloom_counts = _get_bloom_counts(quiz_type, count)
+
+    prompt = CHAPTER_QUIZ_PROMPTS[quiz_type].format(
+        chapter_title=title,
+        context=context,
+        count=count,
+        **bloom_counts,
+    )
+
+    groq_key = os.getenv("GROQ_API_KEY", "").strip()
+    gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+
+    raw = ""
+    last_err: Exception | None = None
+    max_tokens = max(8000, 1500 * count)
+
+    if groq_key:
+        try:
+            raw = _call_groq(prompt, groq_key, max_tokens=max_tokens)
+        except Exception as exc:
+            logger.warning("Groq chapter quiz failed: %s", exc)
+            last_err = exc
+
+    if not raw and gemini_key:
+        try:
+            raw = _call_gemini(prompt, gemini_key, max_tokens=max_tokens)
+        except Exception as exc:
+            logger.error("Gemini chapter quiz also failed: %s", exc)
+            last_err = exc
+
+    if not raw:
+        raise RuntimeError(f"All LLM providers failed for chapter quiz: {last_err}")
+
+    parsed = _parse_json_array(raw)
+    questions = [
+        _normalize_chapter_question(q, quiz_type)
+        for q in parsed if q.get("question_text")
+    ]
+
+    # Tag each question with chapter metadata
+    for i, q in enumerate(questions):
+        q["chapter_id"] = chapter.get("id")
+        q["video_id"] = video_id
+        q["order_idx"] = i
+
+    return questions

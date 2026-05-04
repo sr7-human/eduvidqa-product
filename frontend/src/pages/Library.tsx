@@ -6,10 +6,13 @@ import {
   getMyVideos,
   getReviewQueue,
   processVideo,
+  getVideoPreview,
   getVideoStatus,
   extractVideoId,
   listMyKeys,
+  removeVideo,
   type UserVideo,
+  type VideoPreview,
 } from '../api/client';
 
 export function Library() {
@@ -22,15 +25,22 @@ export function Library() {
   const [search, setSearch] = useState('');
   const [hasKey, setHasKey] = useState<boolean | null>(null); // null = unknown
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showFailed, setShowFailed] = useState(false);
+  const [preview, setPreview] = useState<VideoPreview | null>(null);
+  const [fetchingPreview, setFetchingPreview] = useState(false);
   const PAGE_SIZE = 12;
   const navigate = useNavigate();
+
+  // Failed videos are hidden by default — they're noise. User can opt in.
+  const failedCount = videos.filter((v) => v.status === 'failed').length;
+  const visibleVideos = showFailed ? videos : videos.filter((v) => v.status !== 'failed');
 
   // Fuzzy filter: keep videos whose title (or video_id) contains every word
   // of the search query in order — also tolerates 1 typo per word via a
   // simple edit-distance check on each word.
   const filteredVideos = (() => {
     const q = search.trim().toLowerCase();
-    if (!q) return videos;
+    if (!q) return visibleVideos;
     const tokens = q.split(/\s+/).filter(Boolean);
     const fuzzyMatch = (haystack: string, needle: string): boolean => {
       if (haystack.includes(needle)) return true;
@@ -46,11 +56,25 @@ export function Library() {
       }
       return false;
     };
-    return videos.filter((v) => {
+    return visibleVideos.filter((v) => {
       const hay = `${(v.title || '').toLowerCase()} ${v.video_id.toLowerCase()}`;
       return tokens.every((tok) => fuzzyMatch(hay, tok));
     });
   })();
+
+  // Remove a single video from this user's library.
+  const handleRemove = async (videoId: string) => {
+    // Optimistic update — drop from local state immediately.
+    const prev = videos;
+    setVideos((curr) => curr.filter((v) => v.video_id !== videoId));
+    try {
+      await removeVideo(videoId);
+    } catch (e) {
+      // Roll back on failure
+      setVideos(prev);
+      toast.error(e instanceof Error ? e.message : 'Failed to remove video');
+    }
+  };
 
   // Fetch videos on mount
   useEffect(() => {
@@ -115,6 +139,25 @@ export function Library() {
       toast.error('Invalid YouTube URL');
       return;
     }
+    // For playlists, skip preview and go straight to processing
+    if (isPlaylist) {
+      return handleConfirmAdd();
+    }
+    // For single videos, fetch preview first
+    setFetchingPreview(true);
+    try {
+      const p = await getVideoPreview(urlInput);
+      setPreview(p);
+    } catch (e) {
+      // If preview fails, fall back to direct add
+      toast.error(e instanceof Error ? e.message : 'Failed to fetch video info');
+    } finally {
+      setFetchingPreview(false);
+    }
+  };
+
+  const handleConfirmAdd = async () => {
+    setPreview(null);
     setAdding(true);
     try {
       const res = (await processVideo({ youtube_url: urlInput })) as unknown as Record<string, unknown>;
@@ -192,7 +235,54 @@ export function Library() {
         </div>
       )}
 
-      <div className="max-w-5xl mx-auto p-6">
+      {/* Video preview modal — shown after metadata fetch, before confirming ingest */}
+      {preview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setPreview(null)}
+        >
+          <div
+            className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl max-w-md w-full p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-3xl mb-2">✓</div>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1 leading-snug">
+              {preview.title}
+            </h3>
+            <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-4">
+              <span>
+                {preview.duration_seconds >= 3600
+                  ? `${Math.floor(preview.duration_seconds / 3600)}h ${Math.round((preview.duration_seconds % 3600) / 60)}m`
+                  : `${Math.round(preview.duration_seconds / 60)} min`}
+              </span>
+              <span>·</span>
+              <span>~{preview.estimated_chapters} section{preview.estimated_chapters !== 1 ? 's' : ''}</span>
+              <span>·</span>
+              <span className="text-gray-400 dark:text-gray-500">warm-up + recall quizzes throughout</span>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-5">
+              Processing transcript and visuals — you can start watching in about a minute.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={handleConfirmAdd}
+                disabled={adding}
+                className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm disabled:opacity-50"
+              >
+                {adding ? 'Adding…' : 'Add to library'}
+              </button>
+              <button
+                onClick={() => setPreview(null)}
+                className="px-4 py-2.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="max-w-5xl mx-auto p-6 pb-32">
         <h1 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">My Library</h1>
 
         {/* Persistent banner if no key (always shown until they add one) */}
@@ -245,22 +335,40 @@ export function Library() {
           />
           <button
             onClick={handleAdd}
-            disabled={adding || !urlInput}
+            disabled={adding || fetchingPreview || !urlInput}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
           >
-            {adding ? 'Adding...' : 'Add Video'}
+            {fetchingPreview ? 'Checking…' : adding ? 'Adding...' : 'Add Video'}
           </button>
         </div>
 
         {/* Search box */}
         {videos.length > 0 && (
-          <div className="mb-6">
+          <div className="mb-3">
             <input
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(0); }}
               placeholder="🔍 Search your videos..."
               className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
             />
+          </div>
+        )}
+
+        {/* "Show failed" toggle — only shown when there are some */}
+        {failedCount > 0 && (
+          <div className="mb-6 flex items-center gap-2 text-xs">
+            <button
+              onClick={() => setShowFailed((s) => !s)}
+              className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline-offset-2 hover:underline"
+            >
+              {showFailed
+                ? `Hide ${failedCount} failed video${failedCount > 1 ? 's' : ''}`
+                : `Show ${failedCount} failed video${failedCount > 1 ? 's' : ''}`}
+            </button>
+            <span className="text-gray-400 dark:text-gray-500">·</span>
+            <span className="text-gray-400 dark:text-gray-500">
+              Failed videos usually mean YouTube blocks transcripts or the API quota was hit.
+            </span>
           </div>
         )}
 
@@ -273,24 +381,60 @@ export function Library() {
           </p>
         ) : filteredVideos.length === 0 ? (
           <p className="text-gray-500 dark:text-gray-400 text-center py-12">
-            No videos match “{search}”.
+            {search
+              ? `No videos match “${search}”.`
+              : 'No videos to show. (Failed videos are hidden — toggle them above.)'}
           </p>
         ) : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {filteredVideos.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((v) => {
-                const watchable = v.status === 'ready' || v.status === 'transcript_ready';
+                // Always allow clicking — Watch page handles every status
+                // gracefully (shows "still ingesting" banner for processing).
+                const isFailed = v.status === 'failed';
                 const thumb = `https://i.ytimg.com/vi/${v.video_id}/mqdefault.jpg`;
+                const statusLabel =
+                  v.status === 'transcript_ready'
+                    ? 'watch now'
+                    : v.status === 'ready'
+                    ? 'ready'
+                    : v.status === 'processing'
+                    ? 'processing'
+                    : v.status === 'failed'
+                    ? 'failed'
+                    : v.status;
+                const statusClass =
+                  v.status === 'ready'
+                    ? 'bg-green-600 text-white'
+                    : v.status === 'transcript_ready'
+                    ? 'bg-blue-600 text-white'
+                    : v.status === 'processing'
+                    ? 'bg-yellow-500 text-white'
+                    : 'bg-red-600 text-white';
                 return (
                   <div
                     key={v.video_id}
-                    onClick={() => watchable && navigate(`/watch/${v.video_id}`)}
-                    className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden transition group ${
-                      watchable
-                        ? 'cursor-pointer hover:shadow-lg hover:border-blue-400 dark:hover:border-blue-500'
-                        : 'opacity-60'
+                    onClick={() => !isFailed && navigate(`/watch/${v.video_id}`)}
+                    className={`relative bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden transition group ${
+                      isFailed
+                        ? 'opacity-60 cursor-default'
+                        : 'cursor-pointer hover:shadow-lg hover:border-blue-400 dark:hover:border-blue-500'
                     }`}
                   >
+                    {/* Remove (✕) button — top-left, shown on hover */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm(`Remove "${v.title || v.video_id}" from your library?`)) {
+                          handleRemove(v.video_id);
+                        }
+                      }}
+                      className="absolute top-2 left-2 z-10 w-6 h-6 rounded-full bg-black/60 hover:bg-red-600 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                      title="Remove from library"
+                      aria-label="Remove from library"
+                    >
+                      ✕
+                    </button>
                     {/* Thumbnail with 16:9 aspect ratio */}
                     <div className="relative w-full bg-gray-200 dark:bg-gray-900" style={{ paddingTop: '56.25%' }}>
                       <img
@@ -302,8 +446,8 @@ export function Library() {
                           (e.currentTarget as HTMLImageElement).style.display = 'none';
                         }}
                       />
-                      {/* Play icon overlay on hover (only if watchable) */}
-                      {watchable && (
+                      {/* Play icon overlay on hover (only if not failed) */}
+                      {!isFailed && (
                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition bg-black/30">
                           <div className="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center text-blue-600 text-2xl">
                             ▶
@@ -312,23 +456,9 @@ export function Library() {
                       )}
                       {/* Status badge over thumbnail */}
                       <span
-                        className={`absolute top-2 right-2 text-[10px] font-medium px-2 py-0.5 rounded ${
-                          v.status === 'ready'
-                            ? 'bg-green-600 text-white'
-                            : v.status === 'transcript_ready'
-                            ? 'bg-blue-600 text-white'
-                            : v.status === 'processing'
-                            ? 'bg-yellow-500 text-white'
-                            : 'bg-red-600 text-white'
-                        }`}
+                        className={`absolute top-2 right-2 text-[10px] font-medium px-2 py-0.5 rounded ${statusClass}`}
                       >
-                        {v.status === 'transcript_ready'
-                          ? 'watch now'
-                          : v.status === 'ready'
-                          ? 'ready'
-                          : v.status === 'processing'
-                          ? 'processing'
-                          : 'failed'}
+                        {statusLabel}
                       </span>
                     </div>
                     {/* Title */}

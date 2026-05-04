@@ -87,7 +87,10 @@ class EmbeddingService:
         from google.genai import types
 
         out: list[list[float]] = []
-        BATCH = 50  # images heavier than text — smaller batch
+        # Gemini batchEmbedContents accepts up to 100 items per request.
+        # Avg keyframe ~45 KB → 100 imgs ≈ 4.5 MB raw / 6 MB base64, well
+        # under the 20 MB request-body cap, so we use the full 100.
+        BATCH = 100
         for i in range(0, len(paths), BATCH):
             chunk_paths = paths[i : i + BATCH]
             parts = []
@@ -107,7 +110,9 @@ class EmbeddingService:
 
     # ── Internal: call with simple retry on 503 / 429 ────────────
 
-    def _call_with_retry(self, *, contents, config, max_attempts: int = 3):
+    def _call_with_retry(self, *, contents, config, max_attempts: int = 6):
+        import re
+
         last_exc: Exception | None = None
         for attempt in range(max_attempts):
             try:
@@ -123,11 +128,20 @@ class EmbeddingService:
                     s in msg
                     for s in ("503", "UNAVAILABLE", "overloaded", "429", "RESOURCE_EXHAUSTED")
                 ):
-                    sleep_for = 2 ** attempt
+                    # Gemini sometimes tells us how long to wait — honour it.
+                    server_hint: float | None = None
+                    m = re.search(r"retry in ([\d.]+)s", msg, re.IGNORECASE)
+                    if m:
+                        try:
+                            server_hint = float(m.group(1))
+                        except ValueError:
+                            server_hint = None
+                    sleep_for = server_hint if server_hint else min(2 ** attempt, 30)
+                    # Pad slightly so we land just after the quota window resets.
+                    sleep_for = sleep_for + 1.0
                     logger.warning(
-                        "Gemini embed call failed (%s) — retrying in %ds",
-                        msg[:80],
-                        sleep_for,
+                        "Gemini embed call failed (%s) — retry %d/%d in %.1fs",
+                        msg[:120], attempt + 1, max_attempts, sleep_for,
                     )
                     time.sleep(sleep_for)
                     continue

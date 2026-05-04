@@ -133,7 +133,9 @@ export default function ChatInterface({
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Use 'auto' (instant) instead of 'smooth' so token-by-token streaming
+    // doesn't queue up dozens of slow scroll animations.
+    bottomRef.current?.scrollIntoView({ behavior: 'auto' });
   }, [messages, isLoading]);
 
   function handleSubmit(e: React.FormEvent) {
@@ -194,12 +196,33 @@ export default function ChatInterface({
                 {msg.role === 'assistant' && (
                   <>
                     <div className="prose prose-sm prose-invert prose-indigo max-w-none prose-headings:text-gray-100 prose-p:text-gray-300 prose-strong:text-white prose-code:text-indigo-300 prose-code:bg-dark-bg prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-pre:bg-dark-bg prose-pre:border prose-pre:border-dark-border prose-pre:overflow-x-auto prose-blockquote:border-accent prose-blockquote:text-gray-400 prose-li:text-gray-300">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm, remarkMath]}
-                        rehypePlugins={[rehypeKatex]}
-                      >
-                        {normalizeMath(msg.content)}
-                      </ReactMarkdown>
+                      {msg.content ? (
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm, remarkMath]}
+                          rehypePlugins={[rehypeKatex]}
+                        >
+                          {normalizeMath(msg.content)}
+                        </ReactMarkdown>
+                      ) : (
+                        // Streaming placeholder — answer hasn't started yet.
+                        <span className="inline-flex items-center gap-1 text-gray-400 text-sm">
+                          <motion.span
+                            className="w-1.5 h-1.5 bg-accent rounded-full"
+                            animate={{ opacity: [0.3, 1, 0.3] }}
+                            transition={{ duration: 1, repeat: Infinity }}
+                          />
+                          <motion.span
+                            className="w-1.5 h-1.5 bg-accent rounded-full"
+                            animate={{ opacity: [0.3, 1, 0.3] }}
+                            transition={{ duration: 1, repeat: Infinity, delay: 0.2 }}
+                          />
+                          <motion.span
+                            className="w-1.5 h-1.5 bg-accent rounded-full"
+                            animate={{ opacity: [0.3, 1, 0.3] }}
+                            transition={{ duration: 1, repeat: Infinity, delay: 0.4 }}
+                          />
+                        </span>
+                      )}
                     </div>
                     {msg.quality && <QualityBadges scores={msg.quality} />}
                     {msg.sources && (

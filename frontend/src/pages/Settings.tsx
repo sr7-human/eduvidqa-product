@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Navbar } from '../components/Navbar';
-import { listMyKeys, saveMyKey, deleteMyKey, type StoredKey } from '../api/client';
+import { listMyKeys, saveMyKey, deleteMyKey, getQuizPref, setQuizPref, type StoredKey, type QuizPref } from '../api/client';
 
 const SERVICES: Array<{
   id: 'gemini' | 'groq';
@@ -32,6 +32,9 @@ export function Settings() {
   const [loading, setLoading] = useState(true);
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<Record<string, boolean>>({});
+  const [quizPref, setQuizPrefState] = useState<QuizPref>('use_video_default');
+  const [quizPrefLoading, setQuizPrefLoading] = useState(true);
+  const [quizPrefSaving, setQuizPrefSaving] = useState(false);
 
   useEffect(() => {
     listMyKeys()
@@ -40,6 +43,10 @@ export function Settings() {
         /* ignore */
       })
       .finally(() => setLoading(false));
+    getQuizPref()
+      .then((r) => setQuizPrefState(r.pref))
+      .catch(() => {})
+      .finally(() => setQuizPrefLoading(false));
   }, []);
 
   const stored = (svc: 'gemini' | 'groq') => keys.find((k) => k.service === svc);
@@ -179,6 +186,59 @@ export function Settings() {
             })}
           </div>
         )}
+
+        {/* Quiz preferences */}
+        <div className="mt-8">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Quiz preferences</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Control whether quizzes pause the video automatically.
+          </p>
+          {quizPrefLoading ? (
+            <p className="text-gray-500 dark:text-gray-400 text-sm py-4">Loading…</p>
+          ) : (
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 space-y-3">
+              {([
+                { value: 'use_video_default' as QuizPref, label: 'Use video default', desc: 'Follow the setting chosen by the video admin.' },
+                { value: 'always_pause' as QuizPref, label: 'Always pause for quizzes', desc: 'Video pauses and a quiz modal appears at every checkpoint.' },
+                { value: 'never_pause' as QuizPref, label: 'Never pause (optional quizzes)', desc: 'Quizzes appear as a small toast — click to open, or ignore.' },
+              ]).map((opt) => (
+                <label
+                  key={opt.value}
+                  className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                    quizPref === opt.value
+                      ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
+                      : 'hover:bg-gray-50 dark:hover:bg-gray-700/50 border border-transparent'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="quizPref"
+                    value={opt.value}
+                    checked={quizPref === opt.value}
+                    disabled={quizPrefSaving}
+                    onChange={async () => {
+                      setQuizPrefSaving(true);
+                      try {
+                        await setQuizPref(opt.value);
+                        setQuizPrefState(opt.value);
+                        toast.success('Quiz preference updated');
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : 'Failed to update preference');
+                      } finally {
+                        setQuizPrefSaving(false);
+                      }
+                    }}
+                    className="mt-1"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">{opt.label}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">{opt.desc}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
 
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-8 text-center">
           Keys are validated against the provider on save. We never log or share keys.

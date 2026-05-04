@@ -58,8 +58,14 @@ async def verify_token(
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    except jwt.InvalidTokenError as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "JWT verification failed (alg=%s): %s",
+            (jwt.get_unverified_header(token).get("alg") if token else "?"),
+            exc,
+        )
+        raise HTTPException(status_code=401, detail=f"Invalid token: {exc}")
 
 
 async def require_auth(token: dict | None = Depends(verify_token)) -> str:

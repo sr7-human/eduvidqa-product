@@ -2,12 +2,17 @@ import type {
   AskRequest,
   AskResponse,
   AttemptResponse,
+  Chapter,
   Checkpoint,
   HealthResponse,
   ProcessRequest,
   ProcessResponse,
+  QualityScores,
   QuizQuestion,
+  QuizSchedule,
+  QuizType,
   ReviewQuestion,
+  Source,
 } from '../types';
 import { getGeminiKey } from '../components/SettingsModal';
 import { supabase } from '../lib/supabase';
@@ -138,6 +143,158 @@ export async function askQuestion(req: AskRequest): Promise<AskResponse> {
   return res.json() as Promise<AskResponse>;
 }
 
+// ── Streaming ask ─────────────────────────────────────────────────
+
+export interface StreamCallbacks {
+  /** Sources from retrieval, sent before any tokens. */
+  onSources?: (sources: Source[]) => void;
+  /** A new text fragment from the LLM. Append to the current bubble. */
+  onToken: (text: string) => void;
+  /** Final event with model name, total time, and (optional) quality scores. */
+  onDone: (meta: {
+    model_name: string;
+    generation_time_seconds: number;
+    quality_scores: QualityScores | null;
+  }) => void;
+  /** Server-reported error (after stream began). */
+  onError?: (err: Error) => void;
+}
+
+/**
+ * Streaming counterpart of {@link askQuestion}. Reads Server-Sent Events
+ * from `/api/ask/stream` and invokes the supplied callbacks as data arrives.
+ *
+ * Throws `VideoProcessingError` if the backend returns 202 (video still
+ * being indexed) or `Error` for other non-OK statuses BEFORE the stream
+ * begins. Once streaming has started, errors are reported via `onError`.
+ */
+export async function askQuestionStream(
+  req: AskRequest,
+  callbacks: StreamCallbacks,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (USE_MOCK) {
+    // Simulate token-by-token typing on the mock answer
+    const mock = await mockAsk(req);
+    callbacks.onSources?.(mock.sources);
+    const words = mock.answer.split(/(\s+)/);
+    for (const w of words) {
+      if (signal?.aborted) return;
+      await new Promise((r) => setTimeout(r, 20));
+      callbacks.onToken(w);
+    }
+    callbacks.onDone({
+      model_name: mock.model_name,
+      generation_time_seconds: mock.generation_time_seconds,
+      quality_scores: mock.quality_scores,
+    });
+    return;
+  }
+
+  const geminiKey = getGeminiKey();
+  let authToken = '';
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    authToken = session?.access_token ?? '';
+  } catch {
+    /* no auth available */
+  }
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'text/event-stream',
+    ...(geminiKey ? { 'X-Gemini-Key': geminiKey } : {}),
+    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+  };
+
+  const res = await fetch(`${API_URL}/api/ask/stream`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(req),
+    signal,
+  });
+
+  if (res.status === 202) {
+    const body = await res.json().catch(() => ({}));
+    throw new VideoProcessingError(
+      extractVideoId(req.youtube_url),
+      body?.detail ?? 'Video is being processed. Try again shortly.',
+    );
+  }
+  if (!res.ok || !res.body) {
+    const body = await res.text();
+    let msg = body;
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed && typeof parsed.detail === 'string') msg = parsed.detail;
+    } catch { /* not JSON */ }
+    const err = new Error(msg) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  // SSE parser: events are separated by a blank line (\n\n). Each event has
+  // one or more "data:" lines whose payloads are concatenated with newlines.
+  const dispatch = (rawEvent: string) => {
+    const dataLines = rawEvent
+      .split('\n')
+      .filter((l) => l.startsWith('data:'))
+      .map((l) => l.slice(5).replace(/^ /, ''));
+    if (dataLines.length === 0) return;
+    const data = dataLines.join('\n');
+    let parsed: { type?: string; [k: string]: unknown };
+    try {
+      parsed = JSON.parse(data);
+    } catch {
+      return;
+    }
+    switch (parsed.type) {
+      case 'sources':
+        callbacks.onSources?.((parsed.sources as Source[]) ?? []);
+        break;
+      case 'token':
+        callbacks.onToken((parsed.text as string) ?? '');
+        break;
+      case 'done':
+        callbacks.onDone({
+          model_name: (parsed.model_name as string) ?? 'unknown',
+          generation_time_seconds: (parsed.generation_time_seconds as number) ?? 0,
+          quality_scores: (parsed.quality_scores as QualityScores | null) ?? null,
+        });
+        break;
+      case 'error':
+        callbacks.onError?.(new Error((parsed.detail as string) ?? 'Stream error'));
+        break;
+      default:
+        /* ignore unknown event types — forward-compatible */
+    }
+  };
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // Split on blank line — SSE event boundary
+      let idx: number;
+      while ((idx = buffer.indexOf('\n\n')) !== -1) {
+        const evt = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        if (evt.trim()) dispatch(evt);
+      }
+    }
+    // Flush any remaining buffered event (shouldn't normally happen)
+    if (buffer.trim()) dispatch(buffer);
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch { /* ignore */ }
+  }
+}
+
 export async function checkHealth(): Promise<HealthResponse> {
   if (USE_MOCK) return { status: 'ok', model_loaded: true, model_name: 'mock', gpu_available: false };
   try {
@@ -154,6 +311,19 @@ export async function processVideo(req: ProcessRequest): Promise<ProcessResponse
   });
 }
 
+export interface VideoPreview {
+  video_id: string;
+  title: string;
+  duration_seconds: number;
+  estimated_chapters: number;
+  has_youtube_chapters: boolean;
+}
+
+export async function getVideoPreview(youtubeUrl: string): Promise<VideoPreview> {
+  const params = new URLSearchParams({ youtube_url: youtubeUrl });
+  return request<VideoPreview>(`/api/video-preview?${params.toString()}`);
+}
+
 export interface UserVideo {
   video_id: string;
   status: string;
@@ -163,6 +333,12 @@ export interface UserVideo {
 
 export async function getMyVideos(): Promise<UserVideo[]> {
   return request<UserVideo[]>('/api/users/me/videos');
+}
+
+export async function removeVideo(
+  videoId: string,
+): Promise<{ video_id: string; removed: boolean }> {
+  return request(`/api/users/me/videos/${videoId}`, { method: 'DELETE' });
 }
 
 export async function getVideoStatus(
@@ -175,6 +351,38 @@ export async function getVideoStatus(
 
 export async function getCheckpoints(videoId: string): Promise<Checkpoint[]> {
   return request<Checkpoint[]>(`/api/videos/${videoId}/checkpoints`);
+}
+
+export async function getChapters(videoId: string): Promise<Chapter[]> {
+  return request<Chapter[]>(`/api/videos/${videoId}/chapters`);
+}
+
+export async function getQuizSchedule(videoId: string): Promise<QuizSchedule> {
+  return request<QuizSchedule>(`/api/videos/${videoId}/quiz-schedule`);
+}
+
+export async function getChapterQuiz(
+  videoId: string,
+  chapterId: string,
+  quizType: QuizType,
+): Promise<{ questions: QuizQuestion[] }> {
+  const params = new URLSearchParams({ chapter_id: chapterId, quiz_type: quizType });
+  return request<{ questions: QuizQuestion[] }>(
+    `/api/videos/${videoId}/chapter-quiz?${params.toString()}`,
+  );
+}
+
+export type QuizPref = 'use_video_default' | 'always_pause' | 'never_pause';
+
+export async function getQuizPref(): Promise<{ pref: QuizPref }> {
+  return request<{ pref: QuizPref }>('/api/users/me/quiz-pref');
+}
+
+export async function setQuizPref(pref: QuizPref): Promise<{ pref: QuizPref }> {
+  return request<{ pref: QuizPref }>('/api/users/me/quiz-pref', {
+    method: 'PUT',
+    body: JSON.stringify({ pref }),
+  });
 }
 
 export async function getQuiz(

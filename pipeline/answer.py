@@ -17,8 +17,15 @@ import logging
 import os
 import time
 from pathlib import Path
+from typing import Iterator
 
 logger = logging.getLogger(__name__)
+
+
+class _StreamMidwayError(Exception):
+    """Raised when a streaming backend fails AFTER it has already emitted at
+    least one token. Signals the orchestrator NOT to fall back to another
+    backend (because the user has already seen partial output)."""
 
 _SYSTEM_PROMPT = """\
 You are an expert AI teaching assistant. A student is watching a lecture \
@@ -276,3 +283,224 @@ def _call_gemini(
     elapsed = round(time.perf_counter() - t0, 2)
 
     return response.text.strip(), f"gemini/{model}", elapsed
+
+
+# ── Streaming variants ──────────────────────────────────────────
+# Token-by-token streaming so the frontend can render the answer as it's
+# generated (ChatGPT-style live typing) instead of waiting for the full
+# response. Same context-assembly logic as ``generate_answer`` above.
+
+
+def _build_context(
+    question: str,
+    timestamp: float,
+    retrieval_result: dict,
+    live_frame_path: str | None,
+) -> tuple[str, list[str], list[dict]]:
+    """Shared context assembly used by both blocking and streaming paths.
+
+    Returns (context_text, images_b64, sources).
+    """
+    ranked_chunks = retrieval_result.get("ranked_chunks", [])
+    digest = retrieval_result.get("digest", "")
+    relevant_keyframes = retrieval_result.get("relevant_keyframes", [])
+
+    context_lines: list[str] = []
+    if digest:
+        context_lines.append("[Lecture Digest]")
+        context_lines.append(digest[:6000])
+        context_lines.append("")
+    if ranked_chunks:
+        context_lines.append(
+            f"[Relevant Transcript (ranked by relevance to {_fmt_timestamp(timestamp)})]"
+        )
+        for ch in ranked_chunks[:10]:
+            st = ch.get("start_time", 0)
+            et = ch.get("end_time", 0)
+            text = ch.get("text", "")
+            sim = ch.get("similarity", 0)
+            context_lines.append(
+                f"[{_fmt_timestamp(st)} - {_fmt_timestamp(et)}] (relevance: {sim:.0%})\n{text}"
+            )
+        context_lines.append("")
+    context_text = "\n".join(context_lines)
+
+    images_b64: list[str] = []
+    if live_frame_path:
+        b64 = _read_image_b64(live_frame_path)
+        if b64:
+            images_b64.append(b64)
+    for kf in relevant_keyframes:
+        if len(images_b64) >= 4:
+            break
+        kf_file = kf.get("file", "")
+        if kf_file:
+            b64 = _read_image_b64(kf_file)
+            if b64:
+                images_b64.append(b64)
+
+    sources = [
+        {
+            "start_time": ch.get("start_time", 0),
+            "end_time": ch.get("end_time", 0),
+            "relevance_score": ch.get("similarity", 0),
+        }
+        for ch in ranked_chunks[:10]
+    ]
+    return context_text, images_b64, sources
+
+
+def generate_answer_stream(
+    question: str,
+    video_id: str,
+    timestamp: float,
+    retrieval_result: dict,
+    live_frame_path: str | None,
+    groq_api_key: str | None = None,
+    gemini_api_key: str | None = None,
+) -> Iterator[dict]:
+    """Streaming counterpart of :func:`generate_answer`.
+
+    Yields a sequence of dict events:
+    - ``{"type": "token", "text": "..."}`` for each text fragment
+    - ``{"type": "end", "model_name": "...", "generation_time": <float>}`` once
+
+    The orchestrator wraps these in SSE frames. Falls back from Groq → Gemini
+    only if Groq fails BEFORE emitting any tokens (so we never double-emit).
+    """
+    groq_key = groq_api_key or os.getenv("GROQ_API_KEY", "")
+    gemini_key = gemini_api_key or os.getenv("GEMINI_API_KEY", "")
+
+    context_text, images_b64, _sources = _build_context(
+        question, timestamp, retrieval_result, live_frame_path,
+    )
+    system_prompt = _SYSTEM_PROMPT.format(timestamp_fmt=_fmt_timestamp(timestamp))
+
+    _last_error: Exception | None = None
+
+    if groq_key:
+        try:
+            yield from _stream_groq(system_prompt, context_text, question, images_b64, groq_key)
+            return
+        except _StreamMidwayError:
+            # Tokens already sent — re-raise so the caller surfaces an error
+            # to the client instead of restarting from scratch with Gemini.
+            raise
+        except Exception as exc:
+            logger.warning("Groq stream failed before any tokens, falling back to Gemini: %s", exc)
+            _last_error = exc
+
+    if gemini_key:
+        try:
+            yield from _stream_gemini(system_prompt, context_text, question, images_b64, gemini_key)
+            return
+        except _StreamMidwayError:
+            raise
+        except Exception as exc:
+            logger.error("Gemini stream also failed: %s", exc)
+            _last_error = exc
+
+    if not groq_key and not gemini_key:
+        raise RuntimeError("No LLM API key available (need GROQ_API_KEY or GEMINI_API_KEY)")
+    raise RuntimeError(f"All LLM streaming backends failed. Last error: {_last_error}")
+
+
+def _stream_groq(
+    system_prompt: str,
+    context_text: str,
+    question: str,
+    images_b64: list[str],
+    api_key: str,
+    model: str = "meta-llama/llama-4-scout-17b-16e-instruct",
+) -> Iterator[dict]:
+    """Stream tokens from Groq's chat completions API."""
+    from groq import Groq
+
+    client = Groq(api_key=api_key)
+
+    user_content: list[dict] = [{
+        "type": "text",
+        "text": f"{context_text}\n\n[Visual Context]\nSee attached lecture frames.\n\nQUESTION: {question}",
+    }]
+    for b64 in images_b64:
+        user_content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+        })
+
+    t0 = time.perf_counter()
+    # Connection / setup errors here are pre-stream — outer code may fall back.
+    stream = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        max_tokens=4096,
+        temperature=0.3,
+        stream=True,
+    )
+
+    yielded_any = False
+    try:
+        for chunk in stream:
+            try:
+                delta = chunk.choices[0].delta.content
+            except (AttributeError, IndexError):
+                delta = None
+            if delta:
+                yielded_any = True
+                yield {"type": "token", "text": delta}
+    except Exception as exc:
+        if yielded_any:
+            raise _StreamMidwayError(f"Groq stream interrupted: {exc}") from exc
+        raise
+
+    elapsed = round(time.perf_counter() - t0, 2)
+    yield {"type": "end", "model_name": f"groq/{model}", "generation_time": elapsed}
+
+
+def _stream_gemini(
+    system_prompt: str,
+    context_text: str,
+    question: str,
+    images_b64: list[str],
+    api_key: str,
+    model: str = "gemini-2.5-flash",
+) -> Iterator[dict]:
+    """Stream tokens from Gemini using the google-genai SDK."""
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=api_key)
+
+    parts = [types.Part.from_text(text=f"{system_prompt}\n\n{context_text}\n\nQUESTION: {question}")]
+    for b64_str in images_b64:
+        import base64 as b64mod
+        parts.append(types.Part.from_bytes(data=b64mod.b64decode(b64_str), mime_type="image/jpeg"))
+
+    t0 = time.perf_counter()
+    stream = client.models.generate_content_stream(
+        model=model,
+        contents=parts,
+        config=types.GenerateContentConfig(
+            temperature=0.3,
+            max_output_tokens=4096,
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
+        ),
+    )
+
+    yielded_any = False
+    try:
+        for chunk in stream:
+            text = getattr(chunk, "text", None)
+            if text:
+                yielded_any = True
+                yield {"type": "token", "text": text}
+    except Exception as exc:
+        if yielded_any:
+            raise _StreamMidwayError(f"Gemini stream interrupted: {exc}") from exc
+        raise
+
+    elapsed = round(time.perf_counter() - t0, 2)
+    yield {"type": "end", "model_name": f"gemini/{model}", "generation_time": elapsed}

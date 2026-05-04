@@ -22,6 +22,7 @@ except Exception:
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 import psycopg2
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -106,7 +107,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE", "PUT", "PATCH", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -323,6 +324,53 @@ async def health_check() -> HealthResponse:
         model_name="groq/llama-4-scout-17b",
         gpu_available=False,
     )
+
+
+@app.get("/api/video-preview")
+async def video_preview(youtube_url: str, user_id: str = Depends(require_auth)):
+    """Lightweight metadata probe — returns duration, title, estimated chapters.
+
+    Uses yt-dlp in extract-info mode (no download). Fast enough for a preview modal.
+    """
+    try:
+        video_id = parse_video_id(youtube_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    import yt_dlp
+
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "no_color": True,
+    }
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(
+                f"https://www.youtube.com/watch?v={video_id}", download=False,
+            )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Could not fetch video metadata: {exc}")
+
+    duration_sec = info.get("duration") or 0
+    duration_min = duration_sec / 60
+    title = info.get("title") or video_id
+
+    # YouTube chapters if present
+    yt_chapters = info.get("chapters") or []
+    if yt_chapters:
+        chapter_count = len(yt_chapters)
+    else:
+        chapter_count = max(1, min(8, round(duration_min / 12)))
+
+    return {
+        "video_id": video_id,
+        "title": title,
+        "duration_seconds": duration_sec,
+        "estimated_chapters": chapter_count,
+        "has_youtube_chapters": len(yt_chapters) > 0,
+    }
 
 
 @app.post("/api/process-video")
@@ -852,6 +900,175 @@ async def ask_question(
     )
 
 
+@app.post("/api/ask/stream")
+@limiter.limit("30/minute")
+async def ask_question_stream(
+    request: Request,
+    body: AskRequest,
+    user_id: str | None = Depends(optional_auth),
+):
+    """Streaming version of /api/ask — emits Server-Sent Events so the UI can
+    render the answer token-by-token as the LLM generates it.
+
+    Event format (each preceded by ``data: `` and followed by ``\\n\\n``):
+      - ``{"type": "sources", "sources": [...]}`` — emitted first, from retrieval
+      - ``{"type": "token",   "text": "..."}``     — one per text chunk
+      - ``{"type": "done",    "model_name": "...", "generation_time_seconds": X,
+            "quality_scores": {...}|null}``        — final event
+      - ``{"type": "error",   "detail": "..."}``   — on failure
+    """
+    # ── Same gating logic as /api/ask (kept inline to avoid refactor risk) ──
+    try:
+        video_id = parse_video_id(body.youtube_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if user_id is None and video_id != DEMO_VIDEO_ID:
+        raise HTTPException(status_code=401, detail="Sign in to ask questions on this video")
+
+    is_demo = (video_id == DEMO_VIDEO_ID)
+    if user_id and not is_demo and not _user_has_any_key(user_id):
+        raise HTTPException(
+            status_code=402,
+            detail="Add a Gemini or Groq API key in Settings to use your own quota for non-demo videos.",
+        )
+
+    if user_id:
+        _link_user_video(user_id, video_id)
+
+    index = _get_index()
+
+    if not index.is_indexed(video_id):
+        status = _get_video_status(video_id)
+        if status == "processing":
+            raise HTTPException(status_code=202, detail="Video is still being processed. Try again shortly.")
+        if status == "failed":
+            raise HTTPException(status_code=422, detail="Video processing failed. Try resubmitting.")
+        _register_video(video_id)
+        import threading
+
+        t = threading.Thread(
+            target=_ingest_video_bg,
+            args=(video_id, body.youtube_url, user_id or ""),
+            daemon=True,
+        )
+        t.start()
+        raise HTTPException(status_code=202, detail="Video is being processed. Try again in a minute.")
+
+    # ── Pre-stream: extract live frame + retrieve context (still blocking) ──
+    from pipeline.live_frame import extract_live_frame
+
+    live_frame = None
+    try:
+        live_frame = extract_live_frame(
+            video_id=video_id,
+            timestamp=body.timestamp,
+            data_dir=os.path.join(settings.DATA_DIR, "processed"),
+        )
+    except Exception as exc:
+        logger.warning("live_frame extraction failed (non-fatal): %s", exc)
+
+    retrieval: dict = {"ranked_chunks": [], "relevant_keyframes": [], "digest": ""}
+    try:
+        retrieval = index.retrieve(
+            question=body.question,
+            video_id=video_id,
+            timestamp=body.timestamp,
+            top_k=10,
+        )
+    except Exception as exc:
+        logger.error("Retrieval failed for %s — answering without context: %s", video_id, exc)
+
+    sources_payload = [
+        {
+            "start_time": ch.get("start_time", 0),
+            "end_time": ch.get("end_time", 0),
+            "relevance_score": ch.get("similarity", 0),
+        }
+        for ch in retrieval.get("ranked_chunks", [])[:10]
+    ]
+
+    # Snapshot user_id / flags for the generator below (closure)
+    _user_id = user_id
+    _is_demo = is_demo
+    _skip_eval = body.skip_quality_eval
+    _question = body.question
+    _timestamp = body.timestamp
+
+    def _sse(payload: dict) -> str:
+        return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+    def event_stream():
+        from pipeline.answer import generate_answer_stream
+
+        # 1) Send sources up front (already known from retrieval)
+        yield _sse({"type": "sources", "sources": sources_payload})
+
+        full_text_parts: list[str] = []
+        model_name = "unknown"
+        gen_time = 0.0
+        t0 = time.perf_counter()
+
+        try:
+            with _ScopedAPIKeys(_user_id, allow_server_fallback=_is_demo):
+                for event in generate_answer_stream(
+                    question=_question,
+                    video_id=video_id,
+                    timestamp=_timestamp,
+                    retrieval_result=retrieval,
+                    live_frame_path=live_frame,
+                    groq_api_key=os.getenv("GROQ_API_KEY") or None,
+                    gemini_api_key=os.getenv("GEMINI_API_KEY") or None,
+                ):
+                    if event.get("type") == "token":
+                        full_text_parts.append(event.get("text", ""))
+                        yield _sse(event)
+                    elif event.get("type") == "end":
+                        model_name = event.get("model_name", "unknown")
+                        gen_time = event.get("generation_time", 0.0)
+        except Exception as exc:
+            logger.exception("Streaming answer generation failed for %s", video_id)
+            yield _sse({"type": "error", "detail": "Internal server error. Please try again."})
+            return
+
+        # 2) Quality scoring AFTER streaming (so the user has already seen the text)
+        full_answer = "".join(full_text_parts).strip()
+        quality_payload = None
+        if not _skip_eval and full_answer:
+            try:
+                from pipeline.evaluate import score_answer
+
+                scores = score_answer(
+                    _question, full_answer,
+                    groq_api_key=settings.GROQ_API_KEY,
+                )
+                quality_payload = {
+                    "clarity": scores["clarity"],
+                    "ect": scores["ect"],
+                    "upt": scores["upt"],
+                }
+            except Exception as exc:
+                logger.warning("Quality scoring failed (non-fatal): %s", exc)
+
+        elapsed_total = round(time.perf_counter() - t0, 2)
+        yield _sse({
+            "type": "done",
+            "model_name": model_name,
+            "generation_time_seconds": gen_time or elapsed_total,
+            "quality_scores": quality_payload,
+        })
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # disable proxy buffering (nginx, etc.)
+            "Connection": "keep-alive",
+        },
+    )
+
+
 @app.get("/api/videos/{video_id}/status")
 async def video_status(video_id: str):
     """Frontend polls this while video is processing."""
@@ -921,6 +1138,238 @@ async def get_checkpoints(video_id: str, user_id: str = Depends(require_auth)):
     ]
 
 
+@app.get("/api/videos/{video_id}/chapters")
+async def get_chapters(video_id: str, user_id: str | None = Depends(optional_auth)):
+    """Return ordered chapters for a video (YouTube or synthesized)."""
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, idx, start_time, end_time, title, source
+                FROM chapters
+                WHERE video_id = %s
+                ORDER BY idx
+                """,
+                (video_id,),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    return [
+        {
+            "id": str(r[0]),
+            "idx": r[1],
+            "start_time": float(r[2]),
+            "end_time": float(r[3]),
+            "title": r[4],
+            "source": r[5],
+        }
+        for r in rows
+    ]
+
+
+def _resolve_blocking_mode(user_id: str | None, video_id: str) -> str:
+    """Resolve effective blocking mode: user pref overrides video default."""
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT quiz_blocking_mode FROM videos WHERE video_id = %s", (video_id,),
+            )
+            row = cur.fetchone()
+            video_default = (row[0] if row else "mandatory") or "mandatory"
+            user_pref = "use_video_default"
+            if user_id:
+                cur.execute(
+                    "SELECT pref FROM user_quiz_prefs WHERE user_id = %s::uuid", (user_id,),
+                )
+                p = cur.fetchone()
+                if p and p[0]:
+                    user_pref = p[0]
+    finally:
+        conn.close()
+    if user_pref == "always_pause":
+        return "mandatory"
+    if user_pref == "never_pause":
+        return "optional"
+    return video_default  # use_video_default
+
+
+@app.get("/api/videos/{video_id}/quiz-schedule")
+async def get_quiz_schedule(
+    video_id: str, user_id: str | None = Depends(optional_auth),
+):
+    """Return ordered quiz events for the player to watch for.
+
+    Each event = ``{timestamp, type, chapter_id, chapter_idx, chapter_title}``.
+    Frontend listens to ``onTimeUpdate`` and triggers a quiz modal when it
+    crosses any of these timestamps.
+    """
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            # Pretests fire at chapter start; end-recalls at chapter end;
+            # mid-recalls have their own timestamps stored on the question rows.
+            cur.execute(
+                """
+                SELECT id, idx, start_time, end_time, title
+                FROM chapters
+                WHERE video_id = %s
+                ORDER BY idx
+                """,
+                (video_id,),
+            )
+            chapter_rows = cur.fetchall()
+
+            cur.execute(
+                """
+                SELECT chapter_id, quiz_type, count(*) AS n
+                FROM questions
+                WHERE video_id = %s AND prompt_version = 2 AND chapter_id IS NOT NULL
+                GROUP BY chapter_id, quiz_type
+                """,
+                (video_id,),
+            )
+            present: dict[tuple, int] = {(str(r[0]), r[1]): r[2] for r in cur.fetchall()}
+    finally:
+        conn.close()
+
+    events: list[dict] = []
+    for ch_id, idx, start, end, title in chapter_rows:
+        ch_id_s = str(ch_id)
+        if present.get((ch_id_s, "pretest"), 0) > 0:
+            events.append({
+                "timestamp": float(start),
+                "type": "pretest",
+                "chapter_id": ch_id_s,
+                "chapter_idx": idx,
+                "chapter_title": title,
+            })
+        if present.get((ch_id_s, "end_recall"), 0) > 0:
+            events.append({
+                "timestamp": float(end),
+                "type": "end_recall",
+                "chapter_id": ch_id_s,
+                "chapter_idx": idx,
+                "chapter_title": title,
+            })
+
+    # mid-recalls: each question carries its own ts_bucket; for now, group by
+    # bucket and pick the lowest timestamp per bucket as the trigger point.
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT chapter_id, ts_bucket_30s
+                FROM questions
+                WHERE video_id = %s AND prompt_version = 2
+                  AND quiz_type = 'mid_recall' AND chapter_id IS NOT NULL
+                """,
+                (video_id,),
+            )
+            for ch_id, bucket in cur.fetchall():
+                # find chapter title/idx
+                ch_meta = next((r for r in chapter_rows if str(r[0]) == str(ch_id)), None)
+                if not ch_meta:
+                    continue
+                events.append({
+                    "timestamp": float(bucket * 30),
+                    "type": "mid_recall",
+                    "chapter_id": str(ch_id),
+                    "chapter_idx": ch_meta[1],
+                    "chapter_title": ch_meta[4],
+                })
+    finally:
+        conn.close()
+
+    events.sort(key=lambda e: e["timestamp"])
+    blocking_mode = _resolve_blocking_mode(user_id, video_id)
+    return {"events": events, "blocking_mode": blocking_mode}
+
+
+@app.get("/api/videos/{video_id}/chapter-quiz")
+async def get_chapter_quiz(
+    video_id: str,
+    chapter_id: str,
+    quiz_type: str = "pretest",
+    user_id: str | None = Depends(optional_auth),
+):
+    """Fetch quiz questions for a (chapter, quiz_type). Returns options + per-option
+    explanations. Correct answer + explanations are revealed only AFTER attempt
+    submission via the existing /api/quizzes/{question_id}/attempt endpoint.
+    """
+    if quiz_type not in {"pretest", "mid_recall", "end_recall", "remediation"}:
+        raise HTTPException(status_code=400, detail="Invalid quiz_type")
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, question_text, options, difficulty, bloom_level, order_idx
+                FROM questions
+                WHERE video_id = %s AND chapter_id = %s::uuid
+                  AND quiz_type = %s AND prompt_version = 2
+                ORDER BY order_idx, question_text
+                """,
+                (video_id, chapter_id, quiz_type),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    return {
+        "questions": [
+            {
+                "id": str(r[0]),
+                "question_text": r[1],
+                "options": r[2] if isinstance(r[2], list) else json.loads(r[2] or "[]"),
+                "difficulty": r[3] or "medium",
+                "bloom_level": r[4] or "understand",
+            }
+            for r in rows
+        ]
+    }
+
+
+@app.get("/api/users/me/quiz-pref")
+async def get_quiz_pref(user_id: str = Depends(require_auth)):
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT pref FROM user_quiz_prefs WHERE user_id = %s::uuid", (user_id,),
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    return {"pref": (row[0] if row else "use_video_default")}
+
+
+class _QuizPrefBody(BaseModel):
+    pref: str = Field(..., pattern=r"^(use_video_default|always_pause|never_pause)$")
+
+
+@app.put("/api/users/me/quiz-pref")
+async def set_quiz_pref(body: _QuizPrefBody, user_id: str = Depends(require_auth)):
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO user_quiz_prefs (user_id, pref, updated_at)
+                VALUES (%s::uuid, %s, now())
+                ON CONFLICT (user_id) DO UPDATE
+                  SET pref = EXCLUDED.pref, updated_at = now()
+                """,
+                (user_id, body.pref),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"pref": body.pref}
+
+
 @app.post("/api/videos/{video_id}/quiz")
 async def get_quiz(
     video_id: str, body: QuizRequest, user_id: str = Depends(require_auth)
@@ -972,20 +1421,31 @@ async def get_quiz(
 async def submit_attempt(
     question_id: str, body: AttemptRequest, user_id: str = Depends(require_auth)
 ):
-    """Record a quiz attempt; on wrong answer, schedule review for tomorrow."""
+    """Record a quiz attempt; on wrong answer, schedule review for tomorrow.
+
+    Returns ``correct_answer``, the legacy ``explanation`` (= correct option's
+    explanation), AND the new ``option_explanations`` map so the UI can show
+    why each wrong option is wrong (distractor analysis for learning).
+
+    Pretest questions don't schedule reviews — they're meant to be wrong.
+    """
     conn = psycopg2.connect(_get_db_url())
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT correct_answer, explanation FROM questions WHERE id = %s",
+                """
+                SELECT correct_answer, explanation, option_explanations, quiz_type
+                FROM questions WHERE id = %s
+                """,
                 (question_id,),
             )
             row = cur.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Question not found")
 
-            correct_answer, explanation = row
+            correct_answer, explanation, option_explanations, quiz_type = row
             is_correct = body.selected_answer == correct_answer
+            quiz_type = quiz_type or "end_recall"
 
             cur.execute(
                 """
@@ -996,7 +1456,9 @@ async def submit_attempt(
             )
 
             added_to_review = False
-            if not is_correct:
+            # Pretests are curiosity hooks — wrong answers are EXPECTED and
+            # shouldn't pollute the review queue.
+            if not is_correct and quiz_type != "pretest":
                 cur.execute(
                     """
                     INSERT INTO review_queue (id, user_id, question_id, next_review_at)
@@ -1016,6 +1478,8 @@ async def submit_attempt(
         "is_correct": is_correct,
         "correct_answer": correct_answer,
         "explanation": explanation,
+        "option_explanations": option_explanations,
+        "quiz_type": quiz_type,
         "added_to_review": added_to_review,
     }
 
@@ -1131,6 +1595,37 @@ async def delete_my_data(user_id: str = Depends(require_auth)):
         conn.close()
     logger.info("Deleted all data for user %s", user_id)
     return {"message": "All your data has been deleted."}
+
+
+@app.delete("/api/users/me/videos/{video_id}")
+async def remove_video_from_library(
+    video_id: str,
+    user_id: str = Depends(require_auth),
+):
+    """Soft-delete a single video from the user's library.
+
+    The video and its keyframes/chunks remain globally indexed (so other users
+    aren't affected). Only this user's link is hidden by setting
+    ``user_videos.deleted_at``.
+    """
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE user_videos
+                SET deleted_at = now()
+                WHERE user_id = %s AND video_id = %s
+                """,
+                (user_id, video_id),
+            )
+            affected = cur.rowcount
+        conn.commit()
+    finally:
+        conn.close()
+    if affected == 0:
+        raise HTTPException(status_code=404, detail="Video not in your library")
+    return {"video_id": video_id, "removed": True}
 
 
 # ── User-managed API keys (BYOK) ────────────────────────────────

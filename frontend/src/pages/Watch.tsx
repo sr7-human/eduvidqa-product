@@ -6,18 +6,20 @@ import YouTubePlayer from '../components/YouTubePlayer';
 import TimestampDisplay from '../components/TimestampDisplay';
 import ChatInterface from '../components/ChatInterface';
 import {
-  askQuestion,
+  askQuestionStream,
   getCheckpoints,
   getQuiz,
+  getQuizSchedule,
   getVideoStatus,
   whoami,
   adminRegenerateQuiz,
   VideoProcessingError,
 } from '../api/client';
-import type { ChatMessage, Checkpoint, QuizQuestion, YTPlayer } from '../types';
+import type { ChatMessage, Checkpoint, QuizQuestion, QuizScheduleEvent, QuizSchedule, YTPlayer } from '../types';
 import { CheckpointMarkers } from '../components/CheckpointMarkers';
 import { TestMeButton } from '../components/TestMeButton';
 import { QuizPanel } from '../components/QuizPanel';
+import { ChapterQuizModal } from '../components/ChapterQuizModal';
 import { usePauseDetector } from '../hooks/usePauseDetector';
 
 export function Watch() {
@@ -48,6 +50,13 @@ export function Watch() {
   const [playerState, setPlayerState] = useState<'playing' | 'paused' | 'other'>('other');
   const [isAdmin, setIsAdmin] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+
+  // Chapter quiz schedule state
+  const [quizSchedule, setQuizSchedule] = useState<QuizSchedule | null>(null);
+  const [activeQuizEvent, setActiveQuizEvent] = useState<QuizScheduleEvent | null>(null);
+  const [chapterQuizOpen, setChapterQuizOpen] = useState(false);
+  const completedEventsRef = useRef<Set<string>>(new Set());
+  const prevTimeRef = useRef<number>(0);
 
   // Layout state: chat panel width as a % of total (default 40%, range 20–70%).
   const [chatPct, setChatPct] = useState<number>(() => {
@@ -97,7 +106,33 @@ export function Watch() {
 
   const handleTimeUpdate = useCallback((time: number) => {
     setCurrentTime(time);
-  }, []);
+
+    // Detect quiz-schedule crossings
+    if (quizSchedule && quizSchedule.events.length > 0 && !chapterQuizOpen) {
+      const prev = prevTimeRef.current;
+      // Only detect forward crossings within a reasonable delta (avoid seek-triggered floods)
+      if (time > prev && time - prev < 3) {
+        for (const evt of quizSchedule.events) {
+          const key = `${evt.chapter_id}:${evt.type}:${evt.timestamp}`;
+          if (completedEventsRef.current.has(key)) continue;
+          // Check if we just crossed this timestamp
+          if (prev < evt.timestamp && time >= evt.timestamp) {
+            completedEventsRef.current.add(key);
+            setActiveQuizEvent(evt);
+            setChapterQuizOpen(true);
+            // Pause the player
+            if (playerRef.current) {
+              playerRef.current.seekTo(evt.timestamp, true);
+              // YT API: pauseVideo is available on the player object
+              (playerRef.current as unknown as { pauseVideo(): void }).pauseVideo?.();
+            }
+            break; // one quiz at a time
+          }
+        }
+      }
+    }
+    prevTimeRef.current = time;
+  }, [quizSchedule, chapterQuizOpen]);
 
   const handlePlayerReady = useCallback(() => {
     setPlayerReady(true);
@@ -241,7 +276,7 @@ export function Watch() {
     setAutoMode(false);
   }
 
-  // Fetch checkpoints on mount / when videoId changes
+  // Fetch checkpoints + chapter quiz schedule on mount / when videoId changes
   useEffect(() => {
     if (videoId) {
       getCheckpoints(videoId)
@@ -249,8 +284,26 @@ export function Watch() {
         .catch(() => {
           /* no checkpoints available */
         });
+      getQuizSchedule(videoId)
+        .then((schedule) => {
+          setQuizSchedule(schedule);
+          // Reset completed events on video change
+          completedEventsRef.current = new Set();
+        })
+        .catch(() => {
+          /* no quiz schedule — video may not have chapters yet */
+        });
     }
   }, [videoId]);
+
+  const handleChapterQuizClose = useCallback(() => {
+    setChapterQuizOpen(false);
+    setActiveQuizEvent(null);
+    // Resume playback
+    if (playerRef.current) {
+      (playerRef.current as unknown as { playVideo(): void }).playVideo?.();
+    }
+  }, []);
 
   // Determine if current user is admin (controls visibility of regenerate button)
   useEffect(() => {
@@ -289,29 +342,76 @@ export function Watch() {
       content: question,
       timestamp: ts,
     };
-    setMessages((prev) => [...prev, userMsg]);
+    // Append the user message AND an empty assistant placeholder atomically.
+    // Tokens will accumulate into the placeholder as they stream in.
+    setMessages((prev) => [
+      ...prev,
+      userMsg,
+      { role: 'assistant', content: '' },
+    ]);
     setIsLoading(true);
 
-    try {
-      const res = await askQuestion({
-        youtube_url: youtubeUrl,
-        question,
-        timestamp: Math.floor(ts),
-        skip_quality_eval: false,
+    let firstTokenSeen = false;
+    const updateAssistant = (
+      mutator: (m: ChatMessage) => ChatMessage,
+    ) =>
+      setMessages((prev) => {
+        const next = [...prev];
+        for (let i = next.length - 1; i >= 0; i--) {
+          if (next[i].role === 'assistant') {
+            next[i] = mutator(next[i]);
+            break;
+          }
+        }
+        return next;
       });
 
-      const assistantMsg: ChatMessage = {
-        role: 'assistant',
-        content:
-          processingStatus === 'transcript_ready'
-            ? `${res.answer}\n\n_\u26a0\ufe0f Visual analysis is still loading in the background \u2014 this answer is based on the transcript only. Ask again in a minute for a more visual answer._`
-            : res.answer,
-        quality: res.quality_scores ?? undefined,
-        sources: res.sources,
-        model_name: res.model_name,
-        generation_time_seconds: res.generation_time_seconds,
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
+    try {
+      await askQuestionStream(
+        {
+          youtube_url: youtubeUrl,
+          question,
+          timestamp: Math.floor(ts),
+          skip_quality_eval: false,
+        },
+        {
+          onSources: (sources) => {
+            updateAssistant((m) => ({ ...m, sources }));
+          },
+          onToken: (text) => {
+            if (!firstTokenSeen) {
+              firstTokenSeen = true;
+              // Hide the "Retrieving / Generating..." bubble — the answer
+              // is already streaming into its own bubble now.
+              setIsLoading(false);
+            }
+            updateAssistant((m) => ({ ...m, content: m.content + text }));
+          },
+          onDone: (meta) => {
+            updateAssistant((m) => {
+              let content = m.content;
+              if (processingStatus === 'transcript_ready') {
+                content = `${content}\n\n_\u26a0\ufe0f Visual analysis is still loading in the background \u2014 this answer is based on the transcript only. Ask again in a minute for a more visual answer._`;
+              }
+              return {
+                ...m,
+                content,
+                model_name: meta.model_name,
+                generation_time_seconds: meta.generation_time_seconds,
+                quality: meta.quality_scores ?? undefined,
+              };
+            });
+          },
+          onError: (err) => {
+            updateAssistant((m) => ({
+              ...m,
+              content: m.content
+                ? `${m.content}\n\n**Error:** ${err.message}`
+                : `**Error:** ${err.message}`,
+            }));
+          },
+        },
+      );
     } catch (err) {
       if (err instanceof VideoProcessingError) {
         setProcessingStatus('processing');
@@ -319,18 +419,16 @@ export function Watch() {
           'Video is being processed in the background. Please retry in a minute.',
           { icon: '⏳' },
         );
-        const noticeMsg: ChatMessage = {
-          role: 'assistant',
+        updateAssistant((m) => ({
+          ...m,
           content:
             '⏳ This video is still being ingested. We are processing it now — please try again shortly.',
-        };
-        setMessages((prev) => [...prev, noticeMsg]);
+        }));
       } else {
-        const errorMsg: ChatMessage = {
-          role: 'assistant',
+        updateAssistant((m) => ({
+          ...m,
           content: `**Error:** ${err instanceof Error ? err.message : 'Failed to get response'}`,
-        };
-        setMessages((prev) => [...prev, errorMsg]);
+        }));
       }
     } finally {
       setIsLoading(false);
@@ -456,6 +554,18 @@ export function Watch() {
           )}
         </div>
       </div>
+
+      {/* Chapter Quiz Modal (pretest / mid-recall / end-recall) */}
+      {chapterQuizOpen && activeQuizEvent && (
+        <ChapterQuizModal
+          videoId={videoId}
+          chapterId={activeQuizEvent.chapter_id}
+          chapterTitle={activeQuizEvent.chapter_title}
+          quizType={activeQuizEvent.type}
+          blocking={quizSchedule?.blocking_mode === 'mandatory'}
+          onClose={handleChapterQuizClose}
+        />
+      )}
     </div>
   );
 }

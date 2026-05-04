@@ -135,23 +135,35 @@ across all users. Deployable at $0/month for MVP.
 ## Phase 3 — Quiz feature
 
 ### G. Checkpoints, questions, attempts, review
-- [ ] 🟧 Checkpoint placement algorithm in ingest (chunk + topic-shift, ~1 / 5–8 min)
-- [ ] 🟧 Question generation prompt + parser (Groq Llama path)
-- [ ] 🟧 Pre-generate checkpoint quizzes during ingest job
-- [ ] 🟧 `GET /videos/:id/checkpoints` (no answers leaked)
-- [ ] 🟧 `POST /videos/:id/quiz {end_ts}` — cache key `(video_id, ts_bucket_30s, prompt_version)` **global**
-- [ ] 🟧 `POST /quizzes/:id/attempts` — score, persist, update review queue
-- [ ] 🟧 `GET /users/me/review` — due questions across all videos
-- [ ] 🟨 Spaced repetition (SM-2 lite)
+- [x] 🟧 Checkpoint placement algorithm in ingest (chunk + topic-shift, ~1 / 5–8 min)
+- [x] 🟧 Question generation prompt + parser (Groq Llama path)
+- [x] 🟧 Pre-generate checkpoint quizzes during ingest job
+- [x] 🟧 `GET /videos/:id/checkpoints` (no answers leaked)
+- [x] 🟧 `POST /videos/:id/quiz {end_ts}` — cache key `(video_id, ts_bucket_30s, prompt_version)` **global**
+- [x] 🟧 `POST /quizzes/:id/attempts` — score, persist, update review queue
+- [x] 🟧 `GET /users/me/review` — due questions across all videos
+- [x] 🟨 Spaced repetition (SM-2 lite)
 - [ ] 🟨 Per-user rate limit on custom quiz generation (1/min)
 - [ ] 🟩 Question quality flagging UI
+- [x] 🟧 **Chapter-based quiz system** — pretest / mid-recall / end-recall with per-chapter structure
+- [x] 🟧 `GET /videos/:id/chapters` — ordered chapter list (YouTube or synthesized)
+- [x] 🟧 `GET /videos/:id/quiz-schedule` — timeline events for player
+- [x] 🟧 `GET /videos/:id/chapter-quiz` — questions by chapter + quiz_type
+- [x] 🟧 `GET/PUT /users/me/quiz-pref` — user quiz blocking preference
+- [x] 🟧 `GET /api/video-preview` — yt-dlp metadata probe for pre-ingest preview
+- [x] 🟧 Per-option explanations (distractor analysis) in quiz generation
+- [x] 🟧 Chapter-aware quiz prompts: pretest (curiosity), mid-recall (specific), end-recall (synthesis)
 
 ### Watch-page UX (depends on G + I)
-- [ ] 🟧 Timeline overlay with checkpoint dots (unseen / available / passed / missed)
-- [ ] 🟧 Persistent "Test me" pill in player chrome
-- [ ] 🟧 Quiz side panel (non-modal)
-- [ ] 🟧 Pause-detector hook → soft toast near checkpoint
-- [ ] 🟧 Review tray on home page
+- [x] 🟧 Timeline overlay with checkpoint dots (unseen / available / passed / missed)
+- [x] 🟧 Persistent "Test me" pill in player chrome
+- [x] 🟧 Quiz side panel (non-modal)
+- [x] 🟧 Pause-detector hook → soft toast near checkpoint
+- [x] 🟧 Review tray on home page
+- [x] 🟧 **ChapterQuizModal** — full-screen quiz modal with per-type theming (pretest/mid/end)
+- [x] 🟧 **Watch.tsx wiring** — quiz schedule fetch, timestamp-crossing detection, auto-pause + modal
+- [x] 🟧 **Settings quiz pref toggle** — 3-option radio (use default / always / never pause)
+- [x] 🟧 **Add Video preview modal** — shows duration + sections + quiz mention before confirm
 
 ---
 
