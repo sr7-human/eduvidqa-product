@@ -16,7 +16,7 @@ _YOUTUBE_URL_PATTERN = re.compile(
 
 class AskRequest(BaseModel):
     youtube_url: str = Field(..., max_length=200, description="Full YouTube URL")
-    timestamp: float = Field(..., ge=0, le=21600, description="Position in seconds (max 6 hours)")
+    timestamp: float = Field(..., ge=0, le=360000, description="Position in seconds (max 100 hours)")
     question: str = Field(..., min_length=1, max_length=2048, description="Student's question")
     skip_quality_eval: bool = Field(
         default=False, description="Skip quality scoring to save time"
@@ -85,7 +85,7 @@ class HealthResponse(BaseModel):
 
 
 class QuizRequest(BaseModel):
-    end_ts: float = Field(..., ge=0, le=21600, description="Timestamp up to which to quiz")
+    end_ts: float = Field(..., ge=0, le=360000, description="Timestamp up to which to quiz")
     count: int = Field(default=10, ge=1, le=15, description="Number of questions per checkpoint")
 
 
