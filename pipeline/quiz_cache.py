@@ -123,9 +123,9 @@ def _find_nearest_cached(video_id: str, ts_bucket: int, prompt_version: int = 1)
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT DISTINCT ts_bucket_30s
-                FROM questions
-                WHERE video_id = %s AND prompt_version = %s
+                SELECT ts_bucket_30s
+                FROM (SELECT DISTINCT ts_bucket_30s FROM questions
+                      WHERE video_id = %s AND prompt_version = %s) AS buckets
                 ORDER BY abs(ts_bucket_30s - %s)
                 LIMIT 1
                 """,
