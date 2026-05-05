@@ -116,20 +116,59 @@ def cache_questions(
         conn.close()
 
 
+def _find_nearest_cached(video_id: str, ts_bucket: int, prompt_version: int = 1) -> list[dict] | None:
+    """Find questions from the nearest cached bucket for this video."""
+    conn = psycopg2.connect(_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT ts_bucket_30s
+                FROM questions
+                WHERE video_id = %s AND prompt_version = %s
+                ORDER BY abs(ts_bucket_30s - %s)
+                LIMIT 1
+                """,
+                (video_id, prompt_version, ts_bucket),
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+
+    if not row:
+        return None
+
+    nearest_bucket = row[0]
+    logger.info(
+        "Nearest cached bucket for %s: requested=%d, found=%d (delta=%ds)",
+        video_id, ts_bucket, nearest_bucket, abs(nearest_bucket - ts_bucket) * 30,
+    )
+    return get_cached_questions(video_id, nearest_bucket, prompt_version)
+
+
 def get_or_generate(
     video_id: str,
     timestamp: float,
     chunks: list[dict],
     prompt_version: int = 1,
 ) -> list[dict]:
-    """Cache check -> generate on miss -> store -> return cached rows (with IDs)."""
+    """Cache check -> nearest bucket fallback -> generate only if nothing cached."""
     ts_bucket = int(timestamp // 30)
+
+    # 1. Exact bucket match
     cached = get_cached_questions(video_id, ts_bucket, prompt_version)
     if cached:
         logger.info("Quiz cache HIT: %s@bucket%s", video_id, ts_bucket)
         return cached
 
-    logger.info("Quiz cache MISS: %s@bucket%s — generating", video_id, ts_bucket)
+    # 2. Find nearest cached bucket (no LLM call)
+    nearest = _find_nearest_cached(video_id, ts_bucket, prompt_version)
+    if nearest:
+        logger.info("Quiz cache NEAREST HIT: %s@bucket%s → serving %d questions", video_id, ts_bucket, len(nearest))
+        return nearest
+
+    # 3. Nothing cached at all for this video → generate (first time only)
+    logger.info("Quiz cache MISS (no questions for video): %s@bucket%s — generating", video_id, ts_bucket)
     from pipeline.quiz_gen import generate_quiz_questions
 
     questions = generate_quiz_questions(video_id, timestamp, chunks)
