@@ -46,6 +46,7 @@ async def verify_token(
                 _get_jwt_secret(),
                 algorithms=["HS256"],
                 audience="authenticated",
+                leeway=60,
             )
         else:
             signing_key = _get_jwks_client().get_signing_key_from_jwt(token).key
@@ -54,6 +55,7 @@ async def verify_token(
                 signing_key,
                 algorithms=[alg],
                 audience="authenticated",
+                leeway=60,
             )
         return payload
     except jwt.ExpiredSignatureError:
