@@ -352,6 +352,21 @@ const TASKS = [
       "Cancel button dismisses modal without ingesting"
     ],
     assignee: "Worker Session E"
+  },
+  {
+    id: 19, sprint: 4, status: "done",
+    title: "Dual-Dimension Embeddings (1024 → 3072)",
+    desc: "Upgraded from compressed 1024-dim to native 3072-dim Gemini Embedding 2 output. Backward-compatible: old videos keep 1024, new videos get 3072. Retrieval auto-detects per video.",
+    details: [
+      "Added embedding_v2 vector(3072) column to video_chunks and keyframe_embeddings",
+      "pipeline/embeddings.py: DIM=3072, removed output_dimensionality compression",
+      "Added embed_text_legacy() for 1024-dim queries against old videos",
+      "pipeline/rag.py: index_video writes to embedding_v2 column for new videos",
+      "pipeline/rag.py: retrieve auto-detects v2 vs v1 per video, queries matching dimension",
+      "Old videos untouched — can batch re-embed later into embedding_v2",
+      "Migration applied to Supabase"
+    ],
+    assignee: "Worker Session E"
   }
 ];
 

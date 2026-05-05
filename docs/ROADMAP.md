@@ -62,6 +62,8 @@ across all users. Deployable at $0/month for MVP.
 - [ ] 🟧 Pin `requirements.txt` versions
 - [ ] 🟧 Constants: `PIPELINE_VERSION`, `EMBED_MODEL_VERSION`, `PROMPT_VERSION`
 - [ ] 🟧 Address Jina monkey-patch fragility (pin torch or fork model)
+- [x] 🟧 **Dual-dimension embeddings** — native 3072-dim for new videos, 1024 fallback for old. Auto-detect per video at retrieval time.
+- [ ] 🟨 Batch re-embed old videos from 1024 → 3072 (optional backfill)
 
 ### F. Job queue & worker
 - [ ] 🟥 Atomic dedup: `INSERT INTO videos … ON CONFLICT DO NOTHING` before any work

@@ -3,7 +3,9 @@
 Storage backend: Postgres (Supabase) with pgvector extension. Tables:
 ``videos``, ``video_chunks``, ``keyframe_embeddings`` — created by Session G.
 
-Embeddings stay in the same 1024-dim Jina CLIP v2 space (text + images).
+Embeddings use Gemini Embedding 2 native 3072-dim (new videos write to
+``embedding_v2``). Old videos retain 1024-dim in ``embedding`` column.
+Retrieval auto-detects which column to query per video.
 
 Retrieval returns ranked chunks (re-ranked by combined semantic + temporal
 score), semantically matched keyframes, and the lecture digest.
@@ -205,9 +207,10 @@ class LectureIndex:
                         """
                         INSERT INTO video_chunks
                           (id, video_id, chunk_id, start_time, end_time,
-                           text, embedding, linked_keyframe_ids)
+                           text, embedding_v2, linked_keyframe_ids)
                         VALUES (%s, %s, %s, %s, %s, %s, %s::vector, %s)
-                        ON CONFLICT (video_id, chunk_id) DO NOTHING
+                        ON CONFLICT (video_id, chunk_id) DO UPDATE
+                          SET embedding_v2 = EXCLUDED.embedding_v2
                         """,
                         chunk_rows,
                         page_size=100,
@@ -221,9 +224,10 @@ class LectureIndex:
                         """
                         INSERT INTO keyframe_embeddings
                           (id, video_id, keyframe_id, timestamp_seconds,
-                           storage_path, embedding)
+                           storage_path, embedding_v2)
                         VALUES (%s, %s, %s, %s, %s, %s::vector)
-                        ON CONFLICT (video_id, keyframe_id) DO NOTHING
+                        ON CONFLICT (video_id, keyframe_id) DO UPDATE
+                          SET embedding_v2 = EXCLUDED.embedding_v2
                         """,
                         kf_rows,
                         page_size=100,
@@ -250,20 +254,38 @@ class LectureIndex:
         timestamp: float,
         top_k: int = 12,
     ) -> dict[str, Any]:
-        """Return ranked chunks + relevant keyframes + digest for a question."""
-        q_vec = self._embed.embed_text(question)
+        """Return ranked chunks + relevant keyframes + digest for a question.
+
+        Auto-detects whether the video uses v2 (3072-dim) or v1 (1024-dim)
+        embeddings and generates the query vector at the matching dimension.
+        """
+        # Detect which embedding column this video uses
+        use_v2 = False
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT EXISTS(SELECT 1 FROM video_chunks "
+                "WHERE video_id = %s AND embedding_v2 IS NOT NULL LIMIT 1)",
+                (video_id,),
+            )
+            use_v2 = bool(cur.fetchone()[0])
+
+        emb_col = "embedding_v2" if use_v2 else "embedding"
+        if use_v2:
+            q_vec = self._embed.embed_text(question)       # 3072-dim native
+        else:
+            q_vec = self._embed.embed_text_legacy(question) # 1024-dim compressed
         q_lit = _vec_literal(q_vec)
 
         with self._connect() as conn, conn.cursor() as cur:
             # ── 1. Nearest chunks (over-fetch for re-ranking) ──
             cur.execute(
-                """
+                f"""
                 SELECT chunk_id, text, start_time, end_time,
                        linked_keyframe_ids,
-                       1 - (embedding <=> %s::vector) AS similarity
+                       1 - ({emb_col} <=> %s::vector) AS similarity
                 FROM video_chunks
                 WHERE video_id = %s
-                ORDER BY embedding <=> %s::vector
+                ORDER BY {emb_col} <=> %s::vector
                 LIMIT %s
                 """,
                 (q_lit, video_id, q_lit, top_k * 2),
@@ -272,12 +294,12 @@ class LectureIndex:
 
             # ── 2. Nearest keyframes ───────────────────────────
             cur.execute(
-                """
+                f"""
                 SELECT keyframe_id, timestamp_seconds, storage_path,
-                       1 - (embedding <=> %s::vector) AS similarity
+                       1 - ({emb_col} <=> %s::vector) AS similarity
                 FROM keyframe_embeddings
                 WHERE video_id = %s
-                ORDER BY embedding <=> %s::vector
+                ORDER BY {emb_col} <=> %s::vector
                 LIMIT 5
                 """,
                 (q_lit, video_id, q_lit),

@@ -1,13 +1,17 @@
-"""Embedding service: Gemini Embedding 2 (API, 1024-dim, multimodal).
+"""Embedding service: Gemini Embedding 2 (API, 3072-dim native, multimodal).
 
 Used for both transcript chunks (text) and lecture keyframes (images).
 A single API call can batch 50–100 inputs.
 
+New videos use native 3072-dim embeddings (embedding_v2 column).
+Old videos may still have 1024-dim embeddings (embedding column).
+Retrieval code in rag.py handles both dimensions transparently.
+
 Usage:
     svc = EmbeddingService()             # uses GEMINI_API_KEY from env
-    text_vec = svc.embed_text("what is sorting?")
-    img_vec  = svc.embed_image("kf_000035.jpg")
-"""
+    text_vec = svc.embed_text("what is sorting?")   # 3072-dim
+    img_vec  = svc.embed_image("kf_000035.jpg")     # 3072-dim
+"
 
 from __future__ import annotations
 
@@ -19,7 +23,8 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 EMBED_MODEL = "gemini-embedding-2-preview"
-DIM = 1024
+DIM = 3072
+DIM_LEGACY = 1024  # old videos still have 1024-dim embeddings
 
 
 class EmbeddingService:
@@ -70,7 +75,6 @@ class EmbeddingService:
                 list(e.values)
                 for e in self._call_with_retry(
                     contents=chunk,
-                    config=types.EmbedContentConfig(output_dimensionality=DIM),
                 ).embeddings
             )
         return out
@@ -103,24 +107,32 @@ class EmbeddingService:
                 list(e.values)
                 for e in self._call_with_retry(
                     contents=parts,
-                    config=types.EmbedContentConfig(output_dimensionality=DIM),
                 ).embeddings
             )
         return out
 
     # ── Internal: call with simple retry on 503 / 429 ────────────
 
-    def _call_with_retry(self, *, contents, config, max_attempts: int = 6):
+    def embed_text_legacy(self, text: str) -> list[float]:
+        """Embed text at 1024-dim for querying old videos with v1 embeddings."""
+        self._ensure_client()
+        from google.genai import types
+        result = self._call_with_retry(
+            contents=[text],
+            config=types.EmbedContentConfig(output_dimensionality=DIM_LEGACY),
+        )
+        return list(result.embeddings[0].values)
+
+    def _call_with_retry(self, *, contents, config=None, max_attempts: int = 6):
         import re
 
         last_exc: Exception | None = None
+        kwargs: dict = {"model": EMBED_MODEL, "contents": contents}
+        if config is not None:
+            kwargs["config"] = config
         for attempt in range(max_attempts):
             try:
-                return self._client.models.embed_content(
-                    model=EMBED_MODEL,
-                    contents=contents,
-                    config=config,
-                )
+                return self._client.models.embed_content(**kwargs)
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
                 msg = str(exc)
