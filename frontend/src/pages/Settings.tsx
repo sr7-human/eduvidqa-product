@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Navbar } from '../components/Navbar';
-import { listMyKeys, saveMyKey, deleteMyKey, getQuizPref, setQuizPref, type StoredKey, type QuizPref } from '../api/client';
+import { listMyKeys, saveMyKey, deleteMyKey, getQuizPref, setQuizPref, getLlmPref, setLlmPref, type StoredKey, type QuizPref, type LlmPref } from '../api/client';
 
 const SERVICES: Array<{
   id: 'gemini' | 'groq';
@@ -35,6 +35,9 @@ export function Settings() {
   const [quizPref, setQuizPrefState] = useState<QuizPref>('use_video_default');
   const [quizPrefLoading, setQuizPrefLoading] = useState(true);
   const [quizPrefSaving, setQuizPrefSaving] = useState(false);
+  const [llmPref, setLlmPrefState] = useState<LlmPref>('auto');
+  const [llmPrefLoading, setLlmPrefLoading] = useState(true);
+  const [llmPrefSaving, setLlmPrefSaving] = useState(false);
 
   useEffect(() => {
     listMyKeys()
@@ -47,6 +50,10 @@ export function Settings() {
       .then((r) => setQuizPrefState(r.pref))
       .catch(() => {})
       .finally(() => setQuizPrefLoading(false));
+    getLlmPref()
+      .then((r) => setLlmPrefState(r.llm_pref))
+      .catch(() => {})
+      .finally(() => setLlmPrefLoading(false));
   }, []);
 
   const stored = (svc: 'gemini' | 'groq') => keys.find((k) => k.service === svc);
@@ -226,6 +233,59 @@ export function Settings() {
                         toast.error(e instanceof Error ? e.message : 'Failed to update preference');
                       } finally {
                         setQuizPrefSaving(false);
+                      }
+                    }}
+                    className="mt-1"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">{opt.label}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">{opt.desc}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* LLM preference */}
+        <div className="mt-8">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Answer model</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Choose which LLM generates your answers. Embeddings always use Gemini regardless of this setting.
+          </p>
+          {llmPrefLoading ? (
+            <p className="text-gray-500 dark:text-gray-400 text-sm py-4">Loading…</p>
+          ) : (
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 space-y-3">
+              {([
+                { value: 'auto' as LlmPref, label: 'Auto (recommended)', desc: 'Tries Groq first (faster), falls back to Gemini if unavailable.' },
+                { value: 'groq' as LlmPref, label: 'Groq only', desc: 'Llama 4 Scout via Groq — fast (2-5s), high free quota. May fail if key is missing/expired.' },
+                { value: 'gemini' as LlmPref, label: 'Gemini only', desc: 'Gemini 2.5 Flash — reliable but slower (10-20s). Lower free quota.' },
+              ]).map((opt) => (
+                <label
+                  key={opt.value}
+                  className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                    llmPref === opt.value
+                      ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
+                      : 'hover:bg-gray-50 dark:hover:bg-gray-700/50 border border-transparent'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="llmPref"
+                    value={opt.value}
+                    checked={llmPref === opt.value}
+                    disabled={llmPrefSaving}
+                    onChange={async () => {
+                      setLlmPrefSaving(true);
+                      try {
+                        await setLlmPref(opt.value);
+                        setLlmPrefState(opt.value);
+                        toast.success('Answer model updated');
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : 'Failed to update preference');
+                      } finally {
+                        setLlmPrefSaving(false);
                       }
                     }}
                     className="mt-1"

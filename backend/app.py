@@ -264,6 +264,26 @@ def _get_user_keys(user_id: str | None) -> dict[str, str]:
         conn.close()
 
 
+def _get_llm_pref(user_id: str | None) -> str:
+    """Return user's LLM preference: 'auto', 'groq', or 'gemini'."""
+    if not user_id:
+        return "auto"
+    try:
+        conn = psycopg2.connect(_get_db_url())
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT llm_pref FROM user_quiz_prefs WHERE user_id = %s::uuid",
+                    (user_id,),
+                )
+                row = cur.fetchone()
+                return row[0] if row else "auto"
+        finally:
+            conn.close()
+    except Exception:
+        return "auto"
+
+
 class _ScopedAPIKeys:
     """Context manager that temporarily injects user-specific GEMINI_API_KEY /
     GROQ_API_KEY into os.environ for the duration of a request, restoring the
@@ -966,6 +986,7 @@ async def ask_question_stream(
     _timestamp = body.timestamp
     _video_id = video_id
     _index = index
+    _llm_pref = _get_llm_pref(user_id)  # 'auto' | 'groq' | 'gemini'
 
     def _sse(payload: dict) -> str:
         return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
@@ -1019,14 +1040,22 @@ async def ask_question_stream(
 
         try:
             with _ScopedAPIKeys(_user_id, allow_server_fallback=_is_demo):
+                # Apply user's LLM preference
+                groq_key = os.getenv("GROQ_API_KEY") or None
+                gemini_key = os.getenv("GEMINI_API_KEY") or None
+                if _llm_pref == "groq":
+                    gemini_key = None  # don't fall back to Gemini
+                elif _llm_pref == "gemini":
+                    groq_key = None    # skip Groq entirely
+
                 for event in generate_answer_stream(
                     question=_question,
                     video_id=_video_id,
                     timestamp=_timestamp,
                     retrieval_result=retrieval,
                     live_frame_path=live_frame,
-                    groq_api_key=os.getenv("GROQ_API_KEY") or None,
-                    gemini_api_key=os.getenv("GEMINI_API_KEY") or None,
+                    groq_api_key=groq_key,
+                    gemini_api_key=gemini_key,
                 ):
                     if event.get("type") == "token":
                         full_text_parts.append(event.get("text", ""))
@@ -1381,6 +1410,46 @@ async def set_quiz_pref(body: _QuizPrefBody, user_id: str = Depends(require_auth
     finally:
         conn.close()
     return {"pref": body.pref}
+
+
+# ── LLM preference ──────────────────────────────────────────────
+
+@app.get("/api/users/me/llm-pref")
+async def get_llm_pref(user_id: str = Depends(require_auth)):
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT llm_pref FROM user_quiz_prefs WHERE user_id = %s::uuid", (user_id,),
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    return {"llm_pref": (row[0] if row else "auto")}
+
+
+class _LlmPrefBody(BaseModel):
+    llm_pref: str = Field(..., pattern=r"^(auto|groq|gemini)$")
+
+
+@app.put("/api/users/me/llm-pref")
+async def set_llm_pref(body: _LlmPrefBody, user_id: str = Depends(require_auth)):
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO user_quiz_prefs (user_id, pref, llm_pref, updated_at)
+                VALUES (%s::uuid, 'use_video_default', %s, now())
+                ON CONFLICT (user_id) DO UPDATE
+                  SET llm_pref = EXCLUDED.llm_pref, updated_at = now()
+                """,
+                (user_id, body.llm_pref),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"llm_pref": body.llm_pref}
 
 
 @app.post("/api/videos/{video_id}/quiz")

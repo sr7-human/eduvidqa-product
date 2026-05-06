@@ -405,6 +405,21 @@ export async function setQuizPref(pref: QuizPref): Promise<{ pref: QuizPref }> {
   });
 }
 
+// ── LLM preference ────────────────────────────────────────────
+
+export type LlmPref = 'auto' | 'groq' | 'gemini';
+
+export async function getLlmPref(): Promise<{ llm_pref: LlmPref }> {
+  return request<{ llm_pref: LlmPref }>('/api/users/me/llm-pref');
+}
+
+export async function setLlmPref(llm_pref: LlmPref): Promise<{ llm_pref: LlmPref }> {
+  return request<{ llm_pref: LlmPref }>('/api/users/me/llm-pref', {
+    method: 'PUT',
+    body: JSON.stringify({ llm_pref }),
+  });
+}
+
 export async function getQuiz(
   videoId: string,
   endTs: number,
