@@ -80,6 +80,13 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
     headers,
   });
+  // Guard: HF Spaces returns HTML when sleeping/waking
+  const ct = res.headers.get('content-type') ?? '';
+  if (ct.includes('text/html')) {
+    throw new Error(
+      'Backend is waking up — please wait ~30 seconds and try again.',
+    );
+  }
   if (!res.ok) {
     const body = await res.text();
     // FastAPI returns {"detail": "..."} — surface that as the error message.
@@ -230,6 +237,14 @@ export async function askQuestionStream(
     const err = new Error(msg) as Error & { status?: number };
     err.status = res.status;
     throw err;
+  }
+
+  // Guard: HF Spaces returns HTML when sleeping/waking — detect and throw
+  const ct = res.headers.get('content-type') ?? '';
+  if (ct.includes('text/html')) {
+    throw new Error(
+      'Backend is waking up — please wait ~30 seconds and try again.',
+    );
   }
 
   const reader = res.body.getReader();
