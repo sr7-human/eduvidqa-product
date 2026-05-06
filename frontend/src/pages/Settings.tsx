@@ -92,9 +92,9 @@ export function Settings() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-[#0a0e1a]">
+    <div className="min-h-screen bg-gray-50 dark:bg-[#0a0e1a] overflow-y-auto">
       <Navbar />
-      <div className="max-w-3xl mx-auto px-4 py-6">
+      <div className="max-w-3xl mx-auto px-4 py-6 pb-20">
         <Link to="/library" className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
           ← Back to Library
         </Link>
