@@ -961,7 +961,7 @@ async def ask_question_stream(
     # Snapshot user_id / flags for the generator below (closure)
     _user_id = user_id
     _is_demo = is_demo
-    _skip_eval = True  # quality scoring disabled — adds latency, low value
+    _skip_eval = body.skip_quality_eval if body.skip_quality_eval is not None else True  # default OFF for now
     _question = body.question
     _timestamp = body.timestamp
     _video_id = video_id
@@ -1039,8 +1039,25 @@ async def ask_question_stream(
             yield _sse({"type": "error", "detail": "Internal server error. Please try again."})
             return
 
-        # 2) Quality scoring disabled — adds 5-10s latency for low-value scores
+        # 2) Quality scoring AFTER streaming (so the user has already seen the text)
+        full_answer = "".join(full_text_parts).strip()
         quality_payload = None
+        if not _skip_eval and full_answer:
+            try:
+                yield _sse({"type": "status", "text": "Scoring quality…"})
+                from pipeline.evaluate import score_answer
+
+                scores = score_answer(
+                    _question, full_answer,
+                    groq_api_key=settings.GROQ_API_KEY,
+                )
+                quality_payload = {
+                    "clarity": scores["clarity"],
+                    "ect": scores["ect"],
+                    "upt": scores["upt"],
+                }
+            except Exception as exc:
+                logger.warning("Quality scoring failed (non-fatal): %s", exc)
 
         elapsed_total = round(time.perf_counter() - t0, 2)
         yield _sse({
