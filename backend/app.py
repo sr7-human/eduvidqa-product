@@ -961,7 +961,7 @@ async def ask_question_stream(
     # Snapshot user_id / flags for the generator below (closure)
     _user_id = user_id
     _is_demo = is_demo
-    _skip_eval = body.skip_quality_eval if body.skip_quality_eval is not None else True  # default OFF for now
+    _skip_eval = body.skip_quality_eval if body.skip_quality_eval is not None else True
     _question = body.question
     _timestamp = body.timestamp
     _video_id = video_id
@@ -1036,8 +1036,12 @@ async def ask_question_stream(
                         gen_time = event.get("generation_time", 0.0)
         except Exception as exc:
             logger.exception("Streaming answer generation failed for %s", _video_id)
-            yield _sse({"type": "error", "detail": "Internal server error. Please try again."})
-            return
+            # If we already sent tokens, don't wipe the partial answer — just
+            # append a note and close the stream gracefully.
+            if full_text_parts:
+                yield _sse({"type": "token", "text": "\n\n*(Answer was cut short due to a server error. You can try asking again.)*"})
+            else:
+                yield _sse({"type": "error", "detail": "Internal server error. Please try again."})
 
         # 2) Quality scoring AFTER streaming (so the user has already seen the text)
         full_answer = "".join(full_text_parts).strip()

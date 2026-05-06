@@ -374,7 +374,7 @@ export function Watch() {
           youtube_url: youtubeUrl,
           question,
           timestamp: Math.floor(ts),
-          skip_quality_eval: false,
+          skip_quality_eval: true,
         },
         {
           onSources: (sources) => {
