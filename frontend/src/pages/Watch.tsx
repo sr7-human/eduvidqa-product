@@ -37,6 +37,7 @@ export function Watch() {
   // Chat state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [statusText, setStatusText] = useState<string | undefined>();
   const [, setPlayerReady] = useState(false);
 
   // Processing state (when /api/ask returns 202)
@@ -350,6 +351,7 @@ export function Watch() {
       { role: 'assistant', content: '' },
     ]);
     setIsLoading(true);
+    setStatusText(undefined);
 
     let firstTokenSeen = false;
     const updateAssistant = (
@@ -377,6 +379,9 @@ export function Watch() {
         {
           onSources: (sources) => {
             updateAssistant((m) => ({ ...m, sources }));
+          },
+          onStatus: (text) => {
+            setStatusText(text);
           },
           onToken: (text) => {
             if (!firstTokenSeen) {
@@ -545,6 +550,7 @@ export function Watch() {
             <ChatInterface
               messages={messages}
               isLoading={isLoading}
+              statusText={statusText}
               timestamp={effectiveTimestamp}
               autoMode={autoMode}
               onSend={handleSend}

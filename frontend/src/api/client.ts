@@ -157,6 +157,8 @@ export interface StreamCallbacks {
   onSources?: (sources: Source[]) => void;
   /** A new text fragment from the LLM. Append to the current bubble. */
   onToken: (text: string) => void;
+  /** Progress status update (e.g. "Retrieving context…"). */
+  onStatus?: (text: string) => void;
   /** Final event with model name, total time, and (optional) quality scores. */
   onDone: (meta: {
     model_name: string;
@@ -269,6 +271,9 @@ export async function askQuestionStream(
     switch (parsed.type) {
       case 'sources':
         callbacks.onSources?.((parsed.sources as Source[]) ?? []);
+        break;
+      case 'status':
+        callbacks.onStatus?.((parsed.text as string) ?? '');
         break;
       case 'token':
         callbacks.onToken((parsed.text as string) ?? '');

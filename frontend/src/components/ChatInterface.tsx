@@ -65,19 +65,8 @@ function SourceLinks({
   );
 }
 
-const LOADING_STEPS = [
-  { emoji: '📥', text: 'Retrieving context...' },
-  { emoji: '🧠', text: 'Generating answer...' },
-  { emoji: '📊', text: 'Scoring quality...' },
-];
-
-function LoadingBubble() {
-  const [step, setStep] = useState(0);
-
-  useEffect(() => {
-    const t = setInterval(() => setStep((s) => Math.min(s + 1, LOADING_STEPS.length - 1)), 3000);
-    return () => clearInterval(t);
-  }, []);
+function LoadingBubble({ statusText }: { statusText?: string }) {
+  const text = statusText || 'Retrieving context…';
 
   return (
     <motion.div
@@ -90,8 +79,7 @@ function LoadingBubble() {
       </div>
       <div className="bg-dark-card border border-dark-border rounded-2xl rounded-tl-sm px-4 py-3">
         <div className="flex items-center gap-2 text-sm text-gray-400">
-          <span>{LOADING_STEPS[step].emoji}</span>
-          <span>{LOADING_STEPS[step].text}</span>
+          <span>{text}</span>
           <span className="flex gap-0.5">
             {[0, 1, 2].map((i) => (
               <motion.span
@@ -113,6 +101,7 @@ function LoadingBubble() {
 interface Props {
   messages: ChatMessage[];
   isLoading: boolean;
+  statusText?: string;
   timestamp: number;
   autoMode: boolean;
   onSend: (question: string) => void;
@@ -123,6 +112,7 @@ interface Props {
 export default function ChatInterface({
   messages,
   isLoading,
+  statusText,
   timestamp,
   autoMode,
   onSend,
@@ -246,7 +236,7 @@ export default function ChatInterface({
           ))}
         </AnimatePresence>
 
-        {isLoading && <LoadingBubble />}
+        {isLoading && <LoadingBubble statusText={statusText} />}
 
         <div ref={bottomRef} />
       </div>

@@ -955,54 +955,62 @@ async def ask_question_stream(
         t.start()
         raise HTTPException(status_code=202, detail="Video is being processed. Try again in a minute.")
 
-    # ── Pre-stream: extract live frame + retrieve context (still blocking) ──
-    from pipeline.live_frame import extract_live_frame
-
-    live_frame = None
-    try:
-        live_frame = extract_live_frame(
-            video_id=video_id,
-            timestamp=body.timestamp,
-            data_dir=os.path.join(settings.DATA_DIR, "processed"),
-        )
-    except Exception as exc:
-        logger.warning("live_frame extraction failed (non-fatal): %s", exc)
-
-    retrieval: dict = {"ranked_chunks": [], "relevant_keyframes": [], "digest": ""}
-    try:
-        retrieval = index.retrieve(
-            question=body.question,
-            video_id=video_id,
-            timestamp=body.timestamp,
-            top_k=10,
-        )
-    except Exception as exc:
-        logger.error("Retrieval failed for %s — answering without context: %s", video_id, exc)
-
-    sources_payload = [
-        {
-            "start_time": ch.get("start_time", 0),
-            "end_time": ch.get("end_time", 0),
-            "relevance_score": ch.get("similarity", 0),
-        }
-        for ch in retrieval.get("ranked_chunks", [])[:10]
-    ]
+    # ── Pre-stream: moved retrieval INSIDE event_stream() so the browser
+    # receives progress events immediately instead of waiting 20-30s. ──
 
     # Snapshot user_id / flags for the generator below (closure)
     _user_id = user_id
     _is_demo = is_demo
-    _skip_eval = body.skip_quality_eval
+    _skip_eval = True  # quality scoring disabled — adds latency, low value
     _question = body.question
     _timestamp = body.timestamp
+    _video_id = video_id
+    _index = index
 
     def _sse(payload: dict) -> str:
         return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
     def event_stream():
         from pipeline.answer import generate_answer_stream
+        from pipeline.live_frame import extract_live_frame
 
-        # 1) Send sources up front (already known from retrieval)
+        # 0) Tell the client we're working — appears instantly
+        yield _sse({"type": "status", "text": "Retrieving context…"})
+
+        # 1) Retrieval (embedding + pgvector) — now inside the stream
+        live_frame = None
+        try:
+            live_frame = extract_live_frame(
+                video_id=_video_id,
+                timestamp=_timestamp,
+                data_dir=os.path.join(settings.DATA_DIR, "processed"),
+            )
+        except Exception as exc:
+            logger.warning("live_frame extraction failed (non-fatal): %s", exc)
+
+        retrieval: dict = {"ranked_chunks": [], "relevant_keyframes": [], "digest": ""}
+        try:
+            retrieval = _index.retrieve(
+                question=_question,
+                video_id=_video_id,
+                timestamp=_timestamp,
+                top_k=10,
+            )
+        except Exception as exc:
+            logger.error("Retrieval failed for %s — answering without context: %s", _video_id, exc)
+
+        sources_payload = [
+            {
+                "start_time": ch.get("start_time", 0),
+                "end_time": ch.get("end_time", 0),
+                "relevance_score": ch.get("similarity", 0),
+            }
+            for ch in retrieval.get("ranked_chunks", [])[:10]
+        ]
+
+        # 2) Send sources
         yield _sse({"type": "sources", "sources": sources_payload})
+        yield _sse({"type": "status", "text": "Generating answer…"})
 
         full_text_parts: list[str] = []
         model_name = "unknown"
@@ -1013,7 +1021,7 @@ async def ask_question_stream(
             with _ScopedAPIKeys(_user_id, allow_server_fallback=_is_demo):
                 for event in generate_answer_stream(
                     question=_question,
-                    video_id=video_id,
+                    video_id=_video_id,
                     timestamp=_timestamp,
                     retrieval_result=retrieval,
                     live_frame_path=live_frame,
@@ -1027,28 +1035,12 @@ async def ask_question_stream(
                         model_name = event.get("model_name", "unknown")
                         gen_time = event.get("generation_time", 0.0)
         except Exception as exc:
-            logger.exception("Streaming answer generation failed for %s", video_id)
+            logger.exception("Streaming answer generation failed for %s", _video_id)
             yield _sse({"type": "error", "detail": "Internal server error. Please try again."})
             return
 
-        # 2) Quality scoring AFTER streaming (so the user has already seen the text)
-        full_answer = "".join(full_text_parts).strip()
+        # 2) Quality scoring disabled — adds 5-10s latency for low-value scores
         quality_payload = None
-        if not _skip_eval and full_answer:
-            try:
-                from pipeline.evaluate import score_answer
-
-                scores = score_answer(
-                    _question, full_answer,
-                    groq_api_key=settings.GROQ_API_KEY,
-                )
-                quality_payload = {
-                    "clarity": scores["clarity"],
-                    "ect": scores["ect"],
-                    "upt": scores["upt"],
-                }
-            except Exception as exc:
-                logger.warning("Quality scoring failed (non-fatal): %s", exc)
 
         elapsed_total = round(time.perf_counter() - t0, 2)
         yield _sse({
