@@ -11,7 +11,7 @@ Usage:
     svc = EmbeddingService()             # uses GEMINI_API_KEY from env
     text_vec = svc.embed_text("what is sorting?")   # 3072-dim
     img_vec  = svc.embed_image("kf_000035.jpg")     # 3072-dim
-"
+"""
 
 from __future__ import annotations
 
