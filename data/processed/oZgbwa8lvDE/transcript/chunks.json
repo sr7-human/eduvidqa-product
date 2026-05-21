@@ -1,0 +1,1750 @@
+[
+  {
+    "chunk_id": "chunk_000",
+    "start_time": 0.0,
+    "end_time": 10.0,
+    "text": "",
+    "linked_keyframe_ids": [
+      "kf_000000",
+      "kf_000002",
+      "kf_000007"
+    ]
+  },
+  {
+    "chunk_id": "chunk_001",
+    "start_time": 10.0,
+    "end_time": 20.0,
+    "text": "We talked about. So, we started with the sorting\nalgorithms sorting problems. So, what is the",
+    "linked_keyframe_ids": [
+      "kf_000017",
+      "kf_000018",
+      "kf_000019"
+    ]
+  },
+  {
+    "chunk_id": "chunk_002",
+    "start_time": 20.0,
+    "end_time": 30.0,
+    "text": "problem of sorting? So, we have given n numbers\nsay input is a number a 1, a 2, a n. So, typically",
+    "linked_keyframe_ids": [
+      "kf_000020",
+      "kf_000023",
+      "kf_000024"
+    ]
+  },
+  {
+    "chunk_id": "chunk_003",
+    "start_time": 30.0,
+    "end_time": 40.0,
+    "text": "",
+    "linked_keyframe_ids": [
+      "kf_000034",
+      "kf_000035",
+      "kf_000036"
+    ]
+  },
+  {
+    "chunk_id": "chunk_004",
+    "start_time": 40.0,
+    "end_time": 50.0,
+    "text": "they are integers we can deal with real numbers\nalso in we have to deal with real number operation,",
+    "linked_keyframe_ids": [
+      "kf_000043",
+      "kf_000046",
+      "kf_000047"
+    ]
+  },
+  {
+    "chunk_id": "chunk_005",
+    "start_time": 50.0,
+    "end_time": 60.0,
+    "text": "but these are typically integer we have a\nwe have given array of n numbers then the output will be the permutation of numbers,\nthe permutation of this number A i 1, A i",
+    "linked_keyframe_ids": [
+      "kf_000052",
+      "kf_000053",
+      "kf_000056"
+    ]
+  },
+  {
+    "chunk_id": "chunk_006",
+    "start_time": 60.0,
+    "end_time": 70.0,
+    "text": "",
+    "linked_keyframe_ids": [
+      "kf_000064",
+      "kf_000065",
+      "kf_000068"
+    ]
+  },
+  {
+    "chunk_id": "chunk_007",
+    "start_time": 70.0,
+    "end_time": 80.0,
+    "text": "2, A i n such that if it is sorting such that\nit is sort with.",
+    "linked_keyframe_ids": [
+      "kf_000077",
+      "kf_000078",
+      "kf_000079"
+    ]
+  },
+  {
+    "chunk_id": "chunk_008",
+    "start_time": 80.0,
+    "end_time": 90.0,
+    "text": "",
+    "linked_keyframe_ids": [
+      "kf_000080",
+      "kf_000082",
+      "kf_000083"
+    ]
+  },
+  {
+    "chunk_id": "chunk_009",
+    "start_time": 90.0,
+    "end_time": 100.0,
+    "text": "So, there are factorial in permutation. So,\namong these we have to choose all of one permutation",
+    "linked_keyframe_ids": [
+      "kf_000097",
+      "kf_000098",
+      "kf_000099"
+    ]
+  },
+  {
+    "chunk_id": "chunk_010",
+    "start_time": 100.0,
+    "end_time": 110.0,
+    "text": "that was which is giving the sorted array.\nSo, this will be the output of any sorting algorithm. So, this is in ascending order.\nSo, now, for example, if we have say input",
+    "linked_keyframe_ids": [
+      "kf_000102",
+      "kf_000103",
+      "kf_000106"
+    ]
+  },
+  {
+    "chunk_id": "chunk_011",
+    "start_time": 110.0,
+    "end_time": 120.0,
+    "text": "like this.",
+    "linked_keyframe_ids": [
+      "kf_000115",
+      "kf_000116",
+      "kf_000119"
+    ]
+  },
+  {
+    "chunk_id": "chunk_012",
+    "start_time": 120.0,
+    "end_time": 130.0,
+    "text": "So, if we have input say 6 3 2 9 7 10 11 suppose\nthis is our input. So, we have 1 2 3 4 5 6",
+    "linked_keyframe_ids": [
+      "kf_000122",
+      "kf_000125",
+      "kf_000129"
+    ]
+  },
+  {
+    "chunk_id": "chunk_013",
+    "start_time": 130.0,
+    "end_time": 140.0,
+    "text": "",
+    "linked_keyframe_ids": [
+      "kf_000133",
+      "kf_000135",
+      "kf_000138"
+    ]
+  },
+  {
+    "chunk_id": "chunk_014",
+    "start_time": 140.0,
+    "end_time": 150.0,
+    "text": "7 we have 7 you have 7 elements. So, you have\na array of 7 element. So, you have 1 is to 7. So, then the after sorting output will\nbe the sorted one. So, it is basically a permutation",
+    "linked_keyframe_ids": [
+      "kf_000147",
+      "kf_000148",
+      "kf_000149"
+    ]
+  },
+  {
+    "chunk_id": "chunk_015",
+    "start_time": 150.0,
+    "end_time": 160.0,
+    "text": "on it. So, 2 comma, 3 comma, 6 comma, 7 comma\n9.",
+    "linked_keyframe_ids": [
+      "kf_000151",
+      "kf_000156",
+      "kf_000157"
+    ]
+  },
+  {
+    "chunk_id": "chunk_016",
+    "start_time": 160.0,
+    "end_time": 170.0,
+    "text": "So, we should get this to be a permutation\nwhich is sorted. So, this is the output of",
+    "linked_keyframe_ids": [
+      "kf_000162",
+      "kf_000167",
+      "kf_000168"
+    ]
+  },
+  {
+    "chunk_id": "chunk_017",
+    "start_time": 170.0,
+    "end_time": 180.0,
+    "text": "this should be the output of any sorting algorithm.\nSo, we will talk about, we will discuss some",
+    "linked_keyframe_ids": [
+      "kf_000170",
+      "kf_000171",
+      "kf_000173"
+    ]
+  },
+  {
+    "chunk_id": "chunk_018",
+    "start_time": 180.0,
+    "end_time": 190.0,
+    "text": "sorting algorithm, which we will which by\nwhich we should able to get this output. So,",
+    "linked_keyframe_ids": [
+      "kf_000185",
+      "kf_000186",
+      "kf_000189"
+    ]
+  },
+  {
+    "chunk_id": "chunk_019",
+    "start_time": 190.0,
+    "end_time": 200.0,
+    "text": "we start with insertion sort. So, we talk\nabout a sorting algorithm which is called",
+    "linked_keyframe_ids": [
+      "kf_000192",
+      "kf_000196",
+      "kf_000197"
+    ]
+  },
+  {
+    "chunk_id": "chunk_020",
+    "start_time": 200.0,
+    "end_time": 210.0,
+    "text": "insertion sort. So, this is the name of the\nalgorithm.",
+    "linked_keyframe_ids": [
+      "kf_000200",
+      "kf_000201",
+      "kf_000208"
+    ]
+  },
+  {
+    "chunk_id": "chunk_021",
+    "start_time": 210.0,
+    "end_time": 220.0,
+    "text": "Now, what is the input? Input is n numbers.\nSo, suppose you are taking the number is in",
+    "linked_keyframe_ids": [
+      "kf_000211",
+      "kf_000218",
+      "kf_000219"
+    ]
+  },
+  {
+    "chunk_id": "chunk_022",
+    "start_time": 220.0,
+    "end_time": 230.0,
+    "text": "array. So, this is the input. So, we have a array of n numbers. So, 1 2.\nSo, our array is starting from 1 to n, not",
+    "linked_keyframe_ids": [
+      "kf_000220",
+      "kf_000224",
+      "kf_000225"
+    ]
+  },
+  {
+    "chunk_id": "chunk_023",
+    "start_time": 230.0,
+    "end_time": 240.0,
+    "text": "zero to n minus 1 like in c language, you\nare not dealing with any specific language.",
+    "linked_keyframe_ids": [
+      "kf_000231",
+      "kf_000237",
+      "kf_000239"
+    ]
+  },
+  {
+    "chunk_id": "chunk_024",
+    "start_time": 240.0,
+    "end_time": 250.0,
+    "text": "So, that is why we start our array with 1\nto n. So, we have a n numbers and we need to sort this numbers. So, we have to write\nhow we will do that that description you have",
+    "linked_keyframe_ids": [
+      "kf_000240",
+      "kf_000243",
+      "kf_000248"
+    ]
+  },
+  {
+    "chunk_id": "chunk_025",
+    "start_time": 250.0,
+    "end_time": 260.0,
+    "text": "write. So, that description either we can\nwrite in English form that do a we do these",
+    "linked_keyframe_ids": [
+      "kf_000257",
+      "kf_000258",
+      "kf_000259"
+    ]
+  },
+  {
+    "chunk_id": "chunk_026",
+    "start_time": 260.0,
+    "end_time": 270.0,
+    "text": "do this like this English form or we will\nwrite something in a compact way. So, precise form. So, that form is called\npseudo code. So, we will write pseudo code",
+    "linked_keyframe_ids": [
+      "kf_000261",
+      "kf_000264",
+      "kf_000265"
+    ]
+  },
+  {
+    "chunk_id": "chunk_027",
+    "start_time": 270.0,
+    "end_time": 280.0,
+    "text": "for this. So, what we do. So, we first start\nwith a J loop, J is starting from 2 to n and",
+    "linked_keyframe_ids": [
+      "kf_000275",
+      "kf_000277",
+      "kf_000278"
+    ]
+  },
+  {
+    "chunk_id": "chunk_028",
+    "start_time": 280.0,
+    "end_time": 290.0,
+    "text": "then we take the key a J into the key. So,\nthis is the A J value. So, or this loop is",
+    "linked_keyframe_ids": [
+      "kf_000285",
+      "kf_000287",
+      "kf_000288"
+    ]
+  },
+  {
+    "chunk_id": "chunk_029",
+    "start_time": 290.0,
+    "end_time": 300.0,
+    "text": "starting from 2 to n. So, J is starting from\nhere and. So, this is the second step and",
+    "linked_keyframe_ids": [
+      "kf_000296",
+      "kf_000297",
+      "kf_000299"
+    ]
+  },
+  {
+    "chunk_id": "chunk_030",
+    "start_time": 300.0,
+    "end_time": 310.0,
+    "text": "we choice i to be J minus 1. So, i is pointing.\nSo, i is starting with J minus 1 ok.",
+    "linked_keyframe_ids": [
+      "kf_000302",
+      "kf_000303",
+      "kf_000305"
+    ]
+  },
+  {
+    "chunk_id": "chunk_031",
+    "start_time": 310.0,
+    "end_time": 320.0,
+    "text": "Now,. So, what we want, we want this is the\nwe want at some point of time J will be pointing",
+    "linked_keyframe_ids": [
+      "kf_000311",
+      "kf_000318",
+      "kf_000319"
+    ]
+  },
+  {
+    "chunk_id": "chunk_032",
+    "start_time": 320.0,
+    "end_time": 330.0,
+    "text": "here and this is our key, now we want this\npart will be sorted this is the loop invariant",
+    "linked_keyframe_ids": [
+      "kf_000321",
+      "kf_000322",
+      "kf_000326"
+    ]
+  },
+  {
+    "chunk_id": "chunk_033",
+    "start_time": 330.0,
+    "end_time": 340.0,
+    "text": "the outer loop invariant we want this we want\nthis invariant that throughout our loop this",
+    "linked_keyframe_ids": [
+      "kf_000330",
+      "kf_000334",
+      "kf_000335"
+    ]
+  },
+  {
+    "chunk_id": "chunk_034",
+    "start_time": 340.0,
+    "end_time": 350.0,
+    "text": "property will satisfy wherever J will be pointing,\nbut before that the sub array up to this is",
+    "linked_keyframe_ids": [
+      "kf_000342",
+      "kf_000345",
+      "kf_000346"
+    ]
+  },
+  {
+    "chunk_id": "chunk_035",
+    "start_time": 350.0,
+    "end_time": 360.0,
+    "text": "sorted ok.\nNow, we have to find the this is the new element this is now new j. So, now, if now this is\nour i. So, i is J minus 1 this is our i. Now",
+    "linked_keyframe_ids": [
+      "kf_000353",
+      "kf_000355",
+      "kf_000356"
+    ]
+  },
+  {
+    "chunk_id": "chunk_036",
+    "start_time": 360.0,
+    "end_time": 370.0,
+    "text": "",
+    "linked_keyframe_ids": [
+      "kf_000364",
+      "kf_000365",
+      "kf_000369"
+    ]
+  },
+  {
+    "chunk_id": "chunk_037",
+    "start_time": 370.0,
+    "end_time": 380.0,
+    "text": "if key is greater than A i then we can just\nincrease J by 1 there is no problem, then J will be pointing this 1 and up to this it\nis sorted because this is greater than this.",
+    "linked_keyframe_ids": [
+      "kf_000372",
+      "kf_000377",
+      "kf_000378"
+    ]
+  },
+  {
+    "chunk_id": "chunk_038",
+    "start_time": 380.0,
+    "end_time": 390.0,
+    "text": "So, all the problem will occur if this key\nvalue if this key is less than this, then",
+    "linked_keyframe_ids": [
+      "kf_000381",
+      "kf_000382",
+      "kf_000384"
+    ]
+  },
+  {
+    "chunk_id": "chunk_039",
+    "start_time": 390.0,
+    "end_time": 400.0,
+    "text": "we need to find the position of this by shifting\nthis 1 by 1 and each time we must compare with the key value with this values. So, that\nwe are going to write and this will continue",
+    "linked_keyframe_ids": [
+      "kf_000395",
+      "kf_000397",
+      "kf_000398"
+    ]
+  },
+  {
+    "chunk_id": "chunk_040",
+    "start_time": 400.0,
+    "end_time": 410.0,
+    "text": "until i is equal to 0; if i is equal to 0\nyou must of because there is nothing to compare. So, that will write here. So, this is basically\nwhile i is greater than zero this is 1 condition",
+    "linked_keyframe_ids": [
+      "kf_000404",
+      "kf_000407",
+      "kf_000409"
+    ]
+  },
+  {
+    "chunk_id": "chunk_041",
+    "start_time": 410.0,
+    "end_time": 420.0,
+    "text": "and so, and if the key is greater than A i\nwe need to do if key is greater than A i then",
+    "linked_keyframe_ids": [
+      "kf_000410",
+      "kf_000412",
+      "kf_000413"
+    ]
+  },
+  {
+    "chunk_id": "chunk_042",
+    "start_time": 420.0,
+    "end_time": 430.0,
+    "text": "",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_043",
+    "start_time": 430.0,
+    "end_time": 440.0,
+    "text": "we can just increase J and that will be taking\ncare by this loop. But only thing if k is less than A i then\nwe have a problem, then what we do then we",
+    "linked_keyframe_ids": [
+      "kf_000430",
+      "kf_000435",
+      "kf_000436"
+    ]
+  },
+  {
+    "chunk_id": "chunk_044",
+    "start_time": 440.0,
+    "end_time": 450.0,
+    "text": "",
+    "linked_keyframe_ids": [
+      "kf_000441",
+      "kf_000442",
+      "kf_000449"
+    ]
+  },
+  {
+    "chunk_id": "chunk_045",
+    "start_time": 450.0,
+    "end_time": 460.0,
+    "text": "just do like this. So, we shift this by 1.\nSo, i will be shifted this. So, A i plus 1",
+    "linked_keyframe_ids": [
+      "kf_000454",
+      "kf_000455",
+      "kf_000459"
+    ]
+  },
+  {
+    "chunk_id": "chunk_046",
+    "start_time": 460.0,
+    "end_time": 470.0,
+    "text": "will be copied to A i \nand i is decreased by i minus 1.",
+    "linked_keyframe_ids": [
+      "kf_000463",
+      "kf_000466",
+      "kf_000469"
+    ]
+  },
+  {
+    "chunk_id": "chunk_047",
+    "start_time": 470.0,
+    "end_time": 480.0,
+    "text": "So, we shift this guy here. So, we already\nstored this value into the key A J, now we shift this here and now i is pointing the\nnext one. So, now, i is pointing the next",
+    "linked_keyframe_ids": [
+      "kf_000470",
+      "kf_000471",
+      "kf_000472"
+    ]
+  },
+  {
+    "chunk_id": "chunk_048",
+    "start_time": 480.0,
+    "end_time": 490.0,
+    "text": "one, now we compare this with the now we compare\nthis with the i this value with the key. If",
+    "linked_keyframe_ids": [
+      "kf_000486",
+      "kf_000487",
+      "kf_000489"
+    ]
+  },
+  {
+    "chunk_id": "chunk_049",
+    "start_time": 490.0,
+    "end_time": 500.0,
+    "text": "the this value is greater than they we will\nput this key here otherwise we will keep on",
+    "linked_keyframe_ids": [
+      "kf_000493",
+      "kf_000494",
+      "kf_000496"
+    ]
+  },
+  {
+    "chunk_id": "chunk_050",
+    "start_time": 500.0,
+    "end_time": 510.0,
+    "text": "do like this. So, this is the step and. So,\nthis will continue like this 5 6 and at 7",
+    "linked_keyframe_ids": [
+      "kf_000505",
+      "kf_000507",
+      "kf_000508"
+    ]
+  },
+  {
+    "chunk_id": "chunk_051",
+    "start_time": 510.0,
+    "end_time": 520.0,
+    "text": "we just put A i plus 1 we assign this value\nthe key that is it. So, this is the; this",
+    "linked_keyframe_ids": [
+      "kf_000513",
+      "kf_000514",
+      "kf_000515"
+    ]
+  },
+  {
+    "chunk_id": "chunk_052",
+    "start_time": 520.0,
+    "end_time": 530.0,
+    "text": "is what is called pseudo code for this. So,\nthe description we have written is called",
+    "linked_keyframe_ids": [
+      "kf_000521",
+      "kf_000527",
+      "kf_000529"
+    ]
+  },
+  {
+    "chunk_id": "chunk_053",
+    "start_time": 530.0,
+    "end_time": 540.0,
+    "text": "this is called pseudo code this is basically\nthe description what we are doing. So, this is not the English description, it\nis very precise way we just write what we",
+    "linked_keyframe_ids": [
+      "kf_000534",
+      "kf_000535",
+      "kf_000539"
+    ]
+  },
+  {
+    "chunk_id": "chunk_054",
+    "start_time": 540.0,
+    "end_time": 550.0,
+    "text": "want to do in this algorithm. So, in this\nyou, so this is called pseudo code this is",
+    "linked_keyframe_ids": [
+      "kf_000541",
+      "kf_000542",
+      "kf_000543"
+    ]
+  },
+  {
+    "chunk_id": "chunk_055",
+    "start_time": 550.0,
+    "end_time": 560.0,
+    "text": "if you give this code to any programmer, programmer\ncan easily runs this code in their own computer language like C, C++, Java anything. So, this\nis the code now as we see we want to take",
+    "linked_keyframe_ids": [
+      "kf_000554",
+      "kf_000555",
+      "kf_000556"
+    ]
+  },
+  {
+    "chunk_id": "chunk_056",
+    "start_time": 560.0,
+    "end_time": 570.0,
+    "text": "an example how it is running and let us just\nrecall again what we are doing.",
+    "linked_keyframe_ids": [
+      "kf_000560",
+      "kf_000561",
+      "kf_000568"
+    ]
+  },
+  {
+    "chunk_id": "chunk_057",
+    "start_time": 570.0,
+    "end_time": 580.0,
+    "text": "",
+    "linked_keyframe_ids": [
+      "kf_000577",
+      "kf_000578",
+      "kf_000579"
+    ]
+  },
+  {
+    "chunk_id": "chunk_058",
+    "start_time": 580.0,
+    "end_time": 590.0,
+    "text": "So, this is the i. So, this is 1 2 up to n\nthis is the a array, now we are starting J with this guy this is the J and i is point\nhere i is J minus 1 because if we start like",
+    "linked_keyframe_ids": [
+      "kf_000585"
+    ]
+  },
+  {
+    "chunk_id": "chunk_059",
+    "start_time": 590.0,
+    "end_time": 600.0,
+    "text": "this then this is 1 element this is already\nsorted.",
+    "linked_keyframe_ids": [
+      "kf_000595",
+      "kf_000596",
+      "kf_000597"
+    ]
+  },
+  {
+    "chunk_id": "chunk_060",
+    "start_time": 600.0,
+    "end_time": 610.0,
+    "text": "Now, loop invariant is. So, J will be pointing\nat somewhere this is the J, now this is sorted this is the loop invariant now this is our\nkey now this is our i A i, this is i J minus",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_061",
+    "start_time": 610.0,
+    "end_time": 620.0,
+    "text": "1, i is J minus 1. Now if the key is greater\nthan i then no need to do anything we can",
+    "linked_keyframe_ids": [
+      "kf_000611",
+      "kf_000619"
+    ]
+  },
+  {
+    "chunk_id": "chunk_062",
+    "start_time": 620.0,
+    "end_time": 630.0,
+    "text": "just increased J by 1 by this for loop that\nis it, but the problem is if key is less than",
+    "linked_keyframe_ids": [
+      "kf_000620",
+      "kf_000629"
+    ]
+  },
+  {
+    "chunk_id": "chunk_063",
+    "start_time": 630.0,
+    "end_time": 640.0,
+    "text": "A i, if key is less than A i what we do? We\nshift this one\u2019s position then we check the key with this if this is greater than\nwe put key here otherwise we keep on shifting",
+    "linked_keyframe_ids": [
+      "kf_000630",
+      "kf_000631",
+      "kf_000636"
+    ]
+  },
+  {
+    "chunk_id": "chunk_064",
+    "start_time": 640.0,
+    "end_time": 650.0,
+    "text": "this like this until we reach to the end if\nwe reach to the end we put the keys here otherwise",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_065",
+    "start_time": 650.0,
+    "end_time": 660.0,
+    "text": "we will the key in a suitable position.\nSo, that is the loop invariant we are we must loop in our algorithm. So, let us execute\nthis by taking an example. So, let us take",
+    "linked_keyframe_ids": [
+      "kf_000651",
+      "kf_000652",
+      "kf_000653"
+    ]
+  },
+  {
+    "chunk_id": "chunk_066",
+    "start_time": 660.0,
+    "end_time": 670.0,
+    "text": "",
+    "linked_keyframe_ids": [
+      "kf_000661",
+      "kf_000662",
+      "kf_000663"
+    ]
+  },
+  {
+    "chunk_id": "chunk_067",
+    "start_time": 670.0,
+    "end_time": 680.0,
+    "text": "an example. So, suppose we have a given from\ninputs. So, 6 9 7 2 3 11 10 and 1 suppose this is\nour input this is the given array and we need",
+    "linked_keyframe_ids": [
+      "kf_000674",
+      "kf_000675",
+      "kf_000677"
+    ]
+  },
+  {
+    "chunk_id": "chunk_068",
+    "start_time": 680.0,
+    "end_time": 690.0,
+    "text": "",
+    "linked_keyframe_ids": [
+      "kf_000682",
+      "kf_000689"
+    ]
+  },
+  {
+    "chunk_id": "chunk_069",
+    "start_time": 690.0,
+    "end_time": 700.0,
+    "text": "to sort this array, this is the given array\nthere are how many element. So, 1 2 3 4 5",
+    "linked_keyframe_ids": [
+      "kf_000690",
+      "kf_000693",
+      "kf_000694"
+    ]
+  },
+  {
+    "chunk_id": "chunk_070",
+    "start_time": 700.0,
+    "end_time": 710.0,
+    "text": "6 7 8 there are 8 elements a 1, a 2, a 8 we\nneed to sort it. So, we need to we are going to execute this piece of code insertion sort.\nSo, what we do? We start with J from 2 to",
+    "linked_keyframe_ids": [
+      "kf_000704",
+      "kf_000705",
+      "kf_000707"
+    ]
+  },
+  {
+    "chunk_id": "chunk_071",
+    "start_time": 710.0,
+    "end_time": 720.0,
+    "text": "n. So, J is pointing here. So, this is our\nkey and i will be pointing J minus 1 i is",
+    "linked_keyframe_ids": [
+      "kf_000713",
+      "kf_000714",
+      "kf_000718"
+    ]
+  },
+  {
+    "chunk_id": "chunk_072",
+    "start_time": 720.0,
+    "end_time": 730.0,
+    "text": "pointing here, now we compare 9 with 6 now\n6 is greater 9 is greater than 9. So, you",
+    "linked_keyframe_ids": [
+      "kf_000720",
+      "kf_000721",
+      "kf_000728"
+    ]
+  },
+  {
+    "chunk_id": "chunk_073",
+    "start_time": 730.0,
+    "end_time": 740.0,
+    "text": "do not need to do anything. So, we just increase\nJ by 1 and that will be taking care by that for loop this loop now again this is out key\nnow we compare this with this now this is",
+    "linked_keyframe_ids": [
+      "kf_000737",
+      "kf_000738",
+      "kf_000739"
+    ]
+  },
+  {
+    "chunk_id": "chunk_074",
+    "start_time": 740.0,
+    "end_time": 750.0,
+    "text": "again greater than. So, we point this now\nthis is out key now i is this 1 sorry no i",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_075",
+    "start_time": 750.0,
+    "end_time": 760.0,
+    "text": "will be the next point. So, i is pointing\nJ minus 1. So, every time i is J minus 1.",
+    "linked_keyframe_ids": [
+      "kf_000750",
+      "kf_000752",
+      "kf_000757"
+    ]
+  },
+  {
+    "chunk_id": "chunk_076",
+    "start_time": 760.0,
+    "end_time": 770.0,
+    "text": "So, i is pointing here sorry. So, this will\nalso change sorry. So, let us just execute",
+    "linked_keyframe_ids": [
+      "kf_000760",
+      "kf_000762",
+      "kf_000767"
+    ]
+  },
+  {
+    "chunk_id": "chunk_077",
+    "start_time": 770.0,
+    "end_time": 780.0,
+    "text": "from the beginning. So, this is i is pointing\nhere. So, if first of all J is pointing here. So, i is pointing here. So, this is greater\nthan. So, J will be now pointing here, if",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_078",
+    "start_time": 780.0,
+    "end_time": 790.0,
+    "text": "J is pointing here now this is our i. Now\nwe have a problem because this is the key",
+    "linked_keyframe_ids": [
+      "kf_000780",
+      "kf_000782",
+      "kf_000786"
+    ]
+  },
+  {
+    "chunk_id": "chunk_079",
+    "start_time": 790.0,
+    "end_time": 800.0,
+    "text": "and this is less than this a i. So, if it\nis less than what we do? We shift this 1 position this is 9 and this is 6 now this is our i\n1 now we compare this with the keys 7 this",
+    "linked_keyframe_ids": [
+      "kf_000796",
+      "kf_000797",
+      "kf_000798"
+    ]
+  },
+  {
+    "chunk_id": "chunk_080",
+    "start_time": 800.0,
+    "end_time": 810.0,
+    "text": "is greater than. So, we stop this inner loop\nand we put this key to be A i plus 1. So,",
+    "linked_keyframe_ids": [
+      "kf_000807"
+    ]
+  },
+  {
+    "chunk_id": "chunk_081",
+    "start_time": 810.0,
+    "end_time": 820.0,
+    "text": "key will be putted here like this. So, 3 1.\nSo, now, J is pointing here. So, this is by",
+    "linked_keyframe_ids": [
+      "kf_000811",
+      "kf_000812",
+      "kf_000818"
+    ]
+  },
+  {
+    "chunk_id": "chunk_082",
+    "start_time": 820.0,
+    "end_time": 830.0,
+    "text": "the outer for loop ok.\nNow, if J is pointing here now i will be here",
+    "linked_keyframe_ids": [
+      "kf_000826",
+      "kf_000828",
+      "kf_000829"
+    ]
+  },
+  {
+    "chunk_id": "chunk_083",
+    "start_time": 830.0,
+    "end_time": 840.0,
+    "text": "now here again we have a problem this is the\nkey and this key is less than a i. So, if",
+    "linked_keyframe_ids": [
+      "kf_000833",
+      "kf_000834",
+      "kf_000839"
+    ]
+  },
+  {
+    "chunk_id": "chunk_084",
+    "start_time": 840.0,
+    "end_time": 850.0,
+    "text": "key is less than A i what we need to do we\nneed to do shift this, and then i is pointing.",
+    "linked_keyframe_ids": [
+      "kf_000840",
+      "kf_000847",
+      "kf_000848"
+    ]
+  },
+  {
+    "chunk_id": "chunk_085",
+    "start_time": 850.0,
+    "end_time": 860.0,
+    "text": "So, we have to shift this then 7 this now\ni is pointing here. So, again we compare this",
+    "linked_keyframe_ids": [
+      "kf_000858"
+    ]
+  },
+  {
+    "chunk_id": "chunk_086",
+    "start_time": 860.0,
+    "end_time": 870.0,
+    "text": "this is the key again we compare key with\nthe new A i this is a again less than. So, again we need to shift this by 1. So, again\n7 6 7 will come here and i is decreased by",
+    "linked_keyframe_ids": [
+      "kf_000860"
+    ]
+  },
+  {
+    "chunk_id": "chunk_087",
+    "start_time": 870.0,
+    "end_time": 880.0,
+    "text": "1 i is pointing here.\nSo, again we have to compare this A i with the key this is key is less than. So, again\nwe need to shift this by 1 and now i is zero",
+    "linked_keyframe_ids": [
+      "kf_000873",
+      "kf_000875",
+      "kf_000877"
+    ]
+  },
+  {
+    "chunk_id": "chunk_088",
+    "start_time": 880.0,
+    "end_time": 890.0,
+    "text": "now we must stop this if i is 0. So, we stop\nsince i is 0 and we put this key as A i plus",
+    "linked_keyframe_ids": [
+      "kf_000885",
+      "kf_000887",
+      "kf_000889"
+    ]
+  },
+  {
+    "chunk_id": "chunk_089",
+    "start_time": 890.0,
+    "end_time": 900.0,
+    "text": "1 i is 0. So, A i plus 1 is 1. So, you put\nthis 2 here. So, now, this is our now J is",
+    "linked_keyframe_ids": [
+      "kf_000890",
+      "kf_000892",
+      "kf_000897"
+    ]
+  },
+  {
+    "chunk_id": "chunk_090",
+    "start_time": 900.0,
+    "end_time": 910.0,
+    "text": "pointing here now if we observe this loop\ninvariant. So, wherever J is pointing before",
+    "linked_keyframe_ids": [
+      "kf_000900",
+      "kf_000902",
+      "kf_000908"
+    ]
+  },
+  {
+    "chunk_id": "chunk_091",
+    "start_time": 910.0,
+    "end_time": 920.0,
+    "text": "that this part is sorted this is the loop\ninvariant do we want before that this part",
+    "linked_keyframe_ids": [
+      "kf_000910",
+      "kf_000914",
+      "kf_000919"
+    ]
+  },
+  {
+    "chunk_id": "chunk_092",
+    "start_time": 920.0,
+    "end_time": 930.0,
+    "text": "is sorted and this is our new element to insert\nin the sorted array. So, these we have to insert by looking at the position. So, we\nwill shift 1 by 1 until we get the position",
+    "linked_keyframe_ids": [
+      "kf_000920",
+      "kf_000922",
+      "kf_000923"
+    ]
+  },
+  {
+    "chunk_id": "chunk_093",
+    "start_time": 930.0,
+    "end_time": 940.0,
+    "text": "of this new entry the key ok.\nSo, this is now our key. So, let us just 2",
+    "linked_keyframe_ids": [
+      "kf_000930",
+      "kf_000935",
+      "kf_000936"
+    ]
+  },
+  {
+    "chunk_id": "chunk_094",
+    "start_time": 940.0,
+    "end_time": 950.0,
+    "text": "6 7 9. So, this is our key and this is our\ni, now we compare this key with A i now still",
+    "linked_keyframe_ids": [
+      "kf_000944",
+      "kf_000948",
+      "kf_000949"
+    ]
+  },
+  {
+    "chunk_id": "chunk_095",
+    "start_time": 950.0,
+    "end_time": 960.0,
+    "text": "key is less than. So, we have to shift 9 here\nand 7 6 2 now i is pointing here, now again",
+    "linked_keyframe_ids": [
+      "kf_000950",
+      "kf_000951",
+      "kf_000953"
+    ]
+  },
+  {
+    "chunk_id": "chunk_096",
+    "start_time": 960.0,
+    "end_time": 970.0,
+    "text": "we compare key with A i again still it is\ngreater A i is greater. So, we shift this 7 here and i is pointing here, now again 6\nis greater. So, 6 will be shifted here now",
+    "linked_keyframe_ids": [
+      "kf_000961",
+      "kf_000962",
+      "kf_000969"
+    ]
+  },
+  {
+    "chunk_id": "chunk_097",
+    "start_time": 970.0,
+    "end_time": 980.0,
+    "text": "i is pointing here now key is now key is greater\nthan 2. So, we must stop this loop if key",
+    "linked_keyframe_ids": [
+      "kf_000977",
+      "kf_000978",
+      "kf_000979"
+    ]
+  },
+  {
+    "chunk_id": "chunk_098",
+    "start_time": 980.0,
+    "end_time": 990.0,
+    "text": "is greater than 2 if key is greater than A\ni and then we insert. So, i is this. So, insert",
+    "linked_keyframe_ids": [
+      "kf_000980",
+      "kf_000985",
+      "kf_000989"
+    ]
+  },
+  {
+    "chunk_id": "chunk_099",
+    "start_time": 990.0,
+    "end_time": 1000.0,
+    "text": "the key into A i plus 1. So, i is 1 A i plus\n1 is 2. So, you must insert this 3 over here. Now, this is 11 10 1. So, far now this is\nour J. So, now, J is pointing here now this",
+    "linked_keyframe_ids": [
+      "kf_000991",
+      "kf_000994",
+      "kf_000996"
+    ]
+  },
+  {
+    "chunk_id": "chunk_100",
+    "start_time": 1000.0,
+    "end_time": 1010.0,
+    "text": "",
+    "linked_keyframe_ids": [
+      "kf_001003",
+      "kf_001005",
+      "kf_001008"
+    ]
+  },
+  {
+    "chunk_id": "chunk_101",
+    "start_time": 1010.0,
+    "end_time": 1020.0,
+    "text": "is our i, now we compare this two. So, this\nis our key now here we are lucky because this",
+    "linked_keyframe_ids": [
+      "kf_001011",
+      "kf_001013",
+      "kf_001015"
+    ]
+  },
+  {
+    "chunk_id": "chunk_102",
+    "start_time": 1020.0,
+    "end_time": 1030.0,
+    "text": "key is greater than this A i and this part\nis already sorted. So, you do not need to",
+    "linked_keyframe_ids": [
+      "kf_001023",
+      "kf_001028",
+      "kf_001029"
+    ]
+  },
+  {
+    "chunk_id": "chunk_103",
+    "start_time": 1030.0,
+    "end_time": 1040.0,
+    "text": "do anything this i will be automatically increased\nby 1 by this for loop. So, now,. So, this is this is no change. So, now, this is our\ni and this is our is this is our J, J will",
+    "linked_keyframe_ids": [
+      "kf_001037"
+    ]
+  },
+  {
+    "chunk_id": "chunk_104",
+    "start_time": 1040.0,
+    "end_time": 1050.0,
+    "text": "be automatically increase by this for loop\nsorry. So, this is our J now this is our i",
+    "linked_keyframe_ids": [
+      "kf_001047",
+      "kf_001048",
+      "kf_001049"
+    ]
+  },
+  {
+    "chunk_id": "chunk_105",
+    "start_time": 1050.0,
+    "end_time": 1060.0,
+    "text": "now because i is always J minus 1 ok.\nSo, now i is this now this is our key now",
+    "linked_keyframe_ids": [
+      "kf_001052",
+      "kf_001053",
+      "kf_001058"
+    ]
+  },
+  {
+    "chunk_id": "chunk_106",
+    "start_time": 1060.0,
+    "end_time": 1070.0,
+    "text": "we compare this now this key is less than\na i. So, we need to do something. So, we just shift this by 1 and so 9 7 6 3 2. So, now,\ni is pointing here. So, if i is pointing here",
+    "linked_keyframe_ids": [
+      "kf_001067"
+    ]
+  },
+  {
+    "chunk_id": "chunk_107",
+    "start_time": 1070.0,
+    "end_time": 1080.0,
+    "text": "",
+    "linked_keyframe_ids": [
+      "kf_001076",
+      "kf_001077",
+      "kf_001079"
+    ]
+  },
+  {
+    "chunk_id": "chunk_108",
+    "start_time": 1080.0,
+    "end_time": 1090.0,
+    "text": "this is the key. So, we compare this key with\nthis 9 and this key is greater than. So, we",
+    "linked_keyframe_ids": [
+      "kf_001080",
+      "kf_001082",
+      "kf_001083"
+    ]
+  },
+  {
+    "chunk_id": "chunk_109",
+    "start_time": 1090.0,
+    "end_time": 1100.0,
+    "text": "put this 10 over here. So, this is 1 now J\nis pointing here this is the now if you see the wherever J is pointing. So, all the element\nup to that is before that it is sorted, now",
+    "linked_keyframe_ids": [
+      "kf_001091",
+      "kf_001097",
+      "kf_001099"
+    ]
+  },
+  {
+    "chunk_id": "chunk_110",
+    "start_time": 1100.0,
+    "end_time": 1110.0,
+    "text": "we in the thing is we need to find the position\nfor this guy this is our now key. So, this",
+    "linked_keyframe_ids": [
+      "kf_001101",
+      "kf_001102",
+      "kf_001103"
+    ]
+  },
+  {
+    "chunk_id": "chunk_111",
+    "start_time": 1110.0,
+    "end_time": 1120.0,
+    "text": "is the key now what we do now this is our\ni, now we compare this 1 is less than this.",
+    "linked_keyframe_ids": [
+      "kf_001112",
+      "kf_001117",
+      "kf_001118"
+    ]
+  },
+  {
+    "chunk_id": "chunk_112",
+    "start_time": 1120.0,
+    "end_time": 1130.0,
+    "text": "So, we have to shift this here and then i\nwill be pointing here now we compare this",
+    "linked_keyframe_ids": [
+      "kf_001120",
+      "kf_001121",
+      "kf_001122"
+    ]
+  },
+  {
+    "chunk_id": "chunk_113",
+    "start_time": 1130.0,
+    "end_time": 1140.0,
+    "text": "again this is less. So, we have to shift this\nhere. So, i is pointing here again it is this we\nhave to shift this here like this 7 6 3 2",
+    "linked_keyframe_ids": [
+      "kf_001130"
+    ]
+  },
+  {
+    "chunk_id": "chunk_114",
+    "start_time": 1140.0,
+    "end_time": 1150.0,
+    "text": "and now i is pointing 0. So, once i is pointing\n0 we stop and we put this 1 to be here. So,",
+    "linked_keyframe_ids": [
+      "kf_001146",
+      "kf_001148",
+      "kf_001149"
+    ]
+  },
+  {
+    "chunk_id": "chunk_115",
+    "start_time": 1150.0,
+    "end_time": 1160.0,
+    "text": "this is the final step of our code and. So,\nthis is sorted this is sorted. So, but you",
+    "linked_keyframe_ids": [
+      "kf_001150",
+      "kf_001155",
+      "kf_001156"
+    ]
+  },
+  {
+    "chunk_id": "chunk_116",
+    "start_time": 1160.0,
+    "end_time": 1170.0,
+    "text": "",
+    "linked_keyframe_ids": [
+      "kf_001165",
+      "kf_001168"
+    ]
+  },
+  {
+    "chunk_id": "chunk_117",
+    "start_time": 1170.0,
+    "end_time": 1180.0,
+    "text": "see the we will talk about runtime of this\nalgorithm how much time is it is taking by this algorithm that is called running time,\nhow much time it will take to run this code",
+    "linked_keyframe_ids": [
+      "kf_001173",
+      "kf_001176",
+      "kf_001177"
+    ]
+  },
+  {
+    "chunk_id": "chunk_118",
+    "start_time": 1180.0,
+    "end_time": 1190.0,
+    "text": "in our computer. So, that is called runtime\nor the time complexity. So, we will talk about that we will talk about the run time that\nis the analysis part of any algorithm ok.",
+    "linked_keyframe_ids": [
+      "kf_001180",
+      "kf_001181",
+      "kf_001182"
+    ]
+  },
+  {
+    "chunk_id": "chunk_119",
+    "start_time": 1190.0,
+    "end_time": 1200.0,
+    "text": "So, this is the input this is the output this\nis sorted. So, if we talk about runtime if",
+    "linked_keyframe_ids": [
+      "kf_001190",
+      "kf_001192",
+      "kf_001193"
+    ]
+  },
+  {
+    "chunk_id": "chunk_120",
+    "start_time": 1200.0,
+    "end_time": 1210.0,
+    "text": "you see here for this 10, we have just moving\n1 position for this 11 we are not doing anything just 1 comparison, but for this 1 if you see\n1 as to come a long way to the beginning.",
+    "linked_keyframe_ids": [
+      "kf_001201",
+      "kf_001202",
+      "kf_001208"
+    ]
+  },
+  {
+    "chunk_id": "chunk_121",
+    "start_time": 1210.0,
+    "end_time": 1220.0,
+    "text": "So, 1 has to compare with everybody. So, 1\nhas to come long way to the beginning.",
+    "linked_keyframe_ids": [
+      "kf_001214",
+      "kf_001215",
+      "kf_001216"
+    ]
+  },
+  {
+    "chunk_id": "chunk_122",
+    "start_time": 1220.0,
+    "end_time": 1230.0,
+    "text": "So, from there we can think that the run time\nwill depend on what. So, runtime depend on",
+    "linked_keyframe_ids": [
+      "kf_001220",
+      "kf_001222",
+      "kf_001226"
+    ]
+  },
+  {
+    "chunk_id": "chunk_123",
+    "start_time": 1230.0,
+    "end_time": 1240.0,
+    "text": "the input. So, we will talk about runtime,\nruntime of our algorithm run time of the insertion",
+    "linked_keyframe_ids": [
+      "kf_001230",
+      "kf_001235",
+      "kf_001237"
+    ]
+  },
+  {
+    "chunk_id": "chunk_124",
+    "start_time": 1240.0,
+    "end_time": 1250.0,
+    "text": "sort.\nSo, runtime means time taking by time taking",
+    "linked_keyframe_ids": [
+      "kf_001242",
+      "kf_001246",
+      "kf_001248"
+    ]
+  },
+  {
+    "chunk_id": "chunk_125",
+    "start_time": 1250.0,
+    "end_time": 1260.0,
+    "text": "to run this code. So, this runtime will depend\non what? It depends on few things first one",
+    "linked_keyframe_ids": [
+      "kf_001253",
+      "kf_001255",
+      "kf_001256"
+    ]
+  },
+  {
+    "chunk_id": "chunk_126",
+    "start_time": 1260.0,
+    "end_time": 1270.0,
+    "text": "",
+    "linked_keyframe_ids": [
+      "kf_001265",
+      "kf_001268",
+      "kf_001269"
+    ]
+  },
+  {
+    "chunk_id": "chunk_127",
+    "start_time": 1270.0,
+    "end_time": 1280.0,
+    "text": "is size of the input see if you have to sort\n10 numbers and if we have to sort 10,000 numbers;",
+    "linked_keyframe_ids": [
+      "kf_001272",
+      "kf_001273",
+      "kf_001274"
+    ]
+  },
+  {
+    "chunk_id": "chunk_128",
+    "start_time": 1280.0,
+    "end_time": 1290.0,
+    "text": "obviously, 10,000 number will take more time\nthan 10 numbers. So, runtime; obviously, will",
+    "linked_keyframe_ids": [
+      "kf_001281",
+      "kf_001282",
+      "kf_001284"
+    ]
+  },
+  {
+    "chunk_id": "chunk_129",
+    "start_time": 1290.0,
+    "end_time": 1300.0,
+    "text": "depend on the input size that n. So, runtime\nwill depend on the n. So, we want to. So,",
+    "linked_keyframe_ids": [
+      "kf_001290",
+      "kf_001294",
+      "kf_001295"
+    ]
+  },
+  {
+    "chunk_id": "chunk_130",
+    "start_time": 1300.0,
+    "end_time": 1310.0,
+    "text": "run time is a function of n. So, we want to\nparameterize the run time by n. So, you want",
+    "linked_keyframe_ids": [
+      "kf_001305",
+      "kf_001306",
+      "kf_001309"
+    ]
+  },
+  {
+    "chunk_id": "chunk_131",
+    "start_time": 1310.0,
+    "end_time": 1320.0,
+    "text": "to fix this n then you want to talk about\nthe run time. So, we want 2 parameters since it is a function of n because; obviously,\nif number of input is more than the time to",
+    "linked_keyframe_ids": [
+      "kf_001311",
+      "kf_001314",
+      "kf_001315"
+    ]
+  },
+  {
+    "chunk_id": "chunk_132",
+    "start_time": 1320.0,
+    "end_time": 1330.0,
+    "text": "sort will be more ok.\nSo, we will parameterize this by n. So, that is T n is the run time for our code runtime\nwith when the input size is n with n input.",
+    "linked_keyframe_ids": [
+      "kf_001326",
+      "kf_001327",
+      "kf_001329"
+    ]
+  },
+  {
+    "chunk_id": "chunk_133",
+    "start_time": 1330.0,
+    "end_time": 1340.0,
+    "text": "",
+    "linked_keyframe_ids": [
+      "kf_001332",
+      "kf_001336"
+    ]
+  },
+  {
+    "chunk_id": "chunk_134",
+    "start_time": 1340.0,
+    "end_time": 1350.0,
+    "text": "So, we fix n then this is a function this\nis denoted by T n. So, T n is our runtime for n input where n is fixed. So, we fix the\nsize of the input. Now once you fix the size",
+    "linked_keyframe_ids": [
+      "kf_001344",
+      "kf_001346",
+      "kf_001347"
+    ]
+  },
+  {
+    "chunk_id": "chunk_135",
+    "start_time": 1350.0,
+    "end_time": 1360.0,
+    "text": "of the input then the for our insertion sort\nruntime will depend on what here if you see",
+    "linked_keyframe_ids": [
+      "kf_001354"
+    ]
+  },
+  {
+    "chunk_id": "chunk_136",
+    "start_time": 1360.0,
+    "end_time": 1370.0,
+    "text": "this one for example, if our input is this\ninput say now for this eleven which was not",
+    "linked_keyframe_ids": [
+      "kf_001363",
+      "kf_001364",
+      "kf_001365"
+    ]
+  },
+  {
+    "chunk_id": "chunk_137",
+    "start_time": 1370.0,
+    "end_time": 1380.0,
+    "text": "doing anything just 1 comparison, but for\nthis one we have to come long way to the beginning.",
+    "linked_keyframe_ids": [
+      "kf_001370",
+      "kf_001375",
+      "kf_001378"
+    ]
+  },
+  {
+    "chunk_id": "chunk_138",
+    "start_time": 1380.0,
+    "end_time": 1390.0,
+    "text": "So, runtime will depend on the input pattern\nok. So, if the array is sorted if the input is\nalready sorted then it will take less time,",
+    "linked_keyframe_ids": [
+      "kf_001382",
+      "kf_001388",
+      "kf_001389"
+    ]
+  },
+  {
+    "chunk_id": "chunk_139",
+    "start_time": 1390.0,
+    "end_time": 1400.0,
+    "text": "and if the input is reverse sorted then it\nwill take more time reverse sorted means everybody",
+    "linked_keyframe_ids": [
+      "kf_001390",
+      "kf_001395",
+      "kf_001396"
+    ]
+  },
+  {
+    "chunk_id": "chunk_140",
+    "start_time": 1400.0,
+    "end_time": 1410.0,
+    "text": "has to come for to the beginning in each step\neach for loop. So, it will depend on the input.",
+    "linked_keyframe_ids": [
+      "kf_001402",
+      "kf_001404",
+      "kf_001408"
+    ]
+  },
+  {
+    "chunk_id": "chunk_141",
+    "start_time": 1410.0,
+    "end_time": 1420.0,
+    "text": "So, if the input is sorted then the time will\ntake less because if the input is sorted say",
+    "linked_keyframe_ids": [
+      "kf_001410",
+      "kf_001411",
+      "kf_001419"
+    ]
+  },
+  {
+    "chunk_id": "chunk_142",
+    "start_time": 1420.0,
+    "end_time": 1430.0,
+    "text": "for example, if our input is. So, if our input is 4 6 7 9 10 12 if this\nis our input which is already sorted array,",
+    "linked_keyframe_ids": [
+      "kf_001420",
+      "kf_001421",
+      "kf_001424"
+    ]
+  },
+  {
+    "chunk_id": "chunk_143",
+    "start_time": 1430.0,
+    "end_time": 1440.0,
+    "text": "",
+    "linked_keyframe_ids": [
+      "kf_001431",
+      "kf_001432",
+      "kf_001433"
+    ]
+  },
+  {
+    "chunk_id": "chunk_144",
+    "start_time": 1440.0,
+    "end_time": 1450.0,
+    "text": "then if you run the insertion sort we just\ncompare this with this stop this with this stop like this.\nSo, this is the this is easier to sort I mean",
+    "linked_keyframe_ids": [
+      "kf_001442",
+      "kf_001443",
+      "kf_001449"
+    ]
+  },
+  {
+    "chunk_id": "chunk_145",
+    "start_time": 1450.0,
+    "end_time": 1460.0,
+    "text": "this will take less time than if the input\nis say reverse sorted say if we have this input 9, 6, 5, 3, 2, 1 if the input is reverse\nsorted if the input is this, then everybody",
+    "linked_keyframe_ids": [
+      "kf_001451",
+      "kf_001453",
+      "kf_001454"
+    ]
+  },
+  {
+    "chunk_id": "chunk_146",
+    "start_time": 1460.0,
+    "end_time": 1470.0,
+    "text": "has to come forward then it is the time the\ntime will take more. So, this runtime will",
+    "linked_keyframe_ids": [
+      "kf_001462",
+      "kf_001464",
+      "kf_001469"
+    ]
+  },
+  {
+    "chunk_id": "chunk_147",
+    "start_time": 1470.0,
+    "end_time": 1480.0,
+    "text": "depend on the input pattern, in the sense\nthat a sorted array already sorted array a",
+    "linked_keyframe_ids": [
+      "kf_001471",
+      "kf_001472",
+      "kf_001473"
+    ]
+  },
+  {
+    "chunk_id": "chunk_148",
+    "start_time": 1480.0,
+    "end_time": 1490.0,
+    "text": "",
+    "linked_keyframe_ids": [
+      "kf_001485",
+      "kf_001486",
+      "kf_001488"
+    ]
+  },
+  {
+    "chunk_id": "chunk_149",
+    "start_time": 1490.0,
+    "end_time": 1500.0,
+    "text": "sorted array is easier to sort will take less\ntime in sorted array less time than then if",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_150",
+    "start_time": 1500.0,
+    "end_time": 1510.0,
+    "text": "we if the array is reverse sort it will take\nmore time, then the reverse sorted array.",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_151",
+    "start_time": 1510.0,
+    "end_time": 1520.0,
+    "text": "So, runtime will depend on the pattern of\nthe input. So, if we sort if a array is already",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_152",
+    "start_time": 1520.0,
+    "end_time": 1530.0,
+    "text": "sorted then it will take less time if a array\nis reverse sorted it will take more time because",
+    "linked_keyframe_ids": [
+      "kf_001525",
+      "kf_001526",
+      "kf_001527"
+    ]
+  },
+  {
+    "chunk_id": "chunk_153",
+    "start_time": 1530.0,
+    "end_time": 1540.0,
+    "text": "everybody has to come forward in that case.\nSo, based on this, we will talk about 3 types",
+    "linked_keyframe_ids": [
+      "kf_001534",
+      "kf_001538",
+      "kf_001539"
+    ]
+  },
+  {
+    "chunk_id": "chunk_154",
+    "start_time": 1540.0,
+    "end_time": 1550.0,
+    "text": "of analysis, worst case, best case and average\ncase analysis. So, this will depend on for",
+    "linked_keyframe_ids": [
+      "kf_001540",
+      "kf_001541",
+      "kf_001544"
+    ]
+  },
+  {
+    "chunk_id": "chunk_155",
+    "start_time": 1550.0,
+    "end_time": 1560.0,
+    "text": "insertion sort it will depend on the pattern\nof the input. So, we will do the types of",
+    "linked_keyframe_ids": [
+      "kf_001554",
+      "kf_001555",
+      "kf_001558"
+    ]
+  },
+  {
+    "chunk_id": "chunk_156",
+    "start_time": 1560.0,
+    "end_time": 1570.0,
+    "text": "analysis. So, first one is worst case. So, worst case\nmeans it is taking more time maximum time",
+    "linked_keyframe_ids": [
+      "kf_001563",
+      "kf_001564",
+      "kf_001565"
+    ]
+  },
+  {
+    "chunk_id": "chunk_157",
+    "start_time": 1570.0,
+    "end_time": 1580.0,
+    "text": "",
+    "linked_keyframe_ids": [
+      "kf_001574"
+    ]
+  },
+  {
+    "chunk_id": "chunk_158",
+    "start_time": 1580.0,
+    "end_time": 1590.0,
+    "text": "T n is taking. So, we will talk more details\nin the next class. So, it is taking more time maximum time it is taking by our code and\nthe best case worst case for insertion sort",
+    "linked_keyframe_ids": [
+      "kf_001581",
+      "kf_001582",
+      "kf_001583"
+    ]
+  },
+  {
+    "chunk_id": "chunk_159",
+    "start_time": 1590.0,
+    "end_time": 1600.0,
+    "text": "is if the input is reverse sorted then it\nis taking maximum time and the best cases",
+    "linked_keyframe_ids": [
+      "kf_001592",
+      "kf_001598",
+      "kf_001599"
+    ]
+  },
+  {
+    "chunk_id": "chunk_160",
+    "start_time": 1600.0,
+    "end_time": 1610.0,
+    "text": "is if the input for insertion sort if the\ninput is already sorted, then we are we are having the we are spending the less time to\nsort it and there is another case which is",
+    "linked_keyframe_ids": [
+      "kf_001601",
+      "kf_001606",
+      "kf_001608"
+    ]
+  },
+  {
+    "chunk_id": "chunk_161",
+    "start_time": 1610.0,
+    "end_time": 1620.0,
+    "text": "called average case average case means if\nwe assume the on an average how much time",
+    "linked_keyframe_ids": [
+      "kf_001615",
+      "kf_001616"
+    ]
+  },
+  {
+    "chunk_id": "chunk_162",
+    "start_time": 1620.0,
+    "end_time": 1630.0,
+    "text": "it is taking, but it should be some expected\nexpectation. So, for expectation may be we need to take some distribution of the input\npattern and then we talk about the expectation.",
+    "linked_keyframe_ids": [
+      "kf_001627",
+      "kf_001628",
+      "kf_001629"
+    ]
+  },
+  {
+    "chunk_id": "chunk_163",
+    "start_time": 1630.0,
+    "end_time": 1640.0,
+    "text": "So, this we will discuss in the next class.\nThank you.",
+    "linked_keyframe_ids": [
+      "kf_001630",
+      "kf_001632",
+      "kf_001639"
+    ]
+  }
+]

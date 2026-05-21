@@ -1,0 +1,638 @@
+[
+  {
+    "frame_id": "kf_000000",
+    "timestamp": 0,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000000.jpg",
+    "ssim_score": 0.0
+  },
+  {
+    "frame_id": "kf_000002",
+    "timestamp": 2,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000002.jpg",
+    "ssim_score": 0.423
+  },
+  {
+    "frame_id": "kf_000009",
+    "timestamp": 9,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000009.jpg",
+    "ssim_score": 0.3364
+  },
+  {
+    "frame_id": "kf_000054",
+    "timestamp": 54,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000054.jpg",
+    "ssim_score": 0.3815
+  },
+  {
+    "frame_id": "kf_000057",
+    "timestamp": 57,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000057.jpg",
+    "ssim_score": 0.5519
+  },
+  {
+    "frame_id": "kf_000058",
+    "timestamp": 58,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000058.jpg",
+    "ssim_score": 0.6365
+  },
+  {
+    "frame_id": "kf_000066",
+    "timestamp": 66,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000066.jpg",
+    "ssim_score": 0.3335
+  },
+  {
+    "frame_id": "kf_000164",
+    "timestamp": 164,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000164.jpg",
+    "ssim_score": 0.795
+  },
+  {
+    "frame_id": "kf_000206",
+    "timestamp": 206,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000206.jpg",
+    "ssim_score": 0.7783
+  },
+  {
+    "frame_id": "kf_000207",
+    "timestamp": 207,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000207.jpg",
+    "ssim_score": 0.7938
+  },
+  {
+    "frame_id": "kf_000212",
+    "timestamp": 212,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000212.jpg",
+    "ssim_score": 0.7885
+  },
+  {
+    "frame_id": "kf_000214",
+    "timestamp": 214,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000214.jpg",
+    "ssim_score": 0.7894
+  },
+  {
+    "frame_id": "kf_000256",
+    "timestamp": 256,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000256.jpg",
+    "ssim_score": 0.79
+  },
+  {
+    "frame_id": "kf_000266",
+    "timestamp": 266,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000266.jpg",
+    "ssim_score": 0.7837
+  },
+  {
+    "frame_id": "kf_000274",
+    "timestamp": 274,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000274.jpg",
+    "ssim_score": 0.778
+  },
+  {
+    "frame_id": "kf_000283",
+    "timestamp": 283,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000283.jpg",
+    "ssim_score": 0.7922
+  },
+  {
+    "frame_id": "kf_000299",
+    "timestamp": 299,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000299.jpg",
+    "ssim_score": 0.7833
+  },
+  {
+    "frame_id": "kf_000302",
+    "timestamp": 302,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000302.jpg",
+    "ssim_score": 0.7734
+  },
+  {
+    "frame_id": "kf_000332",
+    "timestamp": 332,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000332.jpg",
+    "ssim_score": 0.7525
+  },
+  {
+    "frame_id": "kf_000334",
+    "timestamp": 334,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000334.jpg",
+    "ssim_score": 0.7654
+  },
+  {
+    "frame_id": "kf_000344",
+    "timestamp": 344,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000344.jpg",
+    "ssim_score": 0.7641
+  },
+  {
+    "frame_id": "kf_000345",
+    "timestamp": 345,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000345.jpg",
+    "ssim_score": 0.7787
+  },
+  {
+    "frame_id": "kf_000346",
+    "timestamp": 346,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000346.jpg",
+    "ssim_score": 0.7327
+  },
+  {
+    "frame_id": "kf_000359",
+    "timestamp": 359,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000359.jpg",
+    "ssim_score": 0.6977
+  },
+  {
+    "frame_id": "kf_000367",
+    "timestamp": 367,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000367.jpg",
+    "ssim_score": 0.7912
+  },
+  {
+    "frame_id": "kf_000437",
+    "timestamp": 437,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000437.jpg",
+    "ssim_score": 0.7292
+  },
+  {
+    "frame_id": "kf_000438",
+    "timestamp": 438,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000438.jpg",
+    "ssim_score": 0.7638
+  },
+  {
+    "frame_id": "kf_000492",
+    "timestamp": 492,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000492.jpg",
+    "ssim_score": 0.7656
+  },
+  {
+    "frame_id": "kf_000493",
+    "timestamp": 493,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000493.jpg",
+    "ssim_score": 0.7752
+  },
+  {
+    "frame_id": "kf_000498",
+    "timestamp": 498,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000498.jpg",
+    "ssim_score": 0.703
+  },
+  {
+    "frame_id": "kf_000501",
+    "timestamp": 501,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000501.jpg",
+    "ssim_score": 0.7641
+  },
+  {
+    "frame_id": "kf_000507",
+    "timestamp": 507,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000507.jpg",
+    "ssim_score": 0.7173
+  },
+  {
+    "frame_id": "kf_000509",
+    "timestamp": 509,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000509.jpg",
+    "ssim_score": 0.7456
+  },
+  {
+    "frame_id": "kf_000511",
+    "timestamp": 511,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000511.jpg",
+    "ssim_score": 0.6761
+  },
+  {
+    "frame_id": "kf_000513",
+    "timestamp": 513,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000513.jpg",
+    "ssim_score": 0.7804
+  },
+  {
+    "frame_id": "kf_000514",
+    "timestamp": 514,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000514.jpg",
+    "ssim_score": 0.7057
+  },
+  {
+    "frame_id": "kf_000535",
+    "timestamp": 535,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000535.jpg",
+    "ssim_score": 0.7848
+  },
+  {
+    "frame_id": "kf_000538",
+    "timestamp": 538,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000538.jpg",
+    "ssim_score": 0.7824
+  },
+  {
+    "frame_id": "kf_000539",
+    "timestamp": 539,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000539.jpg",
+    "ssim_score": 0.7831
+  },
+  {
+    "frame_id": "kf_000540",
+    "timestamp": 540,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000540.jpg",
+    "ssim_score": 0.7453
+  },
+  {
+    "frame_id": "kf_000544",
+    "timestamp": 544,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000544.jpg",
+    "ssim_score": 0.7333
+  },
+  {
+    "frame_id": "kf_000553",
+    "timestamp": 553,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000553.jpg",
+    "ssim_score": 0.7497
+  },
+  {
+    "frame_id": "kf_000557",
+    "timestamp": 557,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000557.jpg",
+    "ssim_score": 0.7698
+  },
+  {
+    "frame_id": "kf_000558",
+    "timestamp": 558,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000558.jpg",
+    "ssim_score": 0.7394
+  },
+  {
+    "frame_id": "kf_000571",
+    "timestamp": 571,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000571.jpg",
+    "ssim_score": 0.6687
+  },
+  {
+    "frame_id": "kf_000574",
+    "timestamp": 574,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000574.jpg",
+    "ssim_score": 0.7242
+  },
+  {
+    "frame_id": "kf_000579",
+    "timestamp": 579,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000579.jpg",
+    "ssim_score": 0.7247
+  },
+  {
+    "frame_id": "kf_000581",
+    "timestamp": 581,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000581.jpg",
+    "ssim_score": 0.7484
+  },
+  {
+    "frame_id": "kf_000585",
+    "timestamp": 585,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000585.jpg",
+    "ssim_score": 0.7373
+  },
+  {
+    "frame_id": "kf_000588",
+    "timestamp": 588,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000588.jpg",
+    "ssim_score": 0.7686
+  },
+  {
+    "frame_id": "kf_000592",
+    "timestamp": 592,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000592.jpg",
+    "ssim_score": 0.7394
+  },
+  {
+    "frame_id": "kf_000596",
+    "timestamp": 596,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000596.jpg",
+    "ssim_score": 0.7939
+  },
+  {
+    "frame_id": "kf_000597",
+    "timestamp": 597,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000597.jpg",
+    "ssim_score": 0.7937
+  },
+  {
+    "frame_id": "kf_000613",
+    "timestamp": 613,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000613.jpg",
+    "ssim_score": 0.7594
+  },
+  {
+    "frame_id": "kf_000616",
+    "timestamp": 616,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000616.jpg",
+    "ssim_score": 0.7085
+  },
+  {
+    "frame_id": "kf_000621",
+    "timestamp": 621,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000621.jpg",
+    "ssim_score": 0.7176
+  },
+  {
+    "frame_id": "kf_000626",
+    "timestamp": 626,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000626.jpg",
+    "ssim_score": 0.6825
+  },
+  {
+    "frame_id": "kf_000629",
+    "timestamp": 629,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000629.jpg",
+    "ssim_score": 0.6248
+  },
+  {
+    "frame_id": "kf_000630",
+    "timestamp": 630,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000630.jpg",
+    "ssim_score": 0.6769
+  },
+  {
+    "frame_id": "kf_000667",
+    "timestamp": 667,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000667.jpg",
+    "ssim_score": 0.7718
+  },
+  {
+    "frame_id": "kf_000668",
+    "timestamp": 668,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000668.jpg",
+    "ssim_score": 0.6097
+  },
+  {
+    "frame_id": "kf_000669",
+    "timestamp": 669,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000669.jpg",
+    "ssim_score": 0.7376
+  },
+  {
+    "frame_id": "kf_000670",
+    "timestamp": 670,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000670.jpg",
+    "ssim_score": 0.6225
+  },
+  {
+    "frame_id": "kf_000677",
+    "timestamp": 677,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000677.jpg",
+    "ssim_score": 0.6908
+  },
+  {
+    "frame_id": "kf_000678",
+    "timestamp": 678,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000678.jpg",
+    "ssim_score": 0.7168
+  },
+  {
+    "frame_id": "kf_000682",
+    "timestamp": 682,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000682.jpg",
+    "ssim_score": 0.7807
+  },
+  {
+    "frame_id": "kf_000683",
+    "timestamp": 683,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000683.jpg",
+    "ssim_score": 0.7836
+  },
+  {
+    "frame_id": "kf_000687",
+    "timestamp": 687,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000687.jpg",
+    "ssim_score": 0.7891
+  },
+  {
+    "frame_id": "kf_000719",
+    "timestamp": 719,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000719.jpg",
+    "ssim_score": 0.7397
+  },
+  {
+    "frame_id": "kf_000720",
+    "timestamp": 720,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000720.jpg",
+    "ssim_score": 0.7953
+  },
+  {
+    "frame_id": "kf_000725",
+    "timestamp": 725,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000725.jpg",
+    "ssim_score": 0.7689
+  },
+  {
+    "frame_id": "kf_000726",
+    "timestamp": 726,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000726.jpg",
+    "ssim_score": 0.7513
+  },
+  {
+    "frame_id": "kf_000731",
+    "timestamp": 731,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000731.jpg",
+    "ssim_score": 0.6152
+  },
+  {
+    "frame_id": "kf_000732",
+    "timestamp": 732,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000732.jpg",
+    "ssim_score": 0.6688
+  },
+  {
+    "frame_id": "kf_000737",
+    "timestamp": 737,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000737.jpg",
+    "ssim_score": 0.6685
+  },
+  {
+    "frame_id": "kf_000743",
+    "timestamp": 743,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000743.jpg",
+    "ssim_score": 0.6613
+  },
+  {
+    "frame_id": "kf_000746",
+    "timestamp": 746,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000746.jpg",
+    "ssim_score": 0.7364
+  },
+  {
+    "frame_id": "kf_000747",
+    "timestamp": 747,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000747.jpg",
+    "ssim_score": 0.7521
+  },
+  {
+    "frame_id": "kf_000755",
+    "timestamp": 755,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000755.jpg",
+    "ssim_score": 0.6196
+  },
+  {
+    "frame_id": "kf_000756",
+    "timestamp": 756,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000756.jpg",
+    "ssim_score": 0.7569
+  },
+  {
+    "frame_id": "kf_000757",
+    "timestamp": 757,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000757.jpg",
+    "ssim_score": 0.6729
+  },
+  {
+    "frame_id": "kf_000764",
+    "timestamp": 764,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000764.jpg",
+    "ssim_score": 0.6803
+  },
+  {
+    "frame_id": "kf_000766",
+    "timestamp": 766,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000766.jpg",
+    "ssim_score": 0.68
+  },
+  {
+    "frame_id": "kf_000769",
+    "timestamp": 769,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000769.jpg",
+    "ssim_score": 0.5919
+  },
+  {
+    "frame_id": "kf_000770",
+    "timestamp": 770,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000770.jpg",
+    "ssim_score": 0.7468
+  },
+  {
+    "frame_id": "kf_000787",
+    "timestamp": 787,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000787.jpg",
+    "ssim_score": 0.7601
+  },
+  {
+    "frame_id": "kf_000788",
+    "timestamp": 788,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000788.jpg",
+    "ssim_score": 0.7609
+  },
+  {
+    "frame_id": "kf_000789",
+    "timestamp": 789,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000789.jpg",
+    "ssim_score": 0.7647
+  },
+  {
+    "frame_id": "kf_000803",
+    "timestamp": 803,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000803.jpg",
+    "ssim_score": 0.7982
+  },
+  {
+    "frame_id": "kf_000810",
+    "timestamp": 810,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000810.jpg",
+    "ssim_score": 0.7954
+  },
+  {
+    "frame_id": "kf_000835",
+    "timestamp": 835,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000835.jpg",
+    "ssim_score": 0.7811
+  },
+  {
+    "frame_id": "kf_000840",
+    "timestamp": 840,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000840.jpg",
+    "ssim_score": 0.7907
+  },
+  {
+    "frame_id": "kf_000850",
+    "timestamp": 850,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000850.jpg",
+    "ssim_score": 0.7888
+  },
+  {
+    "frame_id": "kf_000851",
+    "timestamp": 851,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000851.jpg",
+    "ssim_score": 0.7864
+  },
+  {
+    "frame_id": "kf_000855",
+    "timestamp": 855,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000855.jpg",
+    "ssim_score": 0.5432
+  },
+  {
+    "frame_id": "kf_000862",
+    "timestamp": 862,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000862.jpg",
+    "ssim_score": 0.7549
+  },
+  {
+    "frame_id": "kf_000864",
+    "timestamp": 864,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000864.jpg",
+    "ssim_score": 0.792
+  },
+  {
+    "frame_id": "kf_000877",
+    "timestamp": 877,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000877.jpg",
+    "ssim_score": 0.7766
+  },
+  {
+    "frame_id": "kf_000879",
+    "timestamp": 879,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000879.jpg",
+    "ssim_score": 0.789
+  },
+  {
+    "frame_id": "kf_000880",
+    "timestamp": 880,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000880.jpg",
+    "ssim_score": 0.7789
+  },
+  {
+    "frame_id": "kf_000881",
+    "timestamp": 881,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000881.jpg",
+    "ssim_score": 0.7947
+  },
+  {
+    "frame_id": "kf_000886",
+    "timestamp": 886,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000886.jpg",
+    "ssim_score": 0.7896
+  },
+  {
+    "frame_id": "kf_000895",
+    "timestamp": 895,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000895.jpg",
+    "ssim_score": 0.7598
+  },
+  {
+    "frame_id": "kf_000896",
+    "timestamp": 896,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_000896.jpg",
+    "ssim_score": 0.7589
+  },
+  {
+    "frame_id": "kf_001007",
+    "timestamp": 1007,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_001007.jpg",
+    "ssim_score": 0.782
+  },
+  {
+    "frame_id": "kf_001045",
+    "timestamp": 1045,
+    "file": "data/processed/7FZ4JRgCI9k/keyframes/kf_001045.jpg",
+    "ssim_score": 0.5535
+  }
+]

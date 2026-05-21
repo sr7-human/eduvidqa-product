@@ -1,0 +1,80 @@
+# Detailed Digest of Lecture
+
+## Key Concepts Explained
+
+*   The Perceptron Learning Algorithm is a more principled approach to learning weights and thresholds in a perceptron.
+*   The algorithm is used for binary classification problems, such as deciding whether to watch a movie or not.
+*   The goal is to learn the weights and threshold that allow the perceptron to correctly classify the data.
+*   The Perceptron Learning Algorithm works by iteratively updating the weights of the inputs to minimize the error between the predicted output and the actual output.
+
+## Movie Example
+
+*   The professor provides an example of a list of movies with associated classes (liked or not liked) and variables (e.g., ratings) used to make decisions.
+*   The problem is to decide whether to watch a movie or not based on a list of movies with associated labels (liked or not liked).
+
+## Perceptron Learning Algorithm
+
+*   The algorithm initializes the weights and threshold.
+*   The algorithm iterates through the data, and for each example:
+    *   Computes the weighted sum of the inputs.
+    *   Applies the threshold function to produce an output.
+    *   Updates the weights and threshold based on the error between the predicted output and the actual label.
+
+## Formulas, Code, and Algorithms
+
+*   The Perceptron Learning Algorithm is given by:
+
+    ```plaintext
+    Algorithm: Perceptron Learning Algorithm
+    P ← inputs with label 1;
+    N ← inputs with label 0;
+    Initialize w = [w1, w2, ..., wN] randomly;
+    while !convergence do
+        Pick random x ∈ P∪N;
+        if x ∈ P and ∑wi * xi < 0 then
+            w = w + x;
+        end
+        if x ∈ N and ∑wi * xi ≥ 0 then
+            w = w - x;
+        end
+    end
+    //the algorithm converges when all the inputs are classified correctly
+    ```
+
+## Diagrams and Visual Content
+
+*   A simple neural network diagram with one node and n inputs (x0, x1, ..., xn) is shown.
+*   The diagram illustrates the perceptron model.
+
+## Examples Given by the Professor
+
+*   The professor provides an example of a movie with features such as:
+    *   x1 = isActorDamon
+    *   x2 = isGenreThriller
+    *   x3 = isDirectorNolan
+    *   x4 = imdbRating (scaled to 0 to 1)
+    *   ...
+    *   x_n = criticsRating (scaled to 0 to 1)
+
+## Important Definitions and Terminology
+
+*   **Perceptron**: A type of feedforward neural network with one layer.
+*   **Weights**: The weights w1, w2, ..., wN are used to compute the weighted sum of the inputs.
+*   **Convergence**: The algorithm converges when all inputs are classified correctly.
+
+## Algorithm Steps
+
+1.  Initialize weights w = [w1, w2, ..., wN] randomly.
+2.  While not convergence:
+    *   Pick a random point x from the data.
+    *   If x is positive and ∑wi \* xi < 0, then update the weights.
+    *   If x is negative and ∑wi \* xi ≥ 0, then update the weights.
+
+## Effect of Updates on Angle
+
+*   When w is updated to w + x, the new angle α_new between w_new and x is calculated using the formula cos(α_new) ∝ w_new^T x.
+*   The update reduces the angle between w and x, making it less than 90 degrees.
+
+## Conclusion
+
+The lecture focuses on the Perceptron Learning Algorithm, its mathematical formulation, and a step-by-step example of how it works on a toy dataset. The goal is to understand how the algorithm iteratively updates the weight vector w to correctly classify points into two categories.

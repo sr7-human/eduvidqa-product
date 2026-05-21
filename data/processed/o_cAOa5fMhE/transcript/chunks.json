@@ -1,0 +1,1006 @@
+[
+  {
+    "chunk_id": "chunk_000",
+    "start_time": 0.0,
+    "end_time": 10.0,
+    "text": "You've probably seen these kind\u00a0\nof images representing the latent\u00a0\u00a0 space of a deep neural network, but have\u00a0\nyou ever wondered how they are created ?\u00a0 Well reducing data from 50 dimensions\u00a0\nto just 2 or 3 is no simple task.",
+    "linked_keyframe_ids": [
+      "kf_000000",
+      "kf_000004",
+      "kf_000005",
+      "kf_000007"
+    ]
+  },
+  {
+    "chunk_id": "chunk_001",
+    "start_time": 10.0,
+    "end_time": 20.0,
+    "text": "Today, we'll explore three famous and\u00a0\npowerful dimensionality reduction techniques:\u00a0\u00a0 PCA, t-SNE, and UMAP.\nBy the end of the video,",
+    "linked_keyframe_ids": [
+      "kf_000017"
+    ]
+  },
+  {
+    "chunk_id": "chunk_002",
+    "start_time": 20.0,
+    "end_time": 30.0,
+    "text": "you'll know how each of these methods work,\u00a0\nand what type of data they can handle.",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_003",
+    "start_time": 30.0,
+    "end_time": 40.0,
+    "text": "First, let's talk about PCA, or\u00a0\nPrincipal Component Analysis.",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_004",
+    "start_time": 40.0,
+    "end_time": 50.0,
+    "text": "Imagine we have gathered data on the\u00a0\nweight and height of a thousand people.\u00a0 We can plot this data on a 2D graph\u00a0\nto observe how it is distributed.",
+    "linked_keyframe_ids": [
+      "kf_000043",
+      "kf_000047"
+    ]
+  },
+  {
+    "chunk_id": "chunk_005",
+    "start_time": 50.0,
+    "end_time": 60.0,
+    "text": "And additionally, we can normalize\u00a0\nthe data to range from 0 to 1.\u00a0 You can see that the data varies\u00a0\nalong two main directions represented",
+    "linked_keyframe_ids": [
+      "kf_000053"
+    ]
+  },
+  {
+    "chunk_id": "chunk_006",
+    "start_time": 60.0,
+    "end_time": 70.0,
+    "text": "by the red and green arrows,\u00a0\nand the variation along the\u00a0\u00a0 red arrow seems more significant\u00a0\nthan that along the green arrow.\u00a0 These directions are known as the 'Principal\u00a0\nComponents' in Principal Component Analysis.",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_007",
+    "start_time": 70.0,
+    "end_time": 80.0,
+    "text": "Now, suppose we want to represent\u00a0\nthis 2D data on a single axis.\u00a0 One way to do it is to project the data onto\u00a0\nthe largest principal component, which is the",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_008",
+    "start_time": 80.0,
+    "end_time": 90.0,
+    "text": "axis given by the red arrow.\nAnd here is the final 1D\u00a0\u00a0 graph representing our population.\nHowever, you might wonder why we can't",
+    "linked_keyframe_ids": [
+      "kf_000087"
+    ]
+  },
+  {
+    "chunk_id": "chunk_009",
+    "start_time": 90.0,
+    "end_time": 100.0,
+    "text": "just project it onto the horizontal axis ?\nIndeed, if we revert back to our original\u00a0\u00a0 distribution, it seems that just projecting\u00a0\nto this axis yields a very similar result.",
+    "linked_keyframe_ids": [
+      "kf_000096",
+      "kf_000098"
+    ]
+  },
+  {
+    "chunk_id": "chunk_010",
+    "start_time": 100.0,
+    "end_time": 110.0,
+    "text": "Let's change the dataset: imagine\u00a0\nwe have data on the blood pressure\u00a0\u00a0 and cholesterol levels of several patients.\nWhen we plot this distribution, we observe that",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_011",
+    "start_time": 110.0,
+    "end_time": 120.0,
+    "text": "the patients form three distinct clusters.\nIf we project the data along the x-axis,\u00a0\u00a0 we only see two clusters, meaning we've\u00a0\ncombined two different populations",
+    "linked_keyframe_ids": [
+      "kf_000110"
+    ]
+  },
+  {
+    "chunk_id": "chunk_012",
+    "start_time": 120.0,
+    "end_time": 130.0,
+    "text": "in our low-dimensional representation.\nAnd if we project along the other axis,\u00a0\u00a0 we run into the same issue.\nNow what happens if we project\u00a0\u00a0 onto the principal component?\nWell, it seems that this time,",
+    "linked_keyframe_ids": [
+      "kf_000121",
+      "kf_000122"
+    ]
+  },
+  {
+    "chunk_id": "chunk_013",
+    "start_time": 130.0,
+    "end_time": 140.0,
+    "text": "we successfully retain all three clusters\u00a0\nin our low-dimensional representation.\u00a0 This low-dimensional representation successfully\u00a0\npreserves the main feature of our original data,",
+    "linked_keyframe_ids": [
+      "kf_000139"
+    ]
+  },
+  {
+    "chunk_id": "chunk_014",
+    "start_time": 140.0,
+    "end_time": 150.0,
+    "text": "which is much better than the simple\u00a0\nprojections we tried previously.\u00a0 Now that we've seen some examples,\u00a0\u00a0 let's see how we can calculate these\u00a0\nprincipal components in practice.",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_015",
+    "start_time": 150.0,
+    "end_time": 160.0,
+    "text": "The first step in Principal Component Analysis,\u00a0\u00a0 is to calculate the covariance\u00a0\nmatrix of the data set.",
+    "linked_keyframe_ids": [
+      "kf_000153"
+    ]
+  },
+  {
+    "chunk_id": "chunk_016",
+    "start_time": 160.0,
+    "end_time": 170.0,
+    "text": "Let's look at a simple example\u00a0\nusing our previous 2D data set.\u00a0 To calculate the covariance matrix,\u00a0\nwe first need to centre our data.\u00a0 This means calculating the mean of\u00a0\neach variable, and then subtracting",
+    "linked_keyframe_ids": [
+      "kf_000167"
+    ]
+  },
+  {
+    "chunk_id": "chunk_017",
+    "start_time": 170.0,
+    "end_time": 180.0,
+    "text": "that mean from each data point.\nNext, we multiply the transpose of\u00a0\u00a0 our centred data by the centred data itself\u00a0\nand then scale it by the number of samples.",
+    "linked_keyframe_ids": [
+      "kf_000172",
+      "kf_000175"
+    ]
+  },
+  {
+    "chunk_id": "chunk_018",
+    "start_time": 180.0,
+    "end_time": 190.0,
+    "text": "Since we are working with 2D data, we end\u00a0\nup with this nice and simple 2 by 2 matrix,",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_019",
+    "start_time": 190.0,
+    "end_time": 200.0,
+    "text": "which is called the covariance matrix.\nThe second step is to find the eigenvectors\u00a0\u00a0 of the covariance matrix, which are the\u00a0\nvectors whose direction remains unchanged",
+    "linked_keyframe_ids": [
+      "kf_000194",
+      "kf_000195",
+      "kf_000196"
+    ]
+  },
+  {
+    "chunk_id": "chunk_020",
+    "start_time": 200.0,
+    "end_time": 210.0,
+    "text": "when the matrix is applied to them.\nThese are precisely the vectors\u00a0\u00a0 that satisfy this equation.\nSolving for these vectors is\u00a0\u00a0 a very common task in linear algebra,\u00a0\nand can be done using various methods.",
+    "linked_keyframe_ids": [
+      "kf_000200",
+      "kf_000201",
+      "kf_000202"
+    ]
+  },
+  {
+    "chunk_id": "chunk_021",
+    "start_time": 210.0,
+    "end_time": 220.0,
+    "text": "Once we have the eigenvectors, we sort them\u00a0\nin descending order by their eigenvalues.\u00a0 The eigenvectors with the largest\u00a0\neigenvalues are our 'principal components'.",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_022",
+    "start_time": 220.0,
+    "end_time": 230.0,
+    "text": "Finally, we create a matrix to project our data\u00a0\nonto the principal components, finishing the PCA.",
+    "linked_keyframe_ids": [
+      "kf_000228",
+      "kf_000229"
+    ]
+  },
+  {
+    "chunk_id": "chunk_023",
+    "start_time": 230.0,
+    "end_time": 240.0,
+    "text": "There are lots of advantages\u00a0\nto using Principal Components\u00a0\u00a0 Analysis instead of other more complex methods.\nThe main benefit is that it relies only on basic",
+    "linked_keyframe_ids": [
+      "kf_000230",
+      "kf_000231",
+      "kf_000232",
+      "kf_000233"
+    ]
+  },
+  {
+    "chunk_id": "chunk_024",
+    "start_time": 240.0,
+    "end_time": 250.0,
+    "text": "linear algebra, which makes it very fast.\nIndeed, if we look at the time complexity\u00a0\u00a0 for a second, PCA is linear in\u00a0\nterms of the number of samples.",
+    "linked_keyframe_ids": [
+      "kf_000249"
+    ]
+  },
+  {
+    "chunk_id": "chunk_025",
+    "start_time": 250.0,
+    "end_time": 260.0,
+    "text": "This means that the time required\u00a0\nto project the data increases\u00a0\u00a0 proportionally with the dataset size.\nThe other great thing about PCA is that",
+    "linked_keyframe_ids": [
+      "kf_000259"
+    ]
+  },
+  {
+    "chunk_id": "chunk_026",
+    "start_time": 260.0,
+    "end_time": 270.0,
+    "text": "when you use it to visualise the\u00a0\nlatent space of an auto-encoder,\u00a0\u00a0 you also get the eigenvalue information.\nThis means we can now identify which\u00a0\u00a0 dimensions of our latent space are\u00a0\nthe most important, and by how much.",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_027",
+    "start_time": 270.0,
+    "end_time": 280.0,
+    "text": "However, there is one thing that PCA struggles\u00a0\nwith: it doesn't work well with non-linear data\u00a0\u00a0 because it relies on linear projections.\nTake spiral-shaped data, for example.",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_028",
+    "start_time": 280.0,
+    "end_time": 290.0,
+    "text": "PCA struggles to separate such data\u00a0\ninto distinct clusters effectively.\u00a0 The problem is not the direction of\u00a0\nprojection, but the fact that we are",
+    "linked_keyframe_ids": [
+      "kf_000282",
+      "kf_000283",
+      "kf_000286",
+      "kf_000287"
+    ]
+  },
+  {
+    "chunk_id": "chunk_029",
+    "start_time": 290.0,
+    "end_time": 300.0,
+    "text": "using a linear operation at all, whereas the\u00a0\nrelationship between the data is non-linear.\u00a0 Despite this, it is still the fastest and\u00a0\nmost interpretable method for dimensionality",
+    "linked_keyframe_ids": [
+      "kf_000291",
+      "kf_000293",
+      "kf_000294"
+    ]
+  },
+  {
+    "chunk_id": "chunk_030",
+    "start_time": 300.0,
+    "end_time": 310.0,
+    "text": "reduction, which is why it is used so\u00a0\nwidely in research and engineering.\u00a0 However, there is still a need for methods that\u00a0\ncan effectively deal with more complex data,",
+    "linked_keyframe_ids": [
+      "kf_000308",
+      "kf_000309"
+    ]
+  },
+  {
+    "chunk_id": "chunk_031",
+    "start_time": 310.0,
+    "end_time": 320.0,
+    "text": "as the relationship between latent\u00a0\nvariables may not be linear. Another well-known method for visualising\u00a0\nlatent space is t-SNE, but before we look at",
+    "linked_keyframe_ids": [
+      "kf_000316"
+    ]
+  },
+  {
+    "chunk_id": "chunk_032",
+    "start_time": 320.0,
+    "end_time": 330.0,
+    "text": "how it works, let's give it some background.\nt-SNE stands for t-Distributed Stochastic\u00a0\u00a0 Neighbour Embedding and was developed in 2008\u00a0\nby Laurens van der Maaten and Geoffrey Hinton.",
+    "linked_keyframe_ids": [
+      "kf_000328"
+    ]
+  },
+  {
+    "chunk_id": "chunk_033",
+    "start_time": 330.0,
+    "end_time": 340.0,
+    "text": "Geoffrey Hinton is a big name in\u00a0\ndeep learning, often referred to\u00a0\u00a0 as one of the \"godfathers\" of the field,\u00a0\nalong with Yoshua Bengio and Yann LeCun.",
+    "linked_keyframe_ids": [
+      "kf_000334",
+      "kf_000335",
+      "kf_000338"
+    ]
+  },
+  {
+    "chunk_id": "chunk_034",
+    "start_time": 340.0,
+    "end_time": 350.0,
+    "text": "Hinton has come up with several key ideas\u00a0\nin deep learning, such as backpropagation,\u00a0\u00a0 dropout, autoencoders, knowledge distillation, and\u00a0\ncontrastive learning, and the list goes on and on.",
+    "linked_keyframe_ids": [
+      "kf_000345"
+    ]
+  },
+  {
+    "chunk_id": "chunk_035",
+    "start_time": 350.0,
+    "end_time": 360.0,
+    "text": "t-SNE is actually an improved version\u00a0\nof an earlier technique called SNE,\u00a0\u00a0 which Hinton published in 2002.\nWe'll start by looking at the",
+    "linked_keyframe_ids": [
+      "kf_000357"
+    ]
+  },
+  {
+    "chunk_id": "chunk_036",
+    "start_time": 360.0,
+    "end_time": 370.0,
+    "text": "basics of SNE, and then quickly go\u00a0\nover what t-SNE adds to the mix. The main idea behind SNE is pretty\u00a0\nstraightforward: points that are",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_037",
+    "start_time": 370.0,
+    "end_time": 380.0,
+    "text": "close to each other in high-dimensional\u00a0\nspace should also be close to each other\u00a0\u00a0 when we bring them down to a lower dimension.\nTo make this happen, we measure the distance",
+    "linked_keyframe_ids": [
+      "kf_000372"
+    ]
+  },
+  {
+    "chunk_id": "chunk_038",
+    "start_time": 380.0,
+    "end_time": 390.0,
+    "text": "between a point and its neighbors\u00a0\nin the high-dimensional space,\u00a0\u00a0 and then we try to make sure those distances\u00a0\nstay similar in the lower-dimensional space.",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_039",
+    "start_time": 390.0,
+    "end_time": 400.0,
+    "text": "We do this by using a special kind of loss\u00a0\nfunction that tells us how different the\u00a0\u00a0 distances are in the high-dimensional\u00a0\nand low-dimensional representations.\u00a0 Next, we simply minimize this loss function\u00a0\nto improve our low-dimensional representation.",
+    "linked_keyframe_ids": [
+      "kf_000392"
+    ]
+  },
+  {
+    "chunk_id": "chunk_040",
+    "start_time": 400.0,
+    "end_time": 410.0,
+    "text": "Let's take a look at how we actually\u00a0\ncalculate all this in practice. The first step in the SNE algorithm is to\u00a0\nturn the distances between a point and its",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_041",
+    "start_time": 410.0,
+    "end_time": 420.0,
+    "text": "neighbors into a probability distribution.\nMore specifically, we convert these distances\u00a0\u00a0 into a Gaussian distribution.\nYou can think of this Gaussian",
+    "linked_keyframe_ids": [
+      "kf_000419"
+    ]
+  },
+  {
+    "chunk_id": "chunk_042",
+    "start_time": 420.0,
+    "end_time": 430.0,
+    "text": "distribution as the probability that a\u00a0\nblue point is a neighbour of the red point.\u00a0 To get the probability for each point in our\u00a0\nhigh-dimensional space, we use this formula,",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_043",
+    "start_time": 430.0,
+    "end_time": 440.0,
+    "text": "which is basically the exponential function\u00a0\napplied to the distance between the points.\u00a0 If you know a bit about Gaussians, you\u2019ll\u00a0\nknow that the shape of the bell curve",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_044",
+    "start_time": 440.0,
+    "end_time": 450.0,
+    "text": "changes based on the variance sigma.\nThe shape of this Gaussian is crucial\u00a0\u00a0 because if it's wider, more points will be\u00a0\nconsidered as neighbors of the red point.",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_045",
+    "start_time": 450.0,
+    "end_time": 460.0,
+    "text": "And if it's narrow, only the closest\u00a0\npoints will be considered as neighbors.\u00a0 We adjust the variance of this Gaussian\u00a0\nusing a hyperparameter called \"Perplexity,\"",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_046",
+    "start_time": 460.0,
+    "end_time": 470.0,
+    "text": "which we'll talk about later.\nNow that we have the probabilities\u00a0\u00a0 for the neighbors of this point,\u00a0\nwe repeat the same process for each\u00a0\u00a0 point in our high dimensional representation.\nTo make all these probabilities add up to one,",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_047",
+    "start_time": 470.0,
+    "end_time": 480.0,
+    "text": "we normalise each Gaussian by the\u00a0\nsum of all the others, which is very\u00a0\u00a0 costly in terms of computations.\nIn our low-dimensional space,",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_048",
+    "start_time": 480.0,
+    "end_time": 490.0,
+    "text": "we start by placing points randomly.\nThen, we repeat the same process we\u00a0\u00a0 just did with our high-dimensional data:\u00a0\nwe calculate the same kind of probabilities\u00a0\u00a0 based on the distances between these points.\nAs you can see, it is exactly the same formula,",
+    "linked_keyframe_ids": [
+      "kf_000480"
+    ]
+  },
+  {
+    "chunk_id": "chunk_049",
+    "start_time": 490.0,
+    "end_time": 500.0,
+    "text": "except we use different variables since we\u00a0\ndescribe the low-dimensional representation.",
+    "linked_keyframe_ids": [
+      "kf_000490"
+    ]
+  },
+  {
+    "chunk_id": "chunk_050",
+    "start_time": 500.0,
+    "end_time": 510.0,
+    "text": "Now that we have two different probability\u00a0\ndistributions representing our high-dimensional\u00a0\u00a0 and low-dimensional spaces, let's see how we\u00a0\nbring each of these distribution closer together.",
+    "linked_keyframe_ids": [
+      "kf_000501",
+      "kf_000502",
+      "kf_000503"
+    ]
+  },
+  {
+    "chunk_id": "chunk_051",
+    "start_time": 510.0,
+    "end_time": 520.0,
+    "text": "The most common way to measure how similar\u00a0\ntwo probability distributions are is by\u00a0\u00a0 using the Kullback-Leibler divergence.\nYou can think of it as a kind of distance,",
+    "linked_keyframe_ids": [
+      "kf_000512"
+    ]
+  },
+  {
+    "chunk_id": "chunk_052",
+    "start_time": 520.0,
+    "end_time": 530.0,
+    "text": "but between probability distributions.\nIf the KL divergence is large,\u00a0\u00a0 the distributions are very different\u00a0\nand if it small, they're very similar.",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_053",
+    "start_time": 530.0,
+    "end_time": 540.0,
+    "text": "For instance let's take these two Gaussians: the\u00a0\nKullback-Leibler divergence between these two\u00a0\u00a0 functions is the blue area under the blue curve.\nAs these Gaussians move further apart,",
+    "linked_keyframe_ids": [
+      "kf_000534"
+    ]
+  },
+  {
+    "chunk_id": "chunk_054",
+    "start_time": 540.0,
+    "end_time": 550.0,
+    "text": "the KL divergence increases, and as they\u00a0\nmove closer together, the KL decreases.\u00a0 Finally if the two functions\u00a0\nmatch perfectly, the KL is 0.",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_055",
+    "start_time": 550.0,
+    "end_time": 560.0,
+    "text": "We can explicitly compute the KL divergence\u00a0\nbetween the distribution representing our\u00a0\u00a0 high-dimensional space and the distribution\u00a0\nrepresenting our low-dimensional space.",
+    "linked_keyframe_ids": [
+      "kf_000551",
+      "kf_000555"
+    ]
+  },
+  {
+    "chunk_id": "chunk_056",
+    "start_time": 560.0,
+    "end_time": 570.0,
+    "text": "Then we can calculate the gradient of this KL\u00a0\ndivergence with respect to our low-dimensional\u00a0\u00a0 embeddings, which gives us this nice formula.\nThis allows us to adjust the low-dimensional",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_057",
+    "start_time": 570.0,
+    "end_time": 580.0,
+    "text": "representation to be closer\u00a0\nto our original distribution.\u00a0 Let's take the example of these\u00a0\nfour clusters, and see how their\u00a0\u00a0 1D representation evolves using t-SNE.\nAs you can see, after 80 iterations",
+    "linked_keyframe_ids": [
+      "kf_000575",
+      "kf_000576"
+    ]
+  },
+  {
+    "chunk_id": "chunk_058",
+    "start_time": 580.0,
+    "end_time": 590.0,
+    "text": "",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_059",
+    "start_time": 590.0,
+    "end_time": 600.0,
+    "text": "we indeed have 4 clusters, just like in the\u00a0\nhigher dimensional space, which is already",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_060",
+    "start_time": 600.0,
+    "end_time": 610.0,
+    "text": "something that PCA would not be able to do.\nSo now that we saw the whole process,\u00a0\u00a0 what about that perplexity\u00a0\nhyperparameter we mentioned earlier?",
+    "linked_keyframe_ids": [
+      "kf_000607",
+      "kf_000608"
+    ]
+  },
+  {
+    "chunk_id": "chunk_061",
+    "start_time": 610.0,
+    "end_time": 620.0,
+    "text": "Perplexity helps us choose the correct sigma\u00a0\nparameter, which controls the width of the\u00a0\u00a0 Gaussians in the high-dimensional representation.\nMore precisely, it is calculated with the entropy",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_062",
+    "start_time": 620.0,
+    "end_time": 630.0,
+    "text": "of each distribution P using this formula.\nSo what happens in practice is that the",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_063",
+    "start_time": 630.0,
+    "end_time": 640.0,
+    "text": "algorithm iteratively selects different values\u00a0\nof sigma until this quantity is roughly equal\u00a0\u00a0 to the perplexity chosen by the user.\nTheoretically, the perplexity should",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_064",
+    "start_time": 640.0,
+    "end_time": 650.0,
+    "text": "represent the number of other points that\u00a0\na given point will consider as neighbors,\u00a0\u00a0 but in practice this is not so obvious.\nLet's take the example of the mnist dataset:",
+    "linked_keyframe_ids": [
+      "kf_000649"
+    ]
+  },
+  {
+    "chunk_id": "chunk_065",
+    "start_time": 650.0,
+    "end_time": 660.0,
+    "text": "here is the 2D representation computed\u00a0\nby SNE with a perplexity of 30.\u00a0 With its default parameters, the algorithm\u00a0\nalready provides a decent visualisation,",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_066",
+    "start_time": 660.0,
+    "end_time": 670.0,
+    "text": "with some easily identifiable clusters.\nLet's increase the perplexity\u00a0\u00a0 and see what happens.\nAs the perplexity increases,",
+    "linked_keyframe_ids": [
+      "kf_000666",
+      "kf_000667",
+      "kf_000668",
+      "kf_000669"
+    ]
+  },
+  {
+    "chunk_id": "chunk_067",
+    "start_time": 670.0,
+    "end_time": 680.0,
+    "text": "the effects on the size of the clusters and\u00a0\ntheir distribution is not all that clear, but",
+    "linked_keyframe_ids": [
+      "kf_000670",
+      "kf_000671",
+      "kf_000672",
+      "kf_000673",
+      "kf_000674",
+      "kf_000677",
+      "kf_000678",
+      "kf_000679"
+    ]
+  },
+  {
+    "chunk_id": "chunk_068",
+    "start_time": 680.0,
+    "end_time": 690.0,
+    "text": "the clusters are supposed to be more diffused now.\nPerplexity is the most important parameter of SNE,\u00a0\u00a0 but you kind of have to test different values, and\u00a0\nadjust until you are happy with the visualisation.",
+    "linked_keyframe_ids": [
+      "kf_000680",
+      "kf_000681",
+      "kf_000682",
+      "kf_000683"
+    ]
+  },
+  {
+    "chunk_id": "chunk_069",
+    "start_time": 690.0,
+    "end_time": 700.0,
+    "text": "As you may have guessed the main advantage\u00a0\nof SNE is that it can handle non-linear data,\u00a0\u00a0 which is a big improvement over PCA.\nFor example, take this spring-like 3D dataset:",
+    "linked_keyframe_ids": [
+      "kf_000693"
+    ]
+  },
+  {
+    "chunk_id": "chunk_070",
+    "start_time": 700.0,
+    "end_time": 710.0,
+    "text": "on the right is the 2D representation\u00a0\nof this dataset using PCA and SNE.",
+    "linked_keyframe_ids": [
+      "kf_000703",
+      "kf_000704",
+      "kf_000705",
+      "kf_000707",
+      "kf_000709"
+    ]
+  },
+  {
+    "chunk_id": "chunk_071",
+    "start_time": 710.0,
+    "end_time": 720.0,
+    "text": "As you can see, PCA produces only one mixed-up\u00a0\ncluster, whereas SNE successfully separates the\u00a0\u00a0 two classes in the 2D representation.\nEven if the visualisation is better,",
+    "linked_keyframe_ids": [
+      "kf_000711",
+      "kf_000713",
+      "kf_000715",
+      "kf_000717",
+      "kf_000719"
+    ]
+  },
+  {
+    "chunk_id": "chunk_072",
+    "start_time": 720.0,
+    "end_time": 730.0,
+    "text": "SNE has one major flaw, it runs terribly slowly.\nt-SNE introduces several changes to speed up and\u00a0\u00a0 improve the visualisations of SNE, but we\u00a0\nwon't cover all of these in this video.",
+    "linked_keyframe_ids": [
+      "kf_000720",
+      "kf_000722",
+      "kf_000724",
+      "kf_000725",
+      "kf_000726",
+      "kf_000727"
+    ]
+  },
+  {
+    "chunk_id": "chunk_073",
+    "start_time": 730.0,
+    "end_time": 740.0,
+    "text": "The most important tweaks are in the probability\u00a0\ndistributions, like using symmetric distributions",
+    "linked_keyframe_ids": [
+      "kf_000738"
+    ]
+  },
+  {
+    "chunk_id": "chunk_074",
+    "start_time": 740.0,
+    "end_time": 750.0,
+    "text": "in the high-dimensional space and Student's\u00a0\nt-distribution in the low-dimensional space.\u00a0 Indeed these distributions are easier to compute\u00a0\nbecause they don't use the exponential function.",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_075",
+    "start_time": 750.0,
+    "end_time": 760.0,
+    "text": "Even with many modifications and hacks, t-SNE is\u00a0\nstill very slow compared to PCA: as you can see\u00a0\u00a0 when running it on 10 thousands MNIST samples,\u00a0\nit takes almost 90 seconds to get the result.",
+    "linked_keyframe_ids": [
+      "kf_000752"
+    ]
+  },
+  {
+    "chunk_id": "chunk_076",
+    "start_time": 760.0,
+    "end_time": 770.0,
+    "text": "Another drawback of t-SNE is\u00a0\nthe perplexity hyperparameter.\u00a0 The big problem with perplexity is that\u00a0\nchanging this parameter even a little can",
+    "linked_keyframe_ids": [
+      "kf_000769"
+    ]
+  },
+  {
+    "chunk_id": "chunk_077",
+    "start_time": 770.0,
+    "end_time": 780.0,
+    "text": "completely mess up our visualisation.\nFor instance here we just went from\u00a0\u00a0 a perplexity of 30 to a perplexity of 31,\u00a0\nand many clusters have completely changed.",
+    "linked_keyframe_ids": [
+      "kf_000770",
+      "kf_000771",
+      "kf_000776",
+      "kf_000777",
+      "kf_000778"
+    ]
+  },
+  {
+    "chunk_id": "chunk_078",
+    "start_time": 780.0,
+    "end_time": 790.0,
+    "text": "This means that when using t-SNE, we have\u00a0\nto check the visualization each time we\u00a0\u00a0 change the perplexity until we get a good\u00a0\nrepresentation, which is very time-consuming.",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_079",
+    "start_time": 790.0,
+    "end_time": 800.0,
+    "text": "And the bigger the perplexity,\u00a0\nthe slower the algorithm runs,\u00a0\u00a0 making it even harder to tune this parameter.\nStill, for a long time, t-SNE was the most widely",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_080",
+    "start_time": 800.0,
+    "end_time": 810.0,
+    "text": "used visualization method because it could handle\u00a0\nnon-linear relationships way better than PCA.",
+    "linked_keyframe_ids": [
+      "kf_000802"
+    ]
+  },
+  {
+    "chunk_id": "chunk_081",
+    "start_time": 810.0,
+    "end_time": 820.0,
+    "text": "In 2018, a new dimensionality reduction technique\u00a0\ncalled UMAP was introduced, which stands for\u00a0\u00a0 Uniform Manifold Approximation and Projection.\nWhile the algorithm has a strong mathematical",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_082",
+    "start_time": 820.0,
+    "end_time": 830.0,
+    "text": "foundation, particularly in topology and\u00a0\ncategory theory, we won\u2019t be diving into\u00a0\u00a0 the theoretical details in this video.\nIf you're curious about the deeper",
+    "linked_keyframe_ids": [
+      "kf_000821",
+      "kf_000823",
+      "kf_000825",
+      "kf_000827",
+      "kf_000828"
+    ]
+  },
+  {
+    "chunk_id": "chunk_083",
+    "start_time": 830.0,
+    "end_time": 840.0,
+    "text": "mathematical justifications, there's a link\u00a0\nto the original paper in the description.\u00a0 Now, let\u2019s break down the\u00a0\nmain steps of the algorithm. The core idea of this algorithm is somewhat\u00a0\nsimilar to t-SNE: we look at the distance to",
+    "linked_keyframe_ids": [
+      "kf_000831"
+    ]
+  },
+  {
+    "chunk_id": "chunk_084",
+    "start_time": 840.0,
+    "end_time": 850.0,
+    "text": "each neighbor of every high-dimensional sample\u00a0\nand aim for a low-dimensional representation\u00a0\u00a0 that roughly matches those distances.\nBut instead of using Gaussians and probability",
+    "linked_keyframe_ids": [
+      "kf_000846"
+    ]
+  },
+  {
+    "chunk_id": "chunk_085",
+    "start_time": 850.0,
+    "end_time": 860.0,
+    "text": "distributions, we'll use graphs to represent both\u00a0\nour high-dimensional and low-dimensional data.\u00a0 So, how exactly do we compute these graphs?\nWell first, we will need to find the",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_086",
+    "start_time": 860.0,
+    "end_time": 870.0,
+    "text": "nearest neighbors of each samples.\nThere are several algorithms to achieve this, all\u00a0\u00a0 based on comparing the distances between points.\nFor each neighbour, we construct an edge between",
+    "linked_keyframe_ids": [
+      "kf_000861"
+    ]
+  },
+  {
+    "chunk_id": "chunk_087",
+    "start_time": 870.0,
+    "end_time": 880.0,
+    "text": "the two points and move on to the next\u00a0\nneighbour until we have k neighbours.",
+    "linked_keyframe_ids": [
+      "kf_000874"
+    ]
+  },
+  {
+    "chunk_id": "chunk_088",
+    "start_time": 880.0,
+    "end_time": 890.0,
+    "text": "In this example, k is equal\u00a0\nto 3: keep in mind that this\u00a0\u00a0 is in fact the main hyperparameter of UMAP.\nThis gives us a first binary graph, which we'll",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_089",
+    "start_time": 890.0,
+    "end_time": 900.0,
+    "text": "transform into a weighted graph to represent\u00a0\nhow close each point is to its neighbors.\u00a0 We achieve this by applying an\u00a0\nexponential decay over the distances",
+    "linked_keyframe_ids": [
+      "kf_000891",
+      "kf_000898"
+    ]
+  },
+  {
+    "chunk_id": "chunk_090",
+    "start_time": 900.0,
+    "end_time": 910.0,
+    "text": "between a point and its neighbors.\nWe offset this decay by the distance\u00a0\u00a0 rho to the closest neighbor so that the\u00a0\nclosest neighbor keeps a weight of 1.",
+    "linked_keyframe_ids": [
+      "kf_000902",
+      "kf_000906"
+    ]
+  },
+  {
+    "chunk_id": "chunk_091",
+    "start_time": 910.0,
+    "end_time": 920.0,
+    "text": "As you can see, we have a similar formula to\u00a0\nt-SNE, but we don't normalize this quantity,\u00a0\u00a0 making it much faster to compute.\nNow that we have the weights for",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_092",
+    "start_time": 920.0,
+    "end_time": 930.0,
+    "text": "this sample, we will repeat the same\u00a0\nprocess for each of the other samples.\u00a0 Although we only show three graphs here, we end up\u00a0\nwith one weighted graph per sample, which we need",
+    "linked_keyframe_ids": [
+      "kf_000926"
+    ]
+  },
+  {
+    "chunk_id": "chunk_093",
+    "start_time": 930.0,
+    "end_time": 940.0,
+    "text": "to combine into a single weighted graph.\nSo, how do we proceed ?\u00a0 Well, to keep a weighted binary graph, we\u00a0\nneed to symmetrize it so that there's only",
+    "linked_keyframe_ids": [
+      "kf_000936"
+    ]
+  },
+  {
+    "chunk_id": "chunk_094",
+    "start_time": 940.0,
+    "end_time": 950.0,
+    "text": "one edge between any two points instead of two.\nWe simply use this formula that does just that,\u00a0\u00a0 combining edges and keeping\u00a0\nthe weights between 0 and 1.",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_095",
+    "start_time": 950.0,
+    "end_time": 960.0,
+    "text": "For instance if we want to combine the\u00a0\nedges between the white and red vertices,\u00a0\u00a0 we simply take their respective weight and apply\u00a0\nthe formula, and end up with a weight of 1.",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_096",
+    "start_time": 960.0,
+    "end_time": 970.0,
+    "text": "Now that we have our final graph construction,\u00a0\nwe repeat the same process for our initial\u00a0\u00a0 low-dimensional representation, which\u00a0\ngives us another weighted binary graph.",
+    "linked_keyframe_ids": [
+      "kf_000962",
+      "kf_000968"
+    ]
+  },
+  {
+    "chunk_id": "chunk_097",
+    "start_time": 970.0,
+    "end_time": 980.0,
+    "text": "So, can you guess what the next\u00a0\nstep of the algorithm will be?\u00a0 You've guessed right, we'll try to match both\u00a0\nrepresentations with the help of a loss function.",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_098",
+    "start_time": 980.0,
+    "end_time": 990.0,
+    "text": "To calculate how close the two graphs are, we\u00a0\nuse their adjacency matrices, which represent\u00a0\u00a0 the weight of each edge in the graph.\nWe then compute the cross-entropy over",
+    "linked_keyframe_ids": [
+      "kf_000982",
+      "kf_000983",
+      "kf_000984"
+    ]
+  },
+  {
+    "chunk_id": "chunk_099",
+    "start_time": 990.0,
+    "end_time": 1000.0,
+    "text": "these matrices and simply minimize it using the\u00a0\nstochastic gradient descent, and we adjust the\u00a0\u00a0 low-dimensional representation accordingly.\nLet's see some visualisations now.",
+    "linked_keyframe_ids": [
+      "kf_000992"
+    ]
+  },
+  {
+    "chunk_id": "chunk_100",
+    "start_time": 1000.0,
+    "end_time": 1010.0,
+    "text": "Let's look at the MNIST dataset again, but\u00a0\nthis time we'll visualise it using UMAP.\u00a0 Amazing, right?\nThe classes are beautifully",
+    "linked_keyframe_ids": [
+      "kf_001002",
+      "kf_001005",
+      "kf_001009"
+    ]
+  },
+  {
+    "chunk_id": "chunk_101",
+    "start_time": 1010.0,
+    "end_time": 1020.0,
+    "text": "clustered, and the result looks almost perfect.\nUMAP's strong theoretical foundations really shine\u00a0\u00a0 here, both in visualization quality and speed.\nIt took UMAP just 5 seconds to generate this",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_102",
+    "start_time": 1020.0,
+    "end_time": 1030.0,
+    "text": "visualization, compared to\u00a0\nthe 40 seconds it took t-SNE.\u00a0 And if we compare the runtime versus\u00a0\nthe number of samples, you see that",
+    "linked_keyframe_ids": [
+      "kf_001029"
+    ]
+  },
+  {
+    "chunk_id": "chunk_103",
+    "start_time": 1030.0,
+    "end_time": 1040.0,
+    "text": "UMAP grows much slower than t-SNE.\nAnother advantage of UMAP is its\u00a0\u00a0 main hyperparameter\u2014the number of nearest\u00a0\nneighbors in the initial graph construction.",
+    "linked_keyframe_ids": [
+      "kf_001030",
+      "kf_001035",
+      "kf_001036"
+    ]
+  },
+  {
+    "chunk_id": "chunk_104",
+    "start_time": 1040.0,
+    "end_time": 1050.0,
+    "text": "Let's look at the evolution\u00a0\nof the projection of this\u00a0\u00a0 mammoth as we increase the number of neighbors.\nIn the beginning we have just one big fuzzy set,",
+    "linked_keyframe_ids": [
+      "kf_001044",
+      "kf_001045",
+      "kf_001049"
+    ]
+  },
+  {
+    "chunk_id": "chunk_105",
+    "start_time": 1050.0,
+    "end_time": 1060.0,
+    "text": "and as we increase the parameter, we get\u00a0\nmore and more details coming through.\u00a0 As you can see, the behaviour of the\u00a0\nalgorithm is much more predictible than\u00a0\u00a0 t-SNE when changing the main hyperparameter.\nWith the perplexity, on the other hand,",
+    "linked_keyframe_ids": [
+      "kf_001050",
+      "kf_001051",
+      "kf_001052",
+      "kf_001053",
+      "kf_001054",
+      "kf_001057",
+      "kf_001058",
+      "kf_001059"
+    ]
+  },
+  {
+    "chunk_id": "chunk_106",
+    "start_time": 1060.0,
+    "end_time": 1070.0,
+    "text": "it was difficult to determine whether results were\u00a0\nactually improving when we modified the value.",
+    "linked_keyframe_ids": [
+      "kf_001060",
+      "kf_001061"
+    ]
+  },
+  {
+    "chunk_id": "chunk_107",
+    "start_time": 1070.0,
+    "end_time": 1080.0,
+    "text": "Finally, UMAP is pretty good at preserving\u00a0\nglobal structure: as you can see,\u00a0\u00a0 the parts of the mammoth that are close together\u00a0\nin 3D stay close together in the 2D projection.",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_108",
+    "start_time": 1080.0,
+    "end_time": 1090.0,
+    "text": "Even though UMAP often outperforms PCA\u00a0\nand t-SNE, these two techniques are still\u00a0\u00a0 widely used in engineering and research.\nAs a rule of thumb, if you need a quick",
+    "linked_keyframe_ids": [
+      "kf_001080",
+      "kf_001082"
+    ]
+  },
+  {
+    "chunk_id": "chunk_109",
+    "start_time": 1090.0,
+    "end_time": 1100.0,
+    "text": "visualization, PCA is a great starting point.\nFor more complex data, t-SNE can provide good\u00a0\u00a0 results, but I believe UMAP\u00a0\nis the best choice overall.",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_110",
+    "start_time": 1100.0,
+    "end_time": 1110.0,
+    "text": "Additionally, there are even more\u00a0\nrecent methods, like TriMAP and PACMAP.\u00a0 I also linked the papers for\u00a0\nthese in the description below. Thank you so much for watching this video !\nStay tuned for the next one which will be",
+    "linked_keyframe_ids": []
+  },
+  {
+    "chunk_id": "chunk_111",
+    "start_time": 1110.0,
+    "end_time": 1120.0,
+    "text": "",
+    "linked_keyframe_ids": []
+  }
+]

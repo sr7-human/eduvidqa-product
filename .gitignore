@@ -3,7 +3,13 @@
 .venv/
 __pycache__/
 *.pyc
-data/
+
+# data/: chroma + processed ARE pushed; videos/raw downloads/cache stay local
+data/videos/
+data/cache/
+data/UHBmv7qCey4/
+data/_PwhiWxHK8o/
+
 media/
 .gradio/
 frontend/node_modules/

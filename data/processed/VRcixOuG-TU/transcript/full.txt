@@ -1,0 +1,128 @@
+We will now go to the next module which is
+the Perceptron Learning Algorithm. We now see a more principled approach of learning
+these weights and threshold, but before that we will just again revisit our movie example
+and make it slightly more complicated. Now, here what the situation is that we are
+given a list of m movies and a class associated with each movie indicating whether we like
+the movie or not, right. So, now we have given some data of the past
+m movies that we have seen and whether we like this movie or not and now instead of
+these three variables, we have these n different variables based on which we are making decisions. And notice that some of these variables are
+real, right. They are not Boolean anymore, right. The rating could be any real number between
+0 to 1, ok and now based on this data what do we want is the perceptron to do actually. So, I have given you some data. These factors I have also given you the label
+1 and 0. So, if the perceptron if I tell you my perceptron
+has now learnt properly, what would you expected it to do; perfect match, right. So, whenever I feed it, one of these movies
+it should give me the same label as was there in my data, right and again there are some
+movies for which I have a label 1 which are positive and some movies which I have a label
+0. So, I am once again looking to separate the
+positives from the negatives, right. So, it should adjust the weights in such a
+way that I should be able to separate, right. So, that is the learning problem that we are
+interested in, ok. So, now with that I will give you the algorithm,
+ok. This is the Perceptron Learning Algorithm. We have certain positive inputs which had
+the label 1, we have certain negative inputs which had the label 0 and now I don't know
+what the weights are and I have no prior knowledge of what the weights are going to be. I need to learn them from the data. So, what I am going to do is, I am just going
+to initialize these weights randomly as I am also going to pick up some random values
+for this. So, this should be small n. So, this should be small n and now, here is
+the algorithm while not convergence do something. So, before I tell you what to do, can you
+tell me what is meant by convergence? When will you say that it has converged? When it is not making any more errors on the
+training data, right, or its predictions are not changing on the training data. So, that is the definition of convergence,
+ok. Now, here is the algorithm. I pick up a random from point from my data
+which could either be positive or negative, right. So, it comes from the union of positive negative. Basically all the data that I have I pick
+up a random point from there. If the point is positive, right and this is
+the condition which happens what does this tell me? If the point was positive, what did I actually
+want greater than 0, but the condition is less than 0. That means, I have made an error. So, I have made an error, then I will just
+add x to w I see a lot of thoughtful nodding and I hope you are understanding what is happening. Let us see. So, what is w actually? a dimensional. N dimension. N dimension n plus 1, right because w naught
+is also inside there. So, actually there should be w naught also
+here, right and what is x again n dimensional, right and that is why this addition is valid. So, let us understand that w and x both are
+n dimensional, ok. Now, let us look at the other if condition. Can you guess what the other if condition
+is if x belongs to n and. Summation. Summation is greater than equal to 0, then? So, that means you have completely understood
+how this algorithm works. Well, that is right. So, now consider two vectors w and x. So, remember what we are trying to prove is
+or get an intuition. Not prove, actually get an intuition for why
+this works. ok So, we will consider two vectors w and x and
+this is what my vectors look like very similar to the case that we are considering w0 to
+wn and 1 to n. So, this again x naught is just 1, right. ok
+Now, this condition that I have been talking about is nothing, but the dot product. How many of you have gone through the prerequisites
+for today's lecture? Ok good. So, it is just a dot product, ok. Now, we can just read write the perceptron
+rule as this instead of the dot product. I mean instead of using that summation thing,
+we can just say that it is a dot product. ok
+Now, we are interested in finding the line w transpose x equal to 0. So, that is our decision boundary, right?
+which divides the input into two halves, ok. Now, every point on this line satisfies the
+equation w transpose x equal to 0. What does that mean actually? So, just a simple example is that if I have
+the line x1 plus x2 equal to 0, then all the points which lie on the line satisfy this
+equation, right. So, you could have 1 minus 1, 2 minus 2 and
+so on, but 2, 2 is cannot be a point on this line. At every point lying on this line satisfies
+this equation. So, every point lying on this line actually
+satisfies the equation w transpose x equal to 0. So, can you tell me what is the angle between
+w and any point on this line? How many say how many of you say perpendicular? Ok. Why? Dot product is 0, right. So, if the dot product is 0, they are orthogonal
+right. So, that means if I take this line, then my
+vector w is orthogonal to this. It is orthogonal to this point or this point
+to this point to every point on the line which is just the same as saying that the vector
+is perpendicular to the line itself, right as simple as that. So, the angle is 90 degrees because the dot
+product gives you the cos alpha and that is 0, right and since it is perpendicular as
+I said to every point of the line it is just perpendicular to the line itself, right. So, this is what the geometric interpretation
+looks like. This is our decision boundary w transpose
+x and the vector w is actually orthogonal to this line and that is exactly the intuition
+that we have built so far. ok
+Now, let us consider some points which are supposed to lie in the positive half space
+of this line, right. That means these are the points for which
+the output is actually 1, ok. Now, can you tell me what is the angle between
+any of these points and w or you guys are actually trying to tell me the angle we have
+got some measuring stuff, no. So, I will give you three options i.e. equal
+to 90, greater than 90 and less than 90. Less than 90. Less than 90 it is obvious from the figure,
+right. Now, if I take any point which lies in the
+negative half space, what is the angle going to be between them? It is greater than 90, right. Again obvious and it also follows from the
+fact that cos alpha is w transpose x by something and we know that for the positive points w
+transpose x is greater than equal to 0, right. That means, cos alpha would be greater than
+equal to 0, that means the angle alpha would be less than 90 degrees and for the negative
+points w transpose x is actually less than 0. That means, cos alpha would be less than 0
+that means alpha would be greater than 90 degrees, right. So, it actually follows from the formula itself,
+but it is also clear from the figure. So, keeping this picture in mind let us revisit
+the algorithm, ok. So, this is the algorithm, ok. Now, let us look at the first condition which
+was this. Now, if x belongs to p and w transpose x is
+less than 0, then means that the angle between x and the current w is actually greater than
+90 degrees, but what do we want it to be? Less than 90 degrees and our solution to do
+this is, but we still do not know why this works? Now, anyone knows why this works? So, let us see why this works. So, what is the new cos alpha going to be? It is going to be proportional to this, right. It is going to be proportional to this. I will just substitute what w new is, fine. That means, if cos alpha new is going to be
+greater than cos alpha, what is alpha new going to be? It will be less than and that is exactly what
+we wanted. This angle was actually greater than 90 degrees. So, you want to slowly move it such that it
+becomes less than 90 degrees. It is not going to get solved in one iteration
+and that is why till convergence. So, we will keep doing this. I will keep picking xs again and again till
+it reaches convergence. That means, till we are satisfied with that
+condition, right. Let us look at the other condition x belongs
+to n and w transpose x was greater than equal to 0, then it means that the angle alpha is
+actually less than 90 degrees and we want it to be the opposite, ok. I will just quickly skim over this w minus
+this x, right. Ok I forgot to mention that this is actually
+a positive quantity, right. I mean that is why that result holds, ok. That means, cos alpha new is going to be less
+than cos alpha and this slight bit of mathematical in correctness, I am doing here, but that
+does not affect the final result. So, I will just gloss over that and you can
+go home and figure it out, but still it does not take away from the final intuition and
+interpretation, right. So, now the new cos alpha is going to be less
+than the original cos alpha; that means, the angle is going to be greater and that exactly
+what we wanted, ok. So, we will now see this algorithm in action
+for a toy data set. So, this is the toy data set we have and we
+have initialized w to a random value and that turns out to be this, right. I just picked up some random value for w and
+ended up with this particular configuration for w. ok
+Now, we observe that currently w transpose x is less than 0 for all the positive points
+and it is actually greater than equal to 0 for all the negative points. If you do not understand w transpose x, it
+is just that the all the positive angle points actually have a greater than 90 degree angle
+and all the negative points actually have a less than 90 degree angle. So, this is exactly opposite of the situation
+that we want and now from here on, we want to actually run the perceptron algorithm,
+right and try to fix this w. How does it work? Remember we randomly pick a point, ok. So, say we pick the point p1, do we need to
+apply a correction? Yes. Yes. Why, because it is a positive point and the
+condition is violated, right. So, now we add w equal to w plus x and we
+get this new w. So, notice that we have a new w, ok. We again repeat this, we again pick a new
+point and this time we have picked p2. Do we need a correction? Yes. At least from the figure it looks like the
+angle is greater than 90, right. So, we will again do a correction. We will add w is equal to w plus p, right. This x is actually, sorry p2 and this is where
+we end up, ok. Now, again we pick a point randomly n1. Do we need a correction? So, this is what our w is. This line here and n1, right. So, we need a correction, ok. Now, what is the correction going to be? It will be minus and then, the w changes,
+ok. Now, we pick another point n3. Do we need a correction? No at least on the figure it seems like the
+angle is greater than 90 and we continue this, right. For n2, we do not need a correction. Now, for p3 again we do not need a correction. The angle looks less than 90. Sorry actually it is we need a correction. The angle is slightly greater than 90 and
+this is our correction, and now we keep cycling. Now, as I keep cycling over the points, I
+realize that I no longer need any correction. It should be obvious from the figure that
+for this particular value of w, now all my positive points are making an angle less than
+90 and all my negative points are actually making an angle greater than 90. That means, by definition now my algorithm
+has converged, right. So, I can just stop it. So, I can just make one pass over the data. If nothing changes, I will just say it has
+converged, ok. Now, does anyone see a problem with this? Never converge. It will never converge in some cases. So, can someone tell me why? We are considering only cases where the data
+is linearly separable, right. That we already assumed. So, what you are trying to tell me is that
+you are going over these points cyclically. So, let me just rephrase and put words in
+your mouth that what you are trying to tell me actually is that I take a point, I adjust
+w, but now for the next point I maybe go back to the same w because that point asked me
+to move it again and I keep doing this again and again and basically, end up nowhere, right. That is why this will never converge. That is exactly what you are trying to tell
+me, right. Now, that is exactly what I am forcing you
+to tell me. So, that is not the case, right. This algorithm will converge.
