@@ -104,8 +104,8 @@ def generate_answer(
     dict with keys: ``answer``, ``model_name``, ``generation_time``, ``sources``.
     """
     _last_error: Exception | None = None
-    groq_key = groq_api_key or os.getenv("GROQ_API_KEY", "")
-    gemini_key = gemini_api_key or os.getenv("GEMINI_API_KEY", "")
+    groq_key = groq_api_key if groq_api_key is not None else os.getenv("GROQ_API_KEY", "")
+    gemini_key = gemini_api_key if gemini_api_key is not None else os.getenv("GEMINI_API_KEY", "")
 
     # ── Assemble text context ─────────────────────────────────────
     ranked_chunks = retrieval_result.get("ranked_chunks", [])
@@ -368,8 +368,8 @@ def generate_answer_stream(
     The orchestrator wraps these in SSE frames. Falls back from Groq → Gemini
     only if Groq fails BEFORE emitting any tokens (so we never double-emit).
     """
-    groq_key = groq_api_key or os.getenv("GROQ_API_KEY", "")
-    gemini_key = gemini_api_key or os.getenv("GEMINI_API_KEY", "")
+    groq_key = groq_api_key if groq_api_key is not None else os.getenv("GROQ_API_KEY", "")
+    gemini_key = gemini_api_key if gemini_api_key is not None else os.getenv("GEMINI_API_KEY", "")
 
     context_text, images_b64, _sources = _build_context(
         question, timestamp, retrieval_result, live_frame_path,

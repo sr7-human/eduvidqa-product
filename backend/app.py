@@ -987,6 +987,7 @@ async def ask_question_stream(
     _video_id = video_id
     _index = index
     _llm_pref = _get_llm_pref(user_id)  # 'auto' | 'groq' | 'gemini'
+    logger.info("LLM pref for user %s: %s", user_id, _llm_pref)
 
     def _sse(payload: dict) -> str:
         return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
@@ -1044,9 +1045,9 @@ async def ask_question_stream(
                 groq_key = os.getenv("GROQ_API_KEY") or None
                 gemini_key = os.getenv("GEMINI_API_KEY") or None
                 if _llm_pref == "groq":
-                    gemini_key = None  # don't fall back to Gemini
+                    gemini_key = ""   # empty string → pipeline won't use Gemini
                 elif _llm_pref == "gemini":
-                    groq_key = None    # skip Groq entirely
+                    groq_key = ""     # empty string → pipeline won't use Groq
 
                 for event in generate_answer_stream(
                     question=_question,
