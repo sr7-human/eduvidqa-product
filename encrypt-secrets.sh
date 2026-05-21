@@ -9,6 +9,7 @@ FILES=(
   ".env"
   "frontend/.env"
   "frontend/.env.local"
+  "SECRETS_STATUS.md"
 )
 
 EXISTING=()

@@ -11,3 +11,6 @@ frontend/dist/
 *.egg-info/
 .pytest_cache/
 .vercel
+
+# Plaintext handoff doc (encrypted version .enc is committed)
+SECRETS_STATUS.md

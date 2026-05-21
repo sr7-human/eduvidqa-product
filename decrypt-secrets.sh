@@ -8,6 +8,7 @@ FILES=(
   ".env.enc"
   "frontend/.env.enc"
   "frontend/.env.local.enc"
+  "SECRETS_STATUS.md.enc"
 )
 
 EXISTING=()
