@@ -127,15 +127,36 @@ def chunk_transcript(
                     getattr(first, "language_code", "?"), video_id,
                 )
         except Exception as fallback_exc:
-            # Surface the most informative error.
-            if primary_exc is not None:
+            # Final fallback: no captions retrievable (disabled, or the API is
+            # IP-blocked) → transcribe the audio locally with Whisper.
+            try:
+                from pipeline.ingest import _whisper_transcribe
+
+                logger.info(
+                    "No captions for %s — falling back to Whisper transcription",
+                    video_id,
+                )
+                whisper_transcript = _whisper_transcribe(video_id)
+            except Exception as whisper_exc:
+                logger.warning(
+                    "Whisper fallback failed for %s: %s", video_id, whisper_exc
+                )
+                whisper_transcript = None
+
+            if whisper_transcript:
+                # Already list[dict] with text/start/duration — use directly.
+                transcript = whisper_transcript
+            elif primary_exc is not None:
                 raise primary_exc from fallback_exc
-            raise
-    # Normalise to list[dict] for uniform access
-    transcript = [
-        {"text": s.text, "start": s.start, "duration": s.duration}
-        for s in fetched
-    ]
+            else:
+                raise
+
+    # Normalise to list[dict] for uniform access (unless Whisper already did).
+    if fetched is not None:
+        transcript = [
+            {"text": s.text, "start": s.start, "duration": s.duration}
+            for s in fetched
+        ]
     if not transcript:
         raise RuntimeError(f"Empty transcript for video {video_id}")
 

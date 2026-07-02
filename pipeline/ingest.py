@@ -77,26 +77,58 @@ def extract_transcript(video_id: str) -> tuple[list[dict], str]:
 
 
 def _whisper_transcribe(video_id: str) -> list[dict]:
-    """Download audio with yt-dlp and transcribe via openai-whisper (small model)."""
+    """Download audio with yt-dlp and transcribe via openai-whisper.
+
+    Used only when a video has no captions in any language. Tries Chrome
+    impersonation first (bypasses datacenter-IP blocks), then a plain
+    download. Model size is set by the WHISPER_MODEL env var (default
+    ``base`` — a good speed/accuracy balance on CPU).
+    """
+    import glob
+
     import whisper  # lazy import — heavy dependency
+    import yt_dlp
 
     url = f"https://www.youtube.com/watch?v={video_id}"
+    model_name = os.getenv("WHISPER_MODEL", "base")
     with tempfile.TemporaryDirectory() as tmp:
-        audio_path = os.path.join(tmp, "audio.m4a")
+        outtmpl = os.path.join(tmp, "audio.%(ext)s")
+        base_opts = {
+            "format": "bestaudio[ext=m4a]/bestaudio",
+            "outtmpl": outtmpl,
+            "no_playlist": True,
+            "quiet": True,
+        }
+
+        # Attempt 1: Chrome impersonation (bypasses cloud-IP blocks).
         try:
-            import yt_dlp
-            ydl_opts = {
-                "format": "bestaudio[ext=m4a]/bestaudio",
-                "outtmpl": audio_path,
-                "no_playlist": True,
-                "quiet": True,
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            from yt_dlp.networking.impersonate import ImpersonateTarget
+
+            opts = dict(
+                base_opts,
+                impersonate=ImpersonateTarget("chrome"),
+                extractor_args={"youtube": {"player_client": ["web", "default"]}},
+            )
+            with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([url])
-        except Exception as e:
-            raise RuntimeError(f"Audio download failed: {e}")
-        model = whisper.load_model("small")
-        result = model.transcribe(audio_path)
+        except Exception as exc:
+            logger.warning("Whisper audio dl (impersonate) failed: %s", exc)
+
+        # Attempt 2: plain yt-dlp (only if nothing downloaded yet).
+        if not glob.glob(os.path.join(tmp, "audio.*")):
+            try:
+                with yt_dlp.YoutubeDL(base_opts) as ydl:
+                    ydl.download([url])
+            except Exception as e:
+                raise RuntimeError(f"Audio download failed: {e}")
+
+        audio_files = glob.glob(os.path.join(tmp, "audio.*"))
+        if not audio_files:
+            raise RuntimeError("Audio download failed: no file produced")
+
+        logger.info("Loading Whisper model '%s' for %s", model_name, video_id)
+        model = whisper.load_model(model_name)
+        result = model.transcribe(audio_files[0])
 
     entries = []
     for seg in result.get("segments", []):
