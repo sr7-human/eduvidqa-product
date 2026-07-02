@@ -357,6 +357,8 @@ async def video_preview(youtube_url: str, user_id: str = Depends(require_auth)):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+    import time
+
     import yt_dlp
 
     opts = {
@@ -365,13 +367,27 @@ async def video_preview(youtube_url: str, user_id: str = Depends(require_auth)):
         "skip_download": True,
         "no_color": True,
     }
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(
-                f"https://www.youtube.com/watch?v={video_id}", download=False,
-            )
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Could not fetch video metadata: {exc}")
+    # YouTube metadata fetches occasionally fail with transient TLS/network
+    # errors (e.g. "SSL: UNEXPECTED_EOF_WHILE_READING"). Retry a few times
+    # before surfacing the failure to the user.
+    info = None
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(
+                    f"https://www.youtube.com/watch?v={video_id}", download=False,
+                )
+            break
+        except Exception as exc:  # noqa: BLE001 — retry on any transient failure
+            last_exc = exc
+            if attempt < 2:
+                time.sleep(1.5 * (attempt + 1))
+    if info is None:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not fetch video metadata after retries: {last_exc}",
+        )
 
     duration_sec = info.get("duration") or 0
     duration_min = duration_sec / 60

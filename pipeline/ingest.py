@@ -59,7 +59,9 @@ def extract_transcript(video_id: str) -> tuple[list[dict], str]:
         from youtube_transcript_api import YouTubeTranscriptApi
 
         ytt_api = YouTubeTranscriptApi()
-        transcript = ytt_api.fetch(video_id)
+        transcript = ytt_api.fetch(
+            video_id, languages=["en", "en-US", "en-GB"]
+        )
         entries = [
             {"text": s.text, "start": s.start, "duration": s.duration}
             for s in transcript.snippets
