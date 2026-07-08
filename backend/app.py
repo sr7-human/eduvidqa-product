@@ -715,6 +715,8 @@ def _download_video(video_id: str, data_dir: str) -> str:
         return str(mp4_path)
 
     url = f"https://www.youtube.com/watch?v={video_id}"
+    from pipeline.ingest import get_cookiefile
+    cookiefile = get_cookiefile()
 
     # --- Attempt 1: yt-dlp with Chrome impersonation (bypasses cloud IP blocks) ---
     try:
@@ -727,6 +729,7 @@ def _download_video(video_id: str, data_dir: str) -> str:
             "no_playlist": True,
             "merge_output_format": "mp4",
             "quiet": True,
+            "cookiefile": cookiefile,
             "impersonate": ImpersonateTarget("chrome"),
             "extractor_args": {"youtube": {"player_client": ["web", "default", "android", "ios"]}},
         }
@@ -748,6 +751,7 @@ def _download_video(video_id: str, data_dir: str) -> str:
             "no_playlist": True,
             "merge_output_format": "mp4",
             "quiet": True,
+            "cookiefile": cookiefile,
             "extractor_args": {"youtube": {"player_client": ["android", "ios", "web", "default"]}},
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

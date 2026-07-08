@@ -76,7 +76,9 @@ def chunk_transcript(
     #   2. Else try common Indian languages directly.
     #   3. Else list every available track and translate to English when the
     #      track is translatable; otherwise just take it as-is.
-    api = YouTubeTranscriptApi()
+    from pipeline.ingest import build_transcript_api
+
+    api = build_transcript_api()
     PREFERRED = ["en", "en-US", "en-GB"]
     FALLBACK = ["hi", "hi-IN", "bn", "ta", "te", "ml", "mr", "gu", "kn", "pa", "ur"]
 

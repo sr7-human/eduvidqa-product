@@ -16,6 +16,79 @@ from .models import IngestResult, VideoMetadata, VideoSegment
 
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Admin YouTube cookies (server-side, invisible to end users)
+# ---------------------------------------------------------------------------
+_COOKIEFILE_RESOLVED = False
+_COOKIEFILE_PATH: str | None = None
+
+
+def get_cookiefile() -> str | None:
+    """Return a path to a YouTube cookies.txt if configured, else None.
+
+    Reads ``YOUTUBE_COOKIES_B64`` (base64 of the file — preferred) or
+    ``YOUTUBE_COOKIES`` (raw Netscape text) from the environment and writes it
+    once to a temp file. Lets the server authenticate to YouTube so it gets
+    blocked far less often. Completely invisible to end users.
+    """
+    global _COOKIEFILE_RESOLVED, _COOKIEFILE_PATH
+    if _COOKIEFILE_RESOLVED:
+        return _COOKIEFILE_PATH
+    _COOKIEFILE_RESOLVED = True
+
+    import base64
+
+    raw: str | None = None
+    b64 = os.getenv("YOUTUBE_COOKIES_B64", "").strip()
+    if b64:
+        try:
+            raw = base64.b64decode(b64).decode("utf-8", "replace")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("YOUTUBE_COOKIES_B64 decode failed: %s", exc)
+    if not raw:
+        raw = os.getenv("YOUTUBE_COOKIES", "").strip() or None
+    if not raw:
+        return None
+
+    stripped = raw.lstrip()
+    if not (stripped.startswith("# HTTP Cookie File") or stripped.startswith("# Netscape")):
+        raw = "# Netscape HTTP Cookie File\n" + raw
+    if not raw.endswith("\n"):
+        raw += "\n"
+
+    path = os.path.join(tempfile.gettempdir(), "yt_cookies.txt")
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(raw)
+        _COOKIEFILE_PATH = path
+        logger.info("YouTube admin cookies configured (%s)", path)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to write cookie file: %s", exc)
+        _COOKIEFILE_PATH = None
+    return _COOKIEFILE_PATH
+
+
+def build_transcript_api():
+    """Build a YouTubeTranscriptApi, using admin cookies if configured."""
+    from youtube_transcript_api import YouTubeTranscriptApi
+
+    cf = get_cookiefile()
+    if cf:
+        try:
+            from http.cookiejar import MozillaCookieJar
+
+            import requests
+
+            jar = MozillaCookieJar()
+            jar.load(cf, ignore_discard=True, ignore_expires=True)
+            session = requests.Session()
+            session.cookies = jar  # type: ignore[assignment]
+            return YouTubeTranscriptApi(http_client=session)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Transcript cookie session failed (%s) — continuing without", exc)
+    return YouTubeTranscriptApi()
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -98,6 +171,7 @@ def _whisper_transcribe(video_id: str) -> list[dict]:
             "outtmpl": outtmpl,
             "no_playlist": True,
             "quiet": True,
+            "cookiefile": get_cookiefile(),
         }
 
         # Attempt 1: Chrome impersonation (bypasses cloud-IP blocks).
