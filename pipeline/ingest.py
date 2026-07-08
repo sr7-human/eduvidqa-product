@@ -107,7 +107,7 @@ def _whisper_transcribe(video_id: str) -> list[dict]:
             opts = dict(
                 base_opts,
                 impersonate=ImpersonateTarget("chrome"),
-                extractor_args={"youtube": {"player_client": ["web", "default"]}},
+                extractor_args={"youtube": {"player_client": ["web", "default", "android", "ios"]}},
             )
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([url])

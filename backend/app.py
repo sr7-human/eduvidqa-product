@@ -348,64 +348,41 @@ async def health_check() -> HealthResponse:
 
 @app.get("/api/video-preview")
 async def video_preview(youtube_url: str, user_id: str = Depends(require_auth)):
-    """Lightweight metadata probe — returns duration, title, estimated chapters.
+    """Lightweight metadata probe for the confirm modal.
 
-    Uses yt-dlp in extract-info mode (no download). Fast enough for a preview modal.
+    Uses YouTube's oEmbed API for the title — it is fast and reliable from
+    datacenter IPs, unlike yt-dlp (which YouTube throttles from cloud servers,
+    causing multi-second hangs). Duration/chapters are filled in later during
+    ingest, so the preview never blocks the add flow.
     """
     try:
         video_id = parse_video_id(youtube_url)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    import time
+    import json as _json
+    import urllib.parse
+    import urllib.request
 
-    import yt_dlp
-
-    opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        "no_color": True,
-    }
-    # YouTube metadata fetches occasionally fail with transient TLS/network
-    # errors (e.g. "SSL: UNEXPECTED_EOF_WHILE_READING"). Retry a few times
-    # before surfacing the failure to the user.
-    info = None
-    last_exc: Exception | None = None
-    for attempt in range(3):
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(
-                    f"https://www.youtube.com/watch?v={video_id}", download=False,
-                )
-            break
-        except Exception as exc:  # noqa: BLE001 — retry on any transient failure
-            last_exc = exc
-            if attempt < 2:
-                time.sleep(1.5 * (attempt + 1))
-    if info is None:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Could not fetch video metadata after retries: {last_exc}",
+    title = video_id
+    try:
+        oembed_url = (
+            "https://www.youtube.com/oembed?url="
+            + urllib.parse.quote(f"https://www.youtube.com/watch?v={video_id}")
+            + "&format=json"
         )
-
-    duration_sec = info.get("duration") or 0
-    duration_min = duration_sec / 60
-    title = info.get("title") or video_id
-
-    # YouTube chapters if present
-    yt_chapters = info.get("chapters") or []
-    if yt_chapters:
-        chapter_count = len(yt_chapters)
-    else:
-        chapter_count = max(1, min(8, round(duration_min / 12)))
+        req = urllib.request.Request(oembed_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            title = _json.load(resp).get("title") or video_id
+    except Exception as exc:  # noqa: BLE001 — preview is best-effort
+        logger.info("oEmbed preview failed for %s (non-fatal): %s", video_id, exc)
 
     return {
         "video_id": video_id,
         "title": title,
-        "duration_seconds": duration_sec,
-        "estimated_chapters": chapter_count,
-        "has_youtube_chapters": len(yt_chapters) > 0,
+        "duration_seconds": 0,   # unknown at preview time — filled during ingest
+        "estimated_chapters": 0,
+        "has_youtube_chapters": False,
     }
 
 
@@ -751,7 +728,7 @@ def _download_video(video_id: str, data_dir: str) -> str:
             "merge_output_format": "mp4",
             "quiet": True,
             "impersonate": ImpersonateTarget("chrome"),
-            "extractor_args": {"youtube": {"player_client": ["web", "default"]}},
+            "extractor_args": {"youtube": {"player_client": ["web", "default", "android", "ios"]}},
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
@@ -771,6 +748,7 @@ def _download_video(video_id: str, data_dir: str) -> str:
             "no_playlist": True,
             "merge_output_format": "mp4",
             "quiet": True,
+            "extractor_args": {"youtube": {"player_client": ["android", "ios", "web", "default"]}},
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])

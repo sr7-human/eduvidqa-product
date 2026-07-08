@@ -143,16 +143,22 @@ export function Library() {
     if (isPlaylist) {
       return handleConfirmAdd();
     }
-    // For single videos, fetch preview first
+    // For single videos, fetch preview first — but never block the add flow on
+    // it. The preview is cosmetic; if it's slow or unavailable, add directly.
     setFetchingPreview(true);
     try {
-      const p = await getVideoPreview(urlInput);
-      setPreview(p);
-    } catch (e) {
-      // If preview fails, fall back to direct add
-      toast.error(e instanceof Error ? e.message : 'Failed to fetch video info');
-    } finally {
+      const p = await Promise.race([
+        getVideoPreview(urlInput),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('preview-timeout')), 8000),
+        ),
+      ]);
+      setPreview(p as VideoPreview);
       setFetchingPreview(false);
+    } catch {
+      // Preview slow or failed → skip the confirm modal and add directly.
+      setFetchingPreview(false);
+      await handleConfirmAdd();
     }
   };
 
@@ -250,14 +256,18 @@ export function Library() {
               {preview.title}
             </h3>
             <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-4">
-              <span>
-                {preview.duration_seconds >= 3600
-                  ? `${Math.floor(preview.duration_seconds / 3600)}h ${Math.round((preview.duration_seconds % 3600) / 60)}m`
-                  : `${Math.round(preview.duration_seconds / 60)} min`}
-              </span>
-              <span>·</span>
-              <span>~{preview.estimated_chapters} section{preview.estimated_chapters !== 1 ? 's' : ''}</span>
-              <span>·</span>
+              {preview.duration_seconds > 0 && (
+                <>
+                  <span>
+                    {preview.duration_seconds >= 3600
+                      ? `${Math.floor(preview.duration_seconds / 3600)}h ${Math.round((preview.duration_seconds % 3600) / 60)}m`
+                      : `${Math.round(preview.duration_seconds / 60)} min`}
+                  </span>
+                  <span>·</span>
+                  <span>~{preview.estimated_chapters} section{preview.estimated_chapters !== 1 ? 's' : ''}</span>
+                  <span>·</span>
+                </>
+              )}
               <span className="text-gray-400 dark:text-gray-500">warm-up + recall quizzes throughout</span>
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-5">
