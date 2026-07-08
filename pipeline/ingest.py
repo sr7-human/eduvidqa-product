@@ -70,10 +70,36 @@ def get_cookiefile() -> str | None:
 
 
 def build_transcript_api():
-    """Build a YouTubeTranscriptApi, using admin cookies if configured."""
+    """Build a YouTubeTranscriptApi with a browser-impersonated HTTP client.
+
+    Uses curl_cffi (a real Chrome TLS fingerprint) so YouTube does not drop the
+    connection (SSL EOF) on datacenter IPs, plus admin cookies if configured.
+    Falls back progressively to plain requests, then the library default.
+    """
     from youtube_transcript_api import YouTubeTranscriptApi
 
     cf = get_cookiefile()
+
+    # Preferred: curl_cffi Chrome impersonation (defeats TLS-fingerprint blocks).
+    try:
+        from curl_cffi import requests as cffi_requests
+
+        session = cffi_requests.Session(impersonate="chrome")
+        if cf:
+            try:
+                from http.cookiejar import MozillaCookieJar
+
+                jar = MozillaCookieJar()
+                jar.load(cf, ignore_discard=True, ignore_expires=True)
+                for c in jar:
+                    session.cookies.set(c.name, c.value, domain=c.domain)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Loading cookies into curl_cffi session failed: %s", exc)
+        return YouTubeTranscriptApi(http_client=session)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("curl_cffi transcript client unavailable (%s)", exc)
+
+    # Fallback: plain requests + cookies.
     if cf:
         try:
             from http.cookiejar import MozillaCookieJar
@@ -86,7 +112,7 @@ def build_transcript_api():
             session.cookies = jar  # type: ignore[assignment]
             return YouTubeTranscriptApi(http_client=session)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Transcript cookie session failed (%s) — continuing without", exc)
+            logger.warning("Transcript cookie session failed (%s)", exc)
     return YouTubeTranscriptApi()
 
 # ---------------------------------------------------------------------------

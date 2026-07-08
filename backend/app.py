@@ -360,20 +360,20 @@ async def video_preview(youtube_url: str, user_id: str = Depends(require_auth)):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    import json as _json
     import urllib.parse
-    import urllib.request
 
     title = video_id
     try:
+        from curl_cffi import requests as cffi_requests
+
         oembed_url = (
             "https://www.youtube.com/oembed?url="
             + urllib.parse.quote(f"https://www.youtube.com/watch?v={video_id}")
             + "&format=json"
         )
-        req = urllib.request.Request(oembed_url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            title = _json.load(resp).get("title") or video_id
+        resp = cffi_requests.get(oembed_url, impersonate="chrome", timeout=8)
+        if resp.status_code == 200:
+            title = resp.json().get("title") or video_id
     except Exception as exc:  # noqa: BLE001 — preview is best-effort
         logger.info("oEmbed preview failed for %s (non-fatal): %s", video_id, exc)
 
