@@ -885,27 +885,31 @@ def generate_chapter_quizzes(
 
     groq_key = os.getenv("GROQ_API_KEY", "").strip()
     gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+    or_key = os.getenv("OPENROUTER_API_KEY", "").strip()
 
     raw = ""
-    last_err: Exception | None = None
     max_tokens = max(8000, 1500 * count)
 
-    if groq_key:
+    # Stable chain: Gemini (free) → Groq (free) → OpenRouter (paid), each with
+    # proactive throttle + 429 backoff so chapter quizzes never cascade-fail.
+    if gemini_key:
         try:
-            raw = _call_groq(prompt, groq_key, max_tokens=max_tokens)
-        except Exception as exc:
-            logger.warning("Groq chapter quiz failed: %s", exc)
-            last_err = exc
-
-    if not raw and gemini_key:
+            raw = _call_llm_backoff(_call_gemini, prompt, gemini_key, max_tokens)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Gemini chapter quiz failed: %s", str(exc)[:120])
+    if not raw and groq_key:
         try:
-            raw = _call_gemini(prompt, gemini_key, max_tokens=max_tokens)
-        except Exception as exc:
-            logger.error("Gemini chapter quiz also failed: %s", exc)
-            last_err = exc
+            raw = _call_llm_backoff(_call_groq, prompt, groq_key, max_tokens)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Groq chapter quiz failed: %s", str(exc)[:120])
+    if not raw and or_key:
+        try:
+            raw = _call_llm_backoff(_call_openrouter, prompt, or_key, max_tokens)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("OpenRouter chapter quiz failed: %s", str(exc)[:120])
 
     if not raw:
-        raise RuntimeError(f"All LLM providers failed for chapter quiz: {last_err}")
+        return []
 
     parsed = _parse_json_array(raw)
     questions = [

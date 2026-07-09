@@ -768,6 +768,20 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
         except Exception as exc:
             logger.warning("Quiz pre-gen failed (non-fatal): %s", exc)
 
+        # Step 7.5: Chapters + chapter quizzes (pretest / mid_recall / end_recall)
+        try:
+            from pipeline.chapters import build_chapters_and_quizzes
+
+            video_duration = chunks[-1].get("end_time", 0) if chunks else 0
+            if chunks and video_duration:
+                res = build_chapters_and_quizzes(video_id, chunks, float(video_duration))
+                logger.info(
+                    "Chapters for %s: %d chapters, %d chapter-quiz questions",
+                    video_id, res.get("chapters", 0), res.get("questions", 0),
+                )
+        except Exception as exc:
+            logger.warning("Chapter quiz build failed (non-fatal): %s", exc)
+
         # Step 8: Delete .mp4
         try:
             vid_dir = Path(data_dir) / "videos" / video_id
