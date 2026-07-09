@@ -156,7 +156,7 @@ export function Watch() {
     setActiveQuizEvent(startEvt);
     setChapterQuizOpen(true);
     (playerRef.current as unknown as { pauseVideo(): void })?.pauseVideo?.();
-  }, [quizSchedule, playerReady, currentTime, chapterQuizOpen]);
+  }, [quizSchedule, currentTime, chapterQuizOpen]);
 
   const handlePlayerRef = useCallback((player: YTPlayer) => {
     playerRef.current = player;
