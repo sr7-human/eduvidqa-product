@@ -9,6 +9,7 @@ export interface AskRequest {
 
 export interface ProcessRequest {
   youtube_url: string;
+  mode?: 'lecture' | 'podcast';
 }
 
 // --- Response types ---

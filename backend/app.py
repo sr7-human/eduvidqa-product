@@ -138,7 +138,7 @@ def _get_db_url() -> str:
     return get_database_url()
 
 
-def _register_video(video_id: str) -> None:
+def _register_video(video_id: str, mode: str = "lecture") -> None:
     """Insert pending video row. Idempotent."""
     import uuid
     conn = psycopg2.connect(_get_db_url())
@@ -146,11 +146,11 @@ def _register_video(video_id: str) -> None:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO videos (id, video_id, pipeline_version, status)
-                VALUES (%s, %s, 1, 'pending')
-                ON CONFLICT (video_id, pipeline_version) DO NOTHING
+                INSERT INTO videos (id, video_id, pipeline_version, status, ingest_mode)
+                VALUES (%s, %s, 1, 'pending', %s)
+                ON CONFLICT (video_id, pipeline_version) DO UPDATE SET ingest_mode = EXCLUDED.ingest_mode
                 """,
-                (str(uuid.uuid4()), video_id),
+                (str(uuid.uuid4()), video_id, mode),
             )
         conn.commit()
     finally:
@@ -434,10 +434,10 @@ async def process_video(
                 if status == "processing":
                     already += 1
                     continue
-                _register_video(vid)
+                _register_video(vid, body.mode)
                 _link_user_video(user_id, vid)
                 background_tasks.add_task(
-                    _ingest_video_bg, vid, f"https://www.youtube.com/watch?v={vid}", user_id,
+                    _ingest_video_bg, vid, f"https://www.youtube.com/watch?v={vid}", user_id, body.mode,
                 )
                 queued += 1
             except Exception as exc:
@@ -482,9 +482,9 @@ async def process_video(
         )
 
     # Register + queue background work
-    _register_video(video_id)
+    _register_video(video_id, body.mode)
     _link_user_video(user_id, video_id)
-    background_tasks.add_task(_ingest_video_bg, video_id, body.youtube_url, user_id)
+    background_tasks.add_task(_ingest_video_bg, video_id, body.youtube_url, user_id, body.mode)
     return {"video_id": video_id, "status": "processing", "message": "Processing started"}
 
 
@@ -587,7 +587,7 @@ def _persist_playlist(user_id: str, playlist_id: str, title: str, video_ids: lis
         conn.close()
 
 
-def _ingest_video_bg(video_id: str, youtube_url: str, user_id: str) -> None:
+def _ingest_video_bg(video_id: str, youtube_url: str, user_id: str, mode: str = "lecture") -> None:
     """Background ingest — runs in a thread via FastAPI BackgroundTasks.
 
     Two-phase flow for instant UX:
@@ -596,15 +596,20 @@ def _ingest_video_bg(video_id: str, youtube_url: str, user_id: str) -> None:
     PHASE 2 (background): download video → keyframes → embed → digest →
         checkpoints → quiz pre-gen → mark `ready`.
 
+    In ``mode='podcast'`` the whole video-download + keyframe path is skipped:
+    the digest, checkpoints, and quizzes are built from the transcript only.
+    This is faster, cheaper, and avoids the YouTube video-download IP block.
+
     Uses the user's API keys (from user_api_keys table) for embeddings + LLM.
     For the demo video, falls back to the server's keys.
     """
     is_demo = (video_id == DEMO_VIDEO_ID)
     with _ScopedAPIKeys(user_id or None, allow_server_fallback=is_demo):
-        _ingest_video_bg_inner(video_id, youtube_url, user_id)
+        _ingest_video_bg_inner(video_id, youtube_url, user_id, mode)
 
 
-def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str) -> None:
+def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: str = "lecture") -> None:
+    podcast_mode = (mode == "podcast")
     try:
         _update_video_status(video_id, "processing")
 
@@ -649,29 +654,35 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str) -> Non
 
         # ════════════ PHASE 2: Video download + keyframes (slow) ════════════
 
-        # Step 1: Download video (non-fatal — cloud IPs often blocked by YouTube)
+        # In podcast mode we skip the entire video download + keyframe path.
+        # The transcript (from Phase 1, incl. Whisper fallback for no-caption
+        # videos) is all we need for the digest, checkpoints, and quizzes.
         video_path = None
-        try:
-            video_path = _download_video(video_id, data_dir)
-        except Exception as exc:
-            logger.warning(
-                "Video download failed for %s (will proceed transcript-only): %s",
-                video_id, exc,
-            )
-
-        # Step 2: Extract keyframes (non-fatal — requires .mp4)
-        from pipeline.keyframes import extract_keyframes
-
         kf_manifest: list[dict] = []
-        if video_path:
+        if podcast_mode:
+            logger.info("Podcast mode for %s — skipping video download + keyframes", video_id)
+        else:
+            # Step 1: Download video (non-fatal — cloud IPs often blocked by YouTube)
             try:
-                kf_manifest = extract_keyframes(
-                    video_path=video_path,
-                    video_id=video_id,
-                    output_dir=processed_dir,
-                )
+                video_path = _download_video(video_id, data_dir)
             except Exception as exc:
-                logger.warning("Keyframe extraction failed (non-fatal): %s", exc)
+                logger.warning(
+                    "Video download failed for %s (will proceed transcript-only): %s",
+                    video_id, exc,
+                )
+
+            # Step 2: Extract keyframes (non-fatal — requires .mp4)
+            from pipeline.keyframes import extract_keyframes
+
+            if video_path:
+                try:
+                    kf_manifest = extract_keyframes(
+                        video_path=video_path,
+                        video_id=video_id,
+                        output_dir=processed_dir,
+                    )
+                except Exception as exc:
+                    logger.warning("Keyframe extraction failed (non-fatal): %s", exc)
 
         # Step 3: Re-chunk transcript with keyframe links (idempotent via ON CONFLICT)
         if kf_manifest:

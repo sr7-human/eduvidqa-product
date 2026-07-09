@@ -19,6 +19,7 @@ export function Library() {
   const [videos, setVideos] = useState<UserVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [urlInput, setUrlInput] = useState('');
+  const [mode, setMode] = useState<'lecture' | 'podcast'>('lecture');
   const [adding, setAdding] = useState(false);
   const [dueCount, setDueCount] = useState(0);
   const [page, setPage] = useState(0);
@@ -166,7 +167,7 @@ export function Library() {
     setPreview(null);
     setAdding(true);
     try {
-      const res = (await processVideo({ youtube_url: urlInput })) as unknown as Record<string, unknown>;
+      const res = (await processVideo({ youtube_url: urlInput, mode })) as unknown as Record<string, unknown>;
       toast.success(String(res.message ?? 'Video submitted'));
       setUrlInput('');
       // Reload library so any new videos (single or playlist) show up
@@ -333,7 +334,7 @@ export function Library() {
         )}
 
         {/* Add video input */}
-        <div className="flex gap-2 mb-4">
+        <div className="flex gap-2 mb-2">
           <input
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
@@ -350,6 +351,38 @@ export function Library() {
           >
             {fetchingPreview ? 'Checking…' : adding ? 'Adding...' : 'Add Video'}
           </button>
+        </div>
+
+        {/* Ingest-mode toggle (applies to the video or the whole playlist) */}
+        <div className="flex flex-wrap items-center gap-2 mb-4 text-sm">
+          <span className="text-gray-500 dark:text-gray-400">Processing:</span>
+          <button
+            type="button"
+            onClick={() => setMode('lecture')}
+            className={`px-3 py-1 rounded-full border transition ${
+              mode === 'lecture'
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-transparent text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-blue-500'
+            }`}
+          >
+            🎓 Lecture (full)
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('podcast')}
+            className={`px-3 py-1 rounded-full border transition ${
+              mode === 'podcast'
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-transparent text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-blue-500'
+            }`}
+          >
+            🎧 Podcast (transcript-only)
+          </button>
+          <span className="text-xs text-gray-400 dark:text-gray-500">
+            {mode === 'lecture'
+              ? 'Extracts on-screen frames — best for slides, whiteboards, diagrams & code.'
+              : 'Skips video download & keyframes — faster & cheaper for talks and interviews.'}
+          </span>
         </div>
 
         {/* Search box */}

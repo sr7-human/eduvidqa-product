@@ -32,12 +32,25 @@ class AskRequest(BaseModel):
 
 class ProcessRequest(BaseModel):
     youtube_url: str = Field(..., max_length=200, description="Full YouTube URL to pre-process")
+    mode: str = Field(
+        default="lecture",
+        description="Ingest depth: 'lecture' (video + keyframes + vision) or "
+        "'podcast' (transcript-only, no video download / keyframes)",
+    )
 
     @field_validator("youtube_url")
     @classmethod
     def validate_youtube_url(cls, v: str) -> str:
         if not _YOUTUBE_URL_PATTERN.search(v):
             raise ValueError("Invalid YouTube URL")
+        return v
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, v: str) -> str:
+        v = (v or "lecture").strip().lower()
+        if v not in {"lecture", "podcast"}:
+            raise ValueError("mode must be 'lecture' or 'podcast'")
         return v
 
 
