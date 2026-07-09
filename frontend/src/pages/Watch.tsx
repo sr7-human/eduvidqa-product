@@ -18,7 +18,6 @@ import {
 import type { ChatMessage, Checkpoint, QuizQuestion, QuizScheduleEvent, QuizSchedule, YTPlayer } from '../types';
 import { CheckpointMarkers } from '../components/CheckpointMarkers';
 import { TestMeButton } from '../components/TestMeButton';
-import { QuizPanel } from '../components/QuizPanel';
 import { ChapterQuizModal } from '../components/ChapterQuizModal';
 import { usePauseDetector } from '../hooks/usePauseDetector';
 
@@ -47,8 +46,7 @@ export function Watch() {
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [videoDuration, setVideoDuration] = useState(0);
   const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[] | null>(null);
-  const [showQuiz, setShowQuiz] = useState(false);
-  const [playerState, setPlayerState] = useState<'playing' | 'paused' | 'other'>('other');
+  const [showQuiz, setShowQuiz] = useState(false);  const [playerState, setPlayerState] = useState<'playing' | 'paused' | 'other'>('other');
   const [isAdmin, setIsAdmin] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
 
@@ -170,6 +168,7 @@ export function Watch() {
   }, []);
 
   const handleQuizReady = useCallback((questions: QuizQuestion[]) => {
+    // Reuse the polished chapter-quiz modal for the normal "Test me" quizzes.
     setQuizQuestions(questions);
     setShowQuiz(true);
   }, []);
@@ -223,7 +222,6 @@ export function Watch() {
     setShowQuiz(false);
     setQuizQuestions(null);
   }, []);
-
   const handleCheckpointClick = useCallback(async (cp: Checkpoint) => {
     if (playerRef.current) {
       playerRef.current.seekTo(cp.timestamp_seconds, true);
@@ -563,20 +561,16 @@ export function Watch() {
           className="w-full flex flex-col min-h-0 h-[50vh] md:h-auto"
           style={{ flexBasis: `${chatPct}%`, flexShrink: 0, flexGrow: 0 }}
         >
-          {showQuiz && quizQuestions ? (
-            <QuizPanel questions={quizQuestions} onClose={handleQuizClose} />
-          ) : (
-            <ChatInterface
-              messages={messages}
-              isLoading={isLoading}
-              statusText={statusText}
-              timestamp={effectiveTimestamp}
-              autoMode={autoMode}
-              onSend={handleSend}
-              onSeek={handleSeek}
-              onInputFocus={handleInputFocus}
-            />
-          )}
+          <ChatInterface
+            messages={messages}
+            isLoading={isLoading}
+            statusText={statusText}
+            timestamp={effectiveTimestamp}
+            autoMode={autoMode}
+            onSend={handleSend}
+            onSeek={handleSeek}
+            onInputFocus={handleInputFocus}
+          />
         </div>
       </div>
 
@@ -589,6 +583,18 @@ export function Watch() {
           quizType={activeQuizEvent.type}
           blocking={quizSchedule?.blocking_mode === 'mandatory'}
           onClose={handleChapterQuizClose}
+        />
+      )}
+
+      {/* Normal "Test me" / checkpoint quiz — reuses the same modal UI, always closeable */}
+      {showQuiz && quizQuestions && (
+        <ChapterQuizModal
+          videoId={videoId}
+          quizType="checkpoint"
+          chapterTitle="Test yourself"
+          preloadedQuestions={quizQuestions}
+          blocking={false}
+          onClose={handleQuizClose}
         />
       )}
     </div>

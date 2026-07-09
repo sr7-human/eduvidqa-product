@@ -11,7 +11,7 @@ import type {
   QuizType,
 } from '../types';
 
-const TYPE_THEME: Record<QuizType, {
+const TYPE_THEME: Record<QuizType | 'checkpoint', {
   emoji: string;
   title: string;
   blurb: string;
@@ -19,6 +19,14 @@ const TYPE_THEME: Record<QuizType, {
   badge: string;
   cta: string;
 }> = {
+  checkpoint: {
+    emoji: '🧪',
+    title: 'Test yourself',
+    blurb: 'Check your understanding of what you just watched.',
+    ring: 'ring-purple-500/40',
+    badge: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+    cta: 'bg-purple-600 hover:bg-purple-500',
+  },
   pretest: {
     emoji: '🤔',
     title: 'Warm-up — what do you think?',
@@ -55,10 +63,11 @@ const TYPE_THEME: Record<QuizType, {
 
 interface Props {
   videoId: string;
-  chapterId: string;
+  chapterId?: string;
   chapterTitle: string;
-  quizType: QuizType;
+  quizType: QuizType | 'checkpoint';
   blocking: boolean;     // if true, no close button until done
+  preloadedQuestions?: QuizQuestion[];  // when set, skip fetch (used for checkpoint "Test me")
   onClose: () => void;
 }
 
@@ -73,6 +82,7 @@ export function ChapterQuizModal({
   chapterTitle,
   quizType,
   blocking,
+  preloadedQuestions,
   onClose,
 }: Props) {
   const theme = TYPE_THEME[quizType];
@@ -86,8 +96,12 @@ export function ChapterQuizModal({
   const [score, setScore] = useState({ correct: 0, total: 0 });
 
   useEffect(() => {
+    if (preloadedQuestions) {
+      setQuestions(preloadedQuestions);
+      return;
+    }
     let cancelled = false;
-    getChapterQuiz(videoId, chapterId, quizType)
+    getChapterQuiz(videoId, chapterId as string, quizType as QuizType)
       .then((data) => {
         if (!cancelled) setQuestions(data.questions);
       })
@@ -96,7 +110,7 @@ export function ChapterQuizModal({
         if (!cancelled) onClose();
       });
     return () => { cancelled = true; };
-  }, [videoId, chapterId, quizType, onClose]);
+  }, [videoId, chapterId, quizType, onClose, preloadedQuestions]);
 
   const q = questions?.[idx];
   const total = questions?.length ?? 0;
@@ -186,7 +200,17 @@ export function ChapterQuizModal({
               {chapterTitle}
             </h3>
           </div>
-          <div className="text-right shrink-0">
+          <div className="text-right shrink-0 flex flex-col items-end gap-1">
+            {quizType !== 'pretest' && (
+              <button
+                onClick={onClose}
+                title="Close"
+                aria-label="Close quiz"
+                className="text-gray-500 hover:text-gray-200 text-lg leading-none -mt-1"
+              >
+                ✕
+              </button>
+            )}
             <div className="text-xs text-gray-400">
               Q {idx + 1} of {total}
             </div>
