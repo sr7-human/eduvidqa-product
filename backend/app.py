@@ -414,6 +414,13 @@ async def process_video(
         if not video_ids:
             raise HTTPException(status_code=400, detail="Playlist has no videos.")
 
+        # Persist the playlist as a first-class entity (for the Playlists tab).
+        try:
+            pl_title, _meta_ids = _fetch_playlist_meta(playlist_id)
+            _persist_playlist(user_id, playlist_id, pl_title, video_ids)
+        except Exception as exc:
+            logger.warning("Playlist persist failed for %s: %s", playlist_id, exc)
+
         index = _get_index()
         queued = 0
         already = 0
@@ -520,6 +527,64 @@ def _list_playlist_video_ids(playlist_id: str) -> list[str]:
     # Dedupe while preserving order
     seen: set[str] = set()
     return [v for v in ids if not (v in seen or seen.add(v))]
+
+
+def _fetch_playlist_meta(playlist_id: str) -> tuple[str, list[str]]:
+    """Return (title, video_ids) for a playlist via yt-dlp flat extract."""
+    import yt_dlp
+
+    url = f"https://www.youtube.com/playlist?list={playlist_id}"
+    opts = {
+        "quiet": True,
+        "skip_download": True,
+        "extract_flat": "in_playlist",
+        "playlist_items": "1-200",
+        "no_warnings": True,
+    }
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=False) or {}
+    title = info.get("title") or f"Playlist {playlist_id}"
+    ids: list[str] = []
+    seen: set[str] = set()
+    for e in info.get("entries") or []:
+        if not e:
+            continue
+        vid = e.get("id") or e.get("video_id")
+        if isinstance(vid, str) and len(vid) == 11 and vid not in seen:
+            seen.add(vid)
+            ids.append(vid)
+    return title, ids
+
+
+def _persist_playlist(user_id: str, playlist_id: str, title: str, video_ids: list[str]) -> str:
+    """Upsert a playlist row + its video links. Returns the playlist row UUID."""
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO playlists (user_id, youtube_playlist_id, title, total_count)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (user_id, youtube_playlist_id)
+                DO UPDATE SET title = EXCLUDED.title, total_count = EXCLUDED.total_count
+                RETURNING id
+                """,
+                (user_id, playlist_id, title, len(video_ids)),
+            )
+            pl_id = cur.fetchone()[0]
+            for pos, vid in enumerate(video_ids):
+                cur.execute(
+                    """
+                    INSERT INTO playlist_videos (playlist_id, video_id, position)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (playlist_id, video_id) DO UPDATE SET position = EXCLUDED.position
+                    """,
+                    (pl_id, vid, pos),
+                )
+        conn.commit()
+        return str(pl_id)
+    finally:
+        conn.close()
 
 
 def _ingest_video_bg(video_id: str, youtube_url: str, user_id: str) -> None:
@@ -1150,6 +1215,159 @@ async def my_videos(user_id: str = Depends(require_auth)):
         }
         for r in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# Playlists
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/playlists")
+async def list_playlists(user_id: str = Depends(require_auth)):
+    """List this user's playlists with ingestion progress."""
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT p.id, p.youtube_playlist_id, p.title, p.total_count, p.created_at,
+                       COUNT(*) FILTER (WHERE v.status = 'ready') AS ready,
+                       COUNT(*) FILTER (WHERE v.status = 'failed') AS failed,
+                       COUNT(*) FILTER (WHERE v.status IN ('processing','transcript_ready')) AS processing
+                FROM playlists p
+                LEFT JOIN playlist_videos pv ON pv.playlist_id = p.id
+                LEFT JOIN videos v ON v.video_id = pv.video_id
+                WHERE p.user_id = %s
+                GROUP BY p.id
+                ORDER BY p.created_at DESC
+                """,
+                (user_id,),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    return [
+        {
+            "id": str(r[0]),
+            "youtube_playlist_id": r[1],
+            "title": r[2],
+            "total": r[3],
+            "created_at": str(r[4]),
+            "ready": r[5],
+            "failed": r[6],
+            "processing": r[7],
+        }
+        for r in rows
+    ]
+
+
+@app.get("/api/playlists/{playlist_id}")
+async def get_playlist(playlist_id: str, user_id: str = Depends(require_auth)):
+    """Playlist detail with per-video status."""
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, title, youtube_playlist_id, total_count FROM playlists "
+                "WHERE id = %s AND user_id = %s",
+                (playlist_id, user_id),
+            )
+            p = cur.fetchone()
+            if not p:
+                raise HTTPException(status_code=404, detail="Playlist not found")
+            cur.execute(
+                """
+                SELECT pv.video_id, pv.position, v.title, COALESCE(v.status, 'queued')
+                FROM playlist_videos pv
+                LEFT JOIN videos v ON v.video_id = pv.video_id
+                WHERE pv.playlist_id = %s
+                ORDER BY pv.position
+                """,
+                (playlist_id,),
+            )
+            vids = cur.fetchall()
+    finally:
+        conn.close()
+    return {
+        "id": str(p[0]),
+        "title": p[1],
+        "youtube_playlist_id": p[2],
+        "total": p[3],
+        "videos": [
+            {"video_id": r[0], "position": r[1], "title": r[2], "status": r[3]}
+            for r in vids
+        ],
+    }
+
+
+@app.post("/api/playlists/{playlist_id}/resume")
+async def resume_playlist(
+    playlist_id: str,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(require_auth),
+):
+    """Re-queue every video in the playlist that isn't ready/processing yet."""
+    if not _user_has_any_key(user_id):
+        raise HTTPException(
+            status_code=402,
+            detail="Add a Gemini or Groq API key in Settings before processing playlists.",
+        )
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM playlists WHERE id = %s AND user_id = %s",
+                (playlist_id, user_id),
+            )
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail="Playlist not found")
+            cur.execute(
+                """
+                SELECT pv.video_id
+                FROM playlist_videos pv
+                LEFT JOIN videos v ON v.video_id = pv.video_id
+                WHERE pv.playlist_id = %s
+                  AND (v.status IS NULL OR v.status NOT IN ('ready','processing','transcript_ready'))
+                ORDER BY pv.position
+                """,
+                (playlist_id,),
+            )
+            todo = [r[0] for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+    index = _get_index()
+    queued = 0
+    for vid in todo:
+        try:
+            if index.is_indexed(vid):
+                _link_user_video(user_id, vid)
+                continue
+            _register_video(vid)
+            _link_user_video(user_id, vid)
+            background_tasks.add_task(
+                _ingest_video_bg, vid, f"https://www.youtube.com/watch?v={vid}", user_id,
+            )
+            queued += 1
+        except Exception as exc:
+            logger.warning("resume: queue %s failed: %s", vid, exc)
+    return {"resumed": queued, "message": f"Resumed {queued} pending video(s)."}
+
+
+@app.delete("/api/playlists/{playlist_id}")
+async def delete_playlist(playlist_id: str, user_id: str = Depends(require_auth)):
+    """Remove a playlist (does not delete the underlying videos)."""
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM playlists WHERE id = %s AND user_id = %s",
+                (playlist_id, user_id),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"deleted": True}
 
 
 # ---------------------------------------------------------------------------

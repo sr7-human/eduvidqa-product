@@ -355,6 +355,50 @@ export async function getMyVideos(): Promise<UserVideo[]> {
   return request<UserVideo[]>('/api/users/me/videos');
 }
 
+export interface Playlist {
+  id: string;
+  youtube_playlist_id: string;
+  title: string | null;
+  total: number;
+  ready: number;
+  failed: number;
+  processing: number;
+  created_at: string;
+}
+
+export interface PlaylistVideoItem {
+  video_id: string;
+  position: number;
+  title: string | null;
+  status: string;
+}
+
+export interface PlaylistDetail {
+  id: string;
+  title: string | null;
+  youtube_playlist_id: string;
+  total: number;
+  videos: PlaylistVideoItem[];
+}
+
+export async function getPlaylists(): Promise<Playlist[]> {
+  return request<Playlist[]>('/api/playlists');
+}
+
+export async function getPlaylist(id: string): Promise<PlaylistDetail> {
+  return request<PlaylistDetail>(`/api/playlists/${id}`);
+}
+
+export async function resumePlaylist(
+  id: string,
+): Promise<{ resumed: number; message: string }> {
+  return request(`/api/playlists/${id}/resume`, { method: 'POST' });
+}
+
+export async function deletePlaylist(id: string): Promise<{ deleted: boolean }> {
+  return request(`/api/playlists/${id}`, { method: 'DELETE' });
+}
+
 export async function removeVideo(
   videoId: string,
 ): Promise<{ video_id: string; removed: boolean }> {

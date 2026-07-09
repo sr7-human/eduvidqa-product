@@ -17,6 +17,7 @@ export function Navbar() {
       <Link to="/library" className="text-xl font-bold text-blue-600 dark:text-blue-400">EduVidQA</Link>
       <div className="flex items-center gap-4">
         <Link to="/library" className="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">Library</Link>
+        <Link to="/playlists" className="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">Playlists</Link>
         <Link to="/review" className="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">Review</Link>
         <Link to="/settings" className="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">Settings</Link>
         {user?.email && <span className="text-sm text-gray-500 dark:text-gray-400">{user.email}</span>}

@@ -7,6 +7,7 @@ import { Login } from './pages/Login';
 import { Library } from './pages/Library';
 import { Watch } from './pages/Watch';
 import { Review } from './pages/Review';
+import { Playlists } from './pages/Playlists';
 import { Settings } from './pages/Settings';
 import { Privacy } from './pages/Privacy';
 import { Terms } from './pages/Terms';
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/library" element={<ProtectedRoute><Library /></ProtectedRoute>} />
+          <Route path="/playlists" element={<ProtectedRoute><Playlists /></ProtectedRoute>} />
           <Route path="/watch/:videoId" element={<ProtectedRoute><Watch /></ProtectedRoute>} />
           <Route path="/review" element={<ProtectedRoute><Review /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
