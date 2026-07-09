@@ -167,21 +167,8 @@ def generate_answer(
     # ── System prompt ─────────────────────────────────────────────
     system_prompt = _SYSTEM_PROMPT.format(timestamp_fmt=_fmt_timestamp(timestamp))
 
-    # ── Try Groq first, then Gemini ───────────────────────────────
-    if groq_key:
-        try:
-            answer, model_name, gen_time = _call_groq(
-                system_prompt, context_text, question, images_b64, groq_key,
-            )
-            return {
-                "answer": answer,
-                "model_name": model_name,
-                "generation_time": gen_time,
-                "sources": sources,
-            }
-        except Exception as exc:
-            logger.warning("Groq failed, falling back to Gemini: %s", exc)
-            _last_error = exc
+    # ── Try Gemini first, then OpenRouter (DeepSeek / Llama-Vision) ──
+    or_key = os.getenv("OPENROUTER_API_KEY", "")
 
     if gemini_key:
         try:
@@ -195,7 +182,22 @@ def generate_answer(
                 "sources": sources,
             }
         except Exception as exc:
-            logger.error("Gemini also failed: %s", exc)
+            logger.warning("Gemini failed, falling back to OpenRouter: %s", exc)
+            _last_error = exc
+
+    if or_key:
+        try:
+            answer, model_name, gen_time = _call_openrouter(
+                system_prompt, context_text, question, images_b64, or_key,
+            )
+            return {
+                "answer": answer,
+                "model_name": model_name,
+                "generation_time": gen_time,
+                "sources": sources,
+            }
+        except Exception as exc:
+            logger.error("OpenRouter also failed: %s", exc)
             _last_error = exc
 
     if not groq_key and not gemini_key:
@@ -283,6 +285,50 @@ def _call_gemini(
     elapsed = round(time.perf_counter() - t0, 2)
 
     return response.text.strip(), f"gemini/{model}", elapsed
+
+
+# ── OpenRouter (DeepSeek / Llama-Vision) ────────────────────────
+_OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+_OR_VISION_MODEL = "meta-llama/llama-3.2-11b-vision-instruct"
+_OR_TEXT_MODEL = "deepseek/deepseek-chat"
+
+
+def _openrouter_messages(system_prompt, context_text, question, images_b64):
+    if images_b64:
+        user_content = [{"type": "text", "text": f"{context_text}\n\nQUESTION: {question}"}]
+        for b64 in images_b64:
+            user_content.append(
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
+            )
+    else:
+        user_content = f"{context_text}\n\nQUESTION: {question}"
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
+
+
+def _call_openrouter(system_prompt, context_text, question, images_b64, api_key, model=None):
+    """Non-streaming OpenRouter call (OpenAI-compatible). Vision model if images."""
+    import json
+    import urllib.request
+
+    model = model or (_OR_VISION_MODEL if images_b64 else _OR_TEXT_MODEL)
+    body = json.dumps({
+        "model": model,
+        "messages": _openrouter_messages(system_prompt, context_text, question, images_b64),
+        "max_tokens": 4096,
+        "temperature": 0.3,
+    }).encode()
+    req = urllib.request.Request(
+        _OPENROUTER_URL, data=body,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+    )
+    t0 = time.perf_counter()
+    r = json.load(urllib.request.urlopen(req, timeout=90))
+    elapsed = round(time.perf_counter() - t0, 2)
+    text = (r["choices"][0]["message"]["content"] or "").strip()
+    return text, f"openrouter/{model}", elapsed
 
 
 # ── Streaming variants ──────────────────────────────────────────
@@ -378,17 +424,7 @@ def generate_answer_stream(
 
     _last_error: Exception | None = None
 
-    if groq_key:
-        try:
-            yield from _stream_groq(system_prompt, context_text, question, images_b64, groq_key)
-            return
-        except _StreamMidwayError:
-            # Tokens already sent — re-raise so the caller surfaces an error
-            # to the client instead of restarting from scratch with Gemini.
-            raise
-        except Exception as exc:
-            logger.warning("Groq stream failed before any tokens, falling back to Gemini: %s", exc)
-            _last_error = exc
+    or_key = os.getenv("OPENROUTER_API_KEY", "")
 
     if gemini_key:
         try:
@@ -397,7 +433,17 @@ def generate_answer_stream(
         except _StreamMidwayError:
             raise
         except Exception as exc:
-            logger.error("Gemini stream also failed: %s", exc)
+            logger.warning("Gemini stream failed before any tokens, falling back to OpenRouter: %s", exc)
+            _last_error = exc
+
+    if or_key:
+        try:
+            yield from _stream_openrouter(system_prompt, context_text, question, images_b64, or_key)
+            return
+        except _StreamMidwayError:
+            raise
+        except Exception as exc:
+            logger.error("OpenRouter stream also failed: %s", exc)
             _last_error = exc
 
     if not groq_key and not gemini_key:
@@ -458,6 +504,56 @@ def _stream_groq(
 
     elapsed = round(time.perf_counter() - t0, 2)
     yield {"type": "end", "model_name": f"groq/{model}", "generation_time": elapsed}
+
+
+def _stream_openrouter(
+    system_prompt: str,
+    context_text: str,
+    question: str,
+    images_b64: list[str],
+    api_key: str,
+    model: str | None = None,
+) -> Iterator[dict]:
+    """Stream tokens from OpenRouter (OpenAI-compatible SSE). Vision if images."""
+    import json
+    import urllib.request
+
+    model = model or (_OR_VISION_MODEL if images_b64 else _OR_TEXT_MODEL)
+    body = json.dumps({
+        "model": model,
+        "messages": _openrouter_messages(system_prompt, context_text, question, images_b64),
+        "max_tokens": 4096,
+        "temperature": 0.3,
+        "stream": True,
+    }).encode()
+    req = urllib.request.Request(
+        _OPENROUTER_URL, data=body,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+    )
+    t0 = time.perf_counter()
+    yielded_any = False
+    resp = urllib.request.urlopen(req, timeout=90)
+    try:
+        for raw in resp:
+            line = raw.decode("utf-8", "replace").strip()
+            if not line or not line.startswith("data:"):
+                continue
+            data = line[len("data:"):].strip()
+            if data == "[DONE]":
+                break
+            try:
+                delta = json.loads(data)["choices"][0]["delta"].get("content")
+            except Exception:
+                delta = None
+            if delta:
+                yielded_any = True
+                yield {"type": "token", "text": delta}
+    except Exception as exc:
+        if yielded_any:
+            raise _StreamMidwayError(f"OpenRouter stream interrupted: {exc}") from exc
+        raise
+    elapsed = round(time.perf_counter() - t0, 2)
+    yield {"type": "end", "model_name": f"openrouter/{model}", "generation_time": elapsed}
 
 
 def _stream_gemini(
