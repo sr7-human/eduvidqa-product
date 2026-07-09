@@ -24,6 +24,14 @@ This is NOT a summary — do NOT shorten or condense. Capture ALL:
 - Examples given by the professor
 - Important definitions and terminology
 
+Pedagogy — while capturing everything, teach it well:
+- Preserve the DEEP STRUCTURAL LOGIC of each idea while abstracting away the \
+non-essential clutter, so as to remove the initial cognitive load.
+- Add REAL-LIFE ANALOGIES that a complete layman could picture for the harder \
+concepts.
+- For key jargon/technical terms, give a brief ETYMOLOGICAL BREAKDOWN of the \
+word's roots so the name itself reinforces the meaning.
+
 The transcript and lecture frames are provided below.
 """
 
