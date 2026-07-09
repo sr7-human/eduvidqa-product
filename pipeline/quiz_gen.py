@@ -694,13 +694,13 @@ Chapter content:
 
 Generate exactly {count} multiple-choice questions following these rules:
 
-NATURE — CURIOSITY-TRIGGERING, THOUGHT-PROVOKING:
+NATURE — CURIOSITY-TRIGGERING & ACCESSIBLE:
 - Frame questions as "What do you think…", "Which of these would…", "Before watching, predict…"
-- Pitch them at someone who ALREADY has SOME familiarity with the broad topic — make them genuinely THINK about the underlying idea, not recall a trivial fact. The concepts can be non-trivial / a bit advanced.
-- BUT phrase EVERYTHING in PLAIN, JARGON-FREE, LAYMAN language. If a technical term from "{chapter_title}" is unavoidable, briefly gloss it in plain words INSIDE the question so a newcomer can still engage. Prefer real-world analogies over jargon.
+- The TOPIC of "{chapter_title}" may itself be advanced/technical — your job is to make it feel APPROACHABLE to a complete layman. Do NOT make the questions artificially hard. Lower the barrier, don't raise it.
+- Lead with EVERYDAY, REAL-WORLD ANALOGIES so a non-expert can reason about the idea using common sense. If a technical term is unavoidable, gloss it in plain words INSIDE the question.
 - Getting it wrong is expected and fine — that's the point.
 
-DIFFICULTY: Medium. Pitch the IDEAS to make a semi-informed learner think, but keep the WORDING simple and accessible.
+DIFFICULTY: Easy to Medium. Keep the wording simple and the concepts intuitive; the analogy should do the heavy lifting.
 BLOOM DISTRIBUTION:
   - {count_remember} at level "remember" (prior knowledge recall)
   - {count_understand} at level "understand" (intuitive reasoning)
@@ -709,17 +709,17 @@ Each question must:
 - Be self-contained (no references to "the video" or "the lecturer")
 - Have exactly 4 options labelled "A: ...", "B: ...", "C: ...", "D: ..."
 - Have exactly one correct answer
-- Include `option_explanations` — an object with keys "A","B","C","D"
-  - For the CORRECT option: 1-2 sentences explaining why it's right, citing the lesson content
-  - For each WRONG option: 1-2 sentences explaining why it's wrong AND naming the specific misconception if applicable
-  - Do NOT just say "this is incorrect". Always explain WHY.
+- Include `option_explanations` — an object with keys "A","B","C","D". For pretests these must be DETAILED and a bit LENGTHY (3-5 sentences each):
+  - For the CORRECT option: teach the concept in full — explain WHY it's right, build intuition with a concrete real-world ANALOGY, and connect it to what the learner is about to watch.
+  - For each WRONG option: explain WHY it's wrong, name the specific misconception, and gently correct it — again in plain, everyday language.
+  - Do NOT be terse. This is a teaching moment; write like a patient tutor explaining to a curious beginner.
 
 Return ONLY a JSON array:
 [{{"question_text": "...",
    "options": ["A: ...", "B: ...", "C: ...", "D: ..."],
    "correct_answer": "A",
-   "explanation": "short reason the correct answer is correct",
-   "option_explanations": {{"A": "Correct because...", "B": "Wrong because...", "C": "Wrong because...", "D": "Wrong because..."}},
+   "explanation": "a detailed, plain-language reason the correct answer is correct, with an analogy",
+   "option_explanations": {{"A": "Detailed 3-5 sentence explanation with an analogy...", "B": "Detailed why-wrong + misconception...", "C": "...", "D": "..."}},
    "difficulty": "easy|medium",
    "bloom_level": "remember|understand"}}]""",
 
