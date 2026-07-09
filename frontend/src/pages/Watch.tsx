@@ -139,6 +139,25 @@ export function Watch() {
     setPlayerReady(true);
   }, []);
 
+  // A pretest at the very start (timestamp ≈ 0) can't be caught by the forward-
+  // crossing detector (there's nothing to "cross"), and the video is paused at
+  // 0:00 so no time updates fire. Trigger it once the schedule is loaded — this
+  // is the intended "prime me on what's ahead" moment, before pressing play.
+  useEffect(() => {
+    if (!quizSchedule || quizSchedule.events.length === 0) return;
+    if (chapterQuizOpen || currentTime > 2) return;
+    const startEvt = quizSchedule.events.find(
+      (e) => e.type === 'pretest' && e.timestamp <= 1,
+    );
+    if (!startEvt) return;
+    const key = `${startEvt.chapter_id}:${startEvt.type}:${startEvt.timestamp}`;
+    if (completedEventsRef.current.has(key)) return;
+    completedEventsRef.current.add(key);
+    setActiveQuizEvent(startEvt);
+    setChapterQuizOpen(true);
+    (playerRef.current as unknown as { pauseVideo(): void })?.pauseVideo?.();
+  }, [quizSchedule, playerReady, currentTime, chapterQuizOpen]);
+
   const handlePlayerRef = useCallback((player: YTPlayer) => {
     playerRef.current = player;
     // Capture duration once the player is available
