@@ -76,10 +76,22 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
     ...(options?.headers as Record<string, string> ?? {}),
   };
-  const res = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers,
-  });
+  // Network-level resilience: the HF Space can briefly drop connections while
+  // waking or (re)deploying, which surfaces as a raw "Failed to fetch". Retry
+  // once after a short beat before giving up with a friendly message.
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  } catch {
+    await new Promise((r) => setTimeout(r, 1500));
+    try {
+      res = await fetch(`${API_URL}${path}`, { ...options, headers });
+    } catch {
+      throw new Error(
+        'Cannot reach the backend — it may be waking up. Please try again in a few seconds.',
+      );
+    }
+  }
   // Guard: HF Spaces returns HTML when sleeping/waking
   const ct = res.headers.get('content-type') ?? '';
   if (ct.includes('text/html')) {
