@@ -172,13 +172,20 @@ def _insert_chapter_questions(video_id: str, questions: list[dict], ts_bucket: i
 
 def build_chapters_and_quizzes(
     video_id: str, chunks: list[dict], duration_s: float, log=None,
+    quiz_types: list[str] | None = None,
 ) -> dict:
-    """Full pipeline: segment chapters → persist → generate pretest / mid_recall /
-    end_recall quizzes for each → store (prompt_version=2).
+    """Full pipeline: segment chapters → persist → generate the requested chapter
+    quiz types (default: all — pretest / mid_recall / end_recall) → store
+    (prompt_version=2).
+
+    Pass ``quiz_types=["pretest"]`` to generate ONLY pretests at ingest and defer
+    the rest to on-demand generation (keeps ingest cheap on LLM quota).
 
     Idempotent: replaces prior auto chapters + their quizzes on re-run.
     Returns {"chapters": n, "questions": n}.
     """
+    wanted = set(quiz_types or ["pretest", "mid_recall", "end_recall"])
+
     def _log(msg: str) -> None:
         (log or logger.info)(msg)
 
@@ -195,30 +202,33 @@ def build_chapters_and_quizzes(
         ch_minutes = (ch["end_time"] - ch["start_time"]) / 60.0
 
         # pretest at chapter start
-        try:
-            qs = generate_chapter_quizzes(video_id, ch, chunks, "pretest", count=4)
-            total_q += _insert_chapter_questions(video_id, qs, int(ch["start_time"] // 30))
-        except Exception as exc:  # noqa: BLE001
-            _log(f"  pretest ch{ch['idx']} failed: {str(exc)[:80]}")
+        if "pretest" in wanted:
+            try:
+                qs = generate_chapter_quizzes(video_id, ch, chunks, "pretest", count=4)
+                total_q += _insert_chapter_questions(video_id, qs, int(ch["start_time"] // 30))
+            except Exception as exc:  # noqa: BLE001
+                _log(f"  pretest ch{ch['idx']} failed: {str(exc)[:80]}")
 
         # mid_recall(s) evenly spaced within the chapter
-        n_mid = _compute_mid_recall_count(ch_minutes)
-        for j in range(n_mid):
-            mid_ts = ch["start_time"] + (ch["end_time"] - ch["start_time"]) * (j + 1) / (n_mid + 1)
-            try:
-                qs = generate_chapter_quizzes(
-                    video_id, ch, chunks, "mid_recall", count=3, mid_recall_timestamp=mid_ts,
-                )
-                total_q += _insert_chapter_questions(video_id, qs, int(mid_ts // 30))
-            except Exception as exc:  # noqa: BLE001
-                _log(f"  mid_recall ch{ch['idx']} failed: {str(exc)[:80]}")
+        if "mid_recall" in wanted:
+            n_mid = _compute_mid_recall_count(ch_minutes)
+            for j in range(n_mid):
+                mid_ts = ch["start_time"] + (ch["end_time"] - ch["start_time"]) * (j + 1) / (n_mid + 1)
+                try:
+                    qs = generate_chapter_quizzes(
+                        video_id, ch, chunks, "mid_recall", count=3, mid_recall_timestamp=mid_ts,
+                    )
+                    total_q += _insert_chapter_questions(video_id, qs, int(mid_ts // 30))
+                except Exception as exc:  # noqa: BLE001
+                    _log(f"  mid_recall ch{ch['idx']} failed: {str(exc)[:80]}")
 
         # end_recall at chapter end
-        try:
-            qs = generate_chapter_quizzes(video_id, ch, chunks, "end_recall", count=4)
-            total_q += _insert_chapter_questions(video_id, qs, int(ch["end_time"] // 30))
-        except Exception as exc:  # noqa: BLE001
-            _log(f"  end_recall ch{ch['idx']} failed: {str(exc)[:80]}")
+        if "end_recall" in wanted:
+            try:
+                qs = generate_chapter_quizzes(video_id, ch, chunks, "end_recall", count=4)
+                total_q += _insert_chapter_questions(video_id, qs, int(ch["end_time"] // 30))
+            except Exception as exc:  # noqa: BLE001
+                _log(f"  end_recall ch{ch['idx']} failed: {str(exc)[:80]}")
 
-    _log(f"  → {total_q} chapter quiz questions (pretest/mid_recall/end_recall)")
+    _log(f"  → {total_q} chapter quiz questions ({', '.join(sorted(wanted))})")
     return {"chapters": len(chapters), "questions": total_q}

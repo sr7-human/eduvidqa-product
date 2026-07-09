@@ -386,7 +386,7 @@ function Card({
       animate={{ scale: 1, opacity: 1, y: 0 }}
       exit={{ scale: 0.95, opacity: 0 }}
       onClick={(e) => e.stopPropagation()}
-      className={`bg-dark-card border border-dark-border rounded-2xl shadow-2xl ring-2 ${themeRing} max-w-xl w-full p-5`}
+      className={`bg-dark-card border border-dark-border rounded-2xl shadow-2xl ring-2 ${themeRing} max-w-xl w-full p-5 max-h-[88vh] overflow-y-auto`}
     >
       {children}
     </motion.div>

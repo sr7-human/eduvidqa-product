@@ -769,48 +769,50 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
         except Exception as exc:
             logger.warning("Checkpoint placement failed (non-fatal): %s", exc)
 
-        # Step 7: Pre-generate quizzes for ALL checkpoints in a SINGLE batched LLM call
-        try:
-            from pipeline.quiz_gen import generate_quizzes_for_checkpoints
-            from pipeline.quiz_cache import (
-                cache_questions,
-                get_cached_questions,
-            )
+        # Step 7: (optional) pre-generate checkpoint quizzes. OFF by default —
+        # "Test me" generates them on-demand, so ingest never burns LLM quota
+        # up front. Enable with INGEST_PREGEN_CHECKPOINT_QUIZZES=1.
+        if os.getenv("INGEST_PREGEN_CHECKPOINT_QUIZZES", "0") == "1":
+            try:
+                from pipeline.quiz_gen import generate_quizzes_for_checkpoints
+                from pipeline.quiz_cache import cache_questions, get_cached_questions
 
-            # Only generate for checkpoints that don't already have a cached quiz
-            todo: list[float] = []
-            for cp in checkpoints:
-                ts = float(cp["timestamp_seconds"])
-                if not get_cached_questions(video_id, int(ts // 30), 1):
-                    todo.append(ts)
+                todo = [
+                    float(cp["timestamp_seconds"]) for cp in checkpoints
+                    if not get_cached_questions(video_id, int(float(cp["timestamp_seconds"]) // 30), 1)
+                ]
+                if todo:
+                    quiz_keyframes = kf_manifest if (not podcast_mode and kf_manifest) else None
+                    logger.info("Quiz pre-gen for %s: %d checkpoint(s)", video_id, len(todo))
+                    results = generate_quizzes_for_checkpoints(
+                        video_id, todo, chunks, keyframes=quiz_keyframes,
+                    )
+                    for ts, questions in results.items():
+                        if questions:
+                            cache_questions(video_id, int(ts // 30), 1, questions)
+            except Exception as exc:
+                logger.warning("Quiz pre-gen failed (non-fatal): %s", exc)
+        else:
+            logger.info("Checkpoint quiz pre-gen skipped for %s (on-demand via Test me)", video_id)
 
-            if todo:
-                # Lecture mode: ground quizzes in on-screen keyframes (vision).
-                # Podcast mode has no keyframes → transcript-only text path.
-                quiz_keyframes = kf_manifest if (not podcast_mode and kf_manifest) else None
-                logger.info(
-                    "Quiz pre-gen for %s: %d checkpoint(s), mode=%s, keyframes=%d",
-                    video_id, len(todo), mode, len(quiz_keyframes or []),
-                )
-                results = generate_quizzes_for_checkpoints(
-                    video_id, todo, chunks, keyframes=quiz_keyframes,
-                )
-                for ts, questions in results.items():
-                    if questions:
-                        cache_questions(video_id, int(ts // 30), 1, questions)
-        except Exception as exc:
-            logger.warning("Quiz pre-gen failed (non-fatal): %s", exc)
-
-        # Step 7.5: Chapters + chapter quizzes (pretest / mid_recall / end_recall)
+        # Step 7.5: Chapters + PRETESTS ONLY at ingest. mid_recall / end_recall
+        # are generated on-demand when the learner reaches them (keeps ingest
+        # cheap). Override with INGEST_CHAPTER_QUIZ_TYPES="pretest,mid_recall,end_recall".
         try:
             from pipeline.chapters import build_chapters_and_quizzes
 
             video_duration = chunks[-1].get("end_time", 0) if chunks else 0
             if chunks and video_duration:
-                res = build_chapters_and_quizzes(video_id, chunks, float(video_duration))
+                qtypes = [
+                    t.strip() for t in os.getenv("INGEST_CHAPTER_QUIZ_TYPES", "pretest").split(",")
+                    if t.strip()
+                ]
+                res = build_chapters_and_quizzes(
+                    video_id, chunks, float(video_duration), quiz_types=qtypes,
+                )
                 logger.info(
-                    "Chapters for %s: %d chapters, %d chapter-quiz questions",
-                    video_id, res.get("chapters", 0), res.get("questions", 0),
+                    "Chapters for %s: %d chapters, %d chapter-quiz questions (%s)",
+                    video_id, res.get("chapters", 0), res.get("questions", 0), ",".join(qtypes),
                 )
         except Exception as exc:
             logger.warning("Chapter quiz build failed (non-fatal): %s", exc)
@@ -1560,55 +1562,93 @@ async def get_quiz_schedule(
     events: list[dict] = []
     for ch_id, idx, start, end, title in chapter_rows:
         ch_id_s = str(ch_id)
-        if present.get((ch_id_s, "pretest"), 0) > 0:
-            events.append({
-                "timestamp": float(start),
-                "type": "pretest",
-                "chapter_id": ch_id_s,
-                "chapter_idx": idx,
-                "chapter_title": title,
-            })
-        if present.get((ch_id_s, "end_recall"), 0) > 0:
-            events.append({
-                "timestamp": float(end),
-                "type": "end_recall",
-                "chapter_id": ch_id_s,
-                "chapter_idx": idx,
-                "chapter_title": title,
-            })
+        start_f, end_f = float(start), float(end)
+        # Pretests are generated at ingest; mid_recall / end_recall are generated
+        # ON-DEMAND when the learner first reaches them (keeps ingest cheap). We
+        # emit all three from chapter geometry so the player fires them, and
+        # get_chapter_quiz lazily generates any that aren't cached yet.
+        events.append({
+            "timestamp": start_f, "type": "pretest",
+            "chapter_id": ch_id_s, "chapter_idx": idx, "chapter_title": title,
+        })
+        events.append({
+            "timestamp": start_f + (end_f - start_f) / 2.0, "type": "mid_recall",
+            "chapter_id": ch_id_s, "chapter_idx": idx, "chapter_title": title,
+        })
+        events.append({
+            "timestamp": end_f, "type": "end_recall",
+            "chapter_id": ch_id_s, "chapter_idx": idx, "chapter_title": title,
+        })
 
-    # mid-recalls: each question carries its own ts_bucket; for now, group by
-    # bucket and pick the lowest timestamp per bucket as the trigger point.
+    events.sort(key=lambda e: e["timestamp"])
+    blocking_mode = _resolve_blocking_mode(user_id, video_id)
+    return {"events": events, "blocking_mode": blocking_mode}
+
+
+def _fetch_chapter_quiz_rows(video_id: str, chapter_id: str, quiz_type: str):
     conn = psycopg2.connect(_get_db_url())
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT DISTINCT chapter_id, ts_bucket_30s
+                SELECT id, question_text, options, difficulty, bloom_level, order_idx
                 FROM questions
-                WHERE video_id = %s AND prompt_version = 2
-                  AND quiz_type = 'mid_recall' AND chapter_id IS NOT NULL
+                WHERE video_id = %s AND chapter_id = %s::uuid
+                  AND quiz_type = %s AND prompt_version = 2
+                ORDER BY order_idx, question_text
                 """,
-                (video_id,),
+                (video_id, chapter_id, quiz_type),
             )
-            for ch_id, bucket in cur.fetchall():
-                # find chapter title/idx
-                ch_meta = next((r for r in chapter_rows if str(r[0]) == str(ch_id)), None)
-                if not ch_meta:
-                    continue
-                events.append({
-                    "timestamp": float(bucket * 30),
-                    "type": "mid_recall",
-                    "chapter_id": str(ch_id),
-                    "chapter_idx": ch_meta[1],
-                    "chapter_title": ch_meta[4],
-                })
+            return cur.fetchall()
     finally:
         conn.close()
 
-    events.sort(key=lambda e: e["timestamp"])
-    blocking_mode = _resolve_blocking_mode(user_id, video_id)
-    return {"events": events, "blocking_mode": blocking_mode}
+
+def _ensure_chapter_quiz(video_id: str, chapter_id: str, quiz_type: str) -> None:
+    """Generate + store a chapter quiz on-demand (uses the currently-scoped keys)."""
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT idx, start_time, end_time, title FROM chapters "
+                "WHERE id = %s::uuid AND video_id = %s",
+                (chapter_id, video_id),
+            )
+            ch = cur.fetchone()
+            if not ch:
+                return
+            cur.execute(
+                "SELECT chunk_id, text, start_time, end_time FROM video_chunks "
+                "WHERE video_id = %s ORDER BY start_time",
+                (video_id,),
+            )
+            chunks = [
+                {"chunk_id": r[0], "text": r[1], "start_time": r[2], "end_time": r[3]}
+                for r in cur.fetchall()
+            ]
+    finally:
+        conn.close()
+    if not chunks:
+        return
+    idx, start, end, title = ch
+    start_f, end_f = float(start), float(end)
+    chapter = {"id": chapter_id, "idx": idx, "start_time": start_f, "end_time": end_f, "title": title}
+
+    from pipeline.quiz_gen import generate_chapter_quizzes
+    from pipeline.chapters import _insert_chapter_questions
+
+    if quiz_type == "mid_recall":
+        mid_ts = start_f + (end_f - start_f) / 2.0
+        qs = generate_chapter_quizzes(video_id, chapter, chunks, "mid_recall", count=3, mid_recall_timestamp=mid_ts)
+        bucket = int(mid_ts // 30)
+    elif quiz_type == "end_recall":
+        qs = generate_chapter_quizzes(video_id, chapter, chunks, "end_recall", count=4)
+        bucket = int(end_f // 30)
+    else:  # pretest
+        qs = generate_chapter_quizzes(video_id, chapter, chunks, "pretest", count=4)
+        bucket = int(start_f // 30)
+    if qs:
+        _insert_chapter_questions(video_id, qs, bucket)
 
 
 @app.get("/api/videos/{video_id}/chapter-quiz")
@@ -1624,22 +1664,22 @@ async def get_chapter_quiz(
     """
     if quiz_type not in {"pretest", "mid_recall", "end_recall", "remediation"}:
         raise HTTPException(status_code=400, detail="Invalid quiz_type")
-    conn = psycopg2.connect(_get_db_url())
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id, question_text, options, difficulty, bloom_level, order_idx
-                FROM questions
-                WHERE video_id = %s AND chapter_id = %s::uuid
-                  AND quiz_type = %s AND prompt_version = 2
-                ORDER BY order_idx, question_text
-                """,
-                (video_id, chapter_id, quiz_type),
-            )
-            rows = cur.fetchall()
-    finally:
-        conn.close()
+
+    rows = _fetch_chapter_quiz_rows(video_id, chapter_id, quiz_type)
+    # Lazily generate on first request (mid_recall / end_recall / a pretest that
+    # wasn't made at ingest) using the requesting user's scoped key.
+    if not rows and quiz_type in {"pretest", "mid_recall", "end_recall"}:
+        is_demo = (video_id == DEMO_VIDEO_ID)
+        if is_demo or _user_has_any_key(user_id):
+            try:
+                with _ScopedAPIKeys(user_id, allow_server_fallback=is_demo):
+                    _ensure_chapter_quiz(video_id, chapter_id, quiz_type)
+                rows = _fetch_chapter_quiz_rows(video_id, chapter_id, quiz_type)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "On-demand chapter quiz gen failed (%s/%s): %s",
+                    chapter_id, quiz_type, str(exc)[:100],
+                )
     return {
         "questions": [
             {
