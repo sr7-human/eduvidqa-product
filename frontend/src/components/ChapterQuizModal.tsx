@@ -201,16 +201,14 @@ export function ChapterQuizModal({
             </h3>
           </div>
           <div className="text-right shrink-0 flex flex-col items-end gap-1">
-            {quizType !== 'pretest' && (
-              <button
-                onClick={onClose}
-                title="Close"
-                aria-label="Close quiz"
-                className="text-gray-500 hover:text-gray-200 text-lg leading-none -mt-1"
-              >
-                ✕
-              </button>
-            )}
+            <button
+              onClick={onClose}
+              title="Close"
+              aria-label="Close quiz"
+              className="text-gray-500 hover:text-gray-200 text-lg leading-none -mt-1"
+            >
+              ✕
+            </button>
             <div className="text-xs text-gray-400">
               Q {idx + 1} of {total}
             </div>

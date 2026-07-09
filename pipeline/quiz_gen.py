@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 import re
 
 logger = logging.getLogger(__name__)
@@ -124,14 +125,56 @@ def _parse_json_array(text: str) -> list[dict]:
     raise ValueError(f"Could not parse JSON array from LLM response: {text[:200]}")
 
 
-def _normalize_question(q: dict) -> dict:
-    """Ensure required keys + safe defaults."""
+def _shuffle_options(q: dict) -> dict:
+    """Randomize option order so the correct answer isn't always 'A'.
+
+    LLMs strongly bias the correct answer to position A. We re-label the four
+    options A-D in a random order and remap ``correct_answer`` +
+    ``option_explanations`` to match. Mutates and returns ``q``.
+    """
+    opts = q.get("options") or []
+    if len(opts) != 4:
+        return q
+    labels = ["A", "B", "C", "D"]
+    parsed: list[tuple[str | None, str]] = []
+    for i, o in enumerate(opts):
+        m = re.match(r"^\s*([A-D])\s*[:.\-]\s*(.*)$", str(o), re.DOTALL)
+        if m:
+            parsed.append((m.group(1), m.group(2).strip()))
+        else:
+            parsed.append((labels[i], str(o).strip()))
+    correct_letter = str(q.get("correct_answer", "A")).strip()[:1].upper()
+    oe = q.get("option_explanations") if isinstance(q.get("option_explanations"), dict) else None
+
+    order = list(range(4))
+    random.shuffle(order)
+    new_options: list[str] = []
+    new_oe: dict[str, str] | None = {} if oe else None
+    new_correct = "A"
+    for new_idx, old_idx in enumerate(order):
+        new_label = labels[new_idx]
+        old_label, text = parsed[old_idx]
+        new_options.append(f"{new_label}: {text}")
+        if old_label == correct_letter:
+            new_correct = new_label
+        if new_oe is not None and old_label in oe:
+            new_oe[new_label] = oe[old_label]
+    q["options"] = new_options
+    q["correct_answer"] = new_correct
+    if new_oe is not None:
+        q["option_explanations"] = new_oe
+    return q
+
+
+def _normalize_question(q: dict, shuffle: bool = True) -> dict:
+    """Ensure required keys + safe defaults. Shuffles option order by default
+    so the correct answer position is randomized."""
     bloom = str(q.get("bloom_level", "understand")).strip().lower() or "understand"
     if bloom not in {"remember", "understand", "apply", "analyse", "analyze", "evaluate"}:
         bloom = "understand"
     if bloom == "analyze":
         bloom = "analyse"
-    return {
+    out = {
         "question_text": str(q.get("question_text", "")).strip(),
         "options": list(q.get("options", [])),
         "correct_answer": str(q.get("correct_answer", "A")).strip()[:1].upper() or "A",
@@ -139,6 +182,9 @@ def _normalize_question(q: dict) -> dict:
         "difficulty": str(q.get("difficulty", "medium")).strip().lower() or "medium",
         "bloom_level": bloom,
     }
+    if shuffle:
+        _shuffle_options(out)
+    return out
 
 
 def _call_groq(prompt: str, api_key: str, max_tokens: int = 12000) -> str:
@@ -648,12 +694,13 @@ Chapter content:
 
 Generate exactly {count} multiple-choice questions following these rules:
 
-NATURE — CURIOSITY-TRIGGERING / PREDICTION-STYLE:
+NATURE — CURIOSITY-TRIGGERING, THOUGHT-PROVOKING:
 - Frame questions as "What do you think…", "Which of these would…", "Before watching, predict…"
-- Target prior knowledge the learner MIGHT have from everyday experience
-- Getting it wrong is expected and fine — that's the point
+- Pitch them at someone who ALREADY has SOME familiarity with the broad topic — make them genuinely THINK about the underlying idea, not recall a trivial fact. The concepts can be non-trivial / a bit advanced.
+- BUT phrase EVERYTHING in PLAIN, JARGON-FREE, LAYMAN language. If a technical term from "{chapter_title}" is unavoidable, briefly gloss it in plain words INSIDE the question so a newcomer can still engage. Prefer real-world analogies over jargon.
+- Getting it wrong is expected and fine — that's the point.
 
-DIFFICULTY: Easy to Medium only. The learner hasn't seen this content yet.
+DIFFICULTY: Medium. Pitch the IDEAS to make a semi-informed learner think, but keep the WORDING simple and accessible.
 BLOOM DISTRIBUTION:
   - {count_remember} at level "remember" (prior knowledge recall)
   - {count_understand} at level "understand" (intuitive reasoning)
@@ -775,7 +822,9 @@ def _get_bloom_counts(quiz_type: str, count: int) -> dict[str, int]:
 
 def _normalize_chapter_question(q: dict, quiz_type: str) -> dict:
     """Normalize a chapter quiz question, including option_explanations."""
-    base = _normalize_question(q)
+    # Don't shuffle yet — option_explanations are keyed A-D on the ORIGINAL
+    # order; we attach them first, then shuffle everything together.
+    base = _normalize_question(q, shuffle=False)
     base["quiz_type"] = quiz_type
 
     # option_explanations
@@ -784,10 +833,6 @@ def _normalize_chapter_question(q: dict, quiz_type: str) -> dict:
         base["option_explanations"] = {
             k: str(v).strip() for k, v in oe.items() if k in ("A", "B", "C", "D") and v
         }
-        # Derive legacy explanation from correct answer's explanation
-        correct = base["correct_answer"]
-        if correct in base["option_explanations"]:
-            base["explanation"] = base["option_explanations"][correct]
     else:
         base["option_explanations"] = None
 
@@ -797,6 +842,14 @@ def _normalize_chapter_question(q: dict, quiz_type: str) -> dict:
         base["misconception_tags"] = [str(t).strip() for t in tags if t]
     else:
         base["misconception_tags"] = None
+
+    # Now randomize option order (remaps correct_answer + option_explanations).
+    _shuffle_options(base)
+    # Derive legacy single explanation from the (post-shuffle) correct option.
+    if isinstance(base.get("option_explanations"), dict):
+        correct = base["correct_answer"]
+        if correct in base["option_explanations"]:
+            base["explanation"] = base["option_explanations"][correct]
 
     return base
 
