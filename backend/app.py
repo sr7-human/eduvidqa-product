@@ -752,11 +752,16 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
                     todo.append(ts)
 
             if todo:
+                # Lecture mode: ground quizzes in on-screen keyframes (vision).
+                # Podcast mode has no keyframes → transcript-only text path.
+                quiz_keyframes = kf_manifest if (not podcast_mode and kf_manifest) else None
                 logger.info(
-                    "Batched quiz pre-gen for %s: %d checkpoint(s) in 1 LLM call",
-                    video_id, len(todo),
+                    "Quiz pre-gen for %s: %d checkpoint(s), mode=%s, keyframes=%d",
+                    video_id, len(todo), mode, len(quiz_keyframes or []),
                 )
-                results = generate_quizzes_for_checkpoints(video_id, todo, chunks)
+                results = generate_quizzes_for_checkpoints(
+                    video_id, todo, chunks, keyframes=quiz_keyframes,
+                )
                 for ts, questions in results.items():
                     if questions:
                         cache_questions(video_id, int(ts // 30), 1, questions)

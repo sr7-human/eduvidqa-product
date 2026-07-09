@@ -182,9 +182,13 @@ def _set_title_and_link(video_id: str, user_id: str | None) -> str:
     return title
 
 
-def _generate_checkpoints_and_quizzes(video_id: str, chunks: list[dict], log) -> None:
+def _generate_checkpoints_and_quizzes(video_id: str, chunks: list[dict], log,
+                                      keyframes: list[dict] | None = None) -> None:
     """Place checkpoints + generate quizzes (dynamically batched) — the same
     Phase 2 work the production backend does, so local videos get quizzes too.
+
+    When ``keyframes`` is provided (lecture mode), quizzes are grounded in the
+    on-screen frames (vision); otherwise transcript-only.
     """
     from pipeline.checkpoints import place_checkpoints
     from pipeline.quiz_cache import cache_questions, get_cached_questions
@@ -210,7 +214,7 @@ def _generate_checkpoints_and_quizzes(video_id: str, chunks: list[dict], log) ->
     ]
     if not todo:
         return
-    results = generate_quizzes_for_checkpoints(video_id, todo, chunks)
+    results = generate_quizzes_for_checkpoints(video_id, todo, chunks, keyframes=keyframes)
     total = 0
     for ts, qs in results.items():
         if qs:
@@ -263,7 +267,7 @@ def ingest_one(url_or_id: str, user_id: str | None = None, log=print) -> dict:
         n = _upload_keyframes(video_id, kf)
         log("6/6 checkpoints + quizzes")
         try:
-            _generate_checkpoints_and_quizzes(video_id, chunks, log)
+            _generate_checkpoints_and_quizzes(video_id, chunks, log, keyframes=kf or None)
         except Exception as e:
             log(f"  quiz gen skipped: {str(e)[:100]}")
         title = _set_title_and_link(video_id, user_id)

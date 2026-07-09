@@ -24,6 +24,9 @@ def main() -> None:
     ap.add_argument("--group", type=int, default=4)
     ap.add_argument("--openrouter", action="store_true",
                     help="Force OpenRouter (skip Gemini/Groq free tiers)")
+    ap.add_argument("--vision", action="store_true",
+                    help="Lecture mode: ground quizzes in on-screen keyframes "
+                         "(loads data/processed/<vid>/keyframes/manifest.json)")
     args = ap.parse_args()
 
     if args.openrouter:
@@ -53,8 +56,22 @@ def main() -> None:
     conn.close()
 
     todo = [ts for ts in cps if not get_cached_questions(vid, int(ts // 30), 1)]
+
+    keyframes = None
+    if args.vision:
+        import json
+        from pathlib import Path
+        manifest = Path("data/processed") / vid / "keyframes" / "manifest.json"
+        if manifest.is_file():
+            keyframes = json.loads(manifest.read_text())
+            print(f"[regen] vision: loaded {len(keyframes)} keyframes", flush=True)
+        else:
+            print(f"[regen] vision requested but no manifest at {manifest} — "
+                  "falling back to transcript-only", flush=True)
+
     print(f"[regen] {vid}: {len(cps)} checkpoints, {len(todo)} to generate, "
-          f"{len(chunks)} chunks, count={args.count}", flush=True)
+          f"{len(chunks)} chunks, count={args.count}, "
+          f"vision={bool(keyframes)}", flush=True)
 
     t0 = time.time()
     cached_total = 0
@@ -62,7 +79,8 @@ def main() -> None:
         group = todo[i:i + args.group]
         try:
             res = generate_quizzes_for_checkpoints(vid, group, chunks,
-                                                   count_per_cp=args.count)
+                                                   count_per_cp=args.count,
+                                                   keyframes=keyframes)
         except Exception as exc:  # noqa: BLE001
             print(f"[regen] group {group} failed: {str(exc)[:160]}", flush=True)
             continue

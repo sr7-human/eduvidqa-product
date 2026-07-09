@@ -240,6 +240,165 @@ def _call_openrouter(prompt: str, api_key: str, max_tokens: int = 8000,
     return r["choices"][0]["message"]["content"] or ""
 
 
+# ── Vision helpers (lecture mode: quizzes grounded in on-screen frames) ─────
+
+VISION_QUIZ_PREAMBLE = """\
+You are ALSO given several KEYFRAMES captured from the screen around this point \
+in the lecture (slides, diagrams, equations, code, charts, tables). Ground your \
+questions in what is ACTUALLY VISIBLE in these frames \u2014 not only the transcript. \
+When a diagram, graph, equation, table, or code snippet is shown, PREFER \
+questions that require reading and reasoning about that on-screen content \
+(e.g. "In the diagram, what happens to X when Y increases?"). Do not describe \
+the frame itself or say "in the image"; make each question self-contained.
+
+"""
+
+
+def _read_image_bytes(path: str) -> bytes | None:
+    """Read image bytes from a local file path OR a public URL; None on failure."""
+    if not path:
+        return None
+    try:
+        if path.startswith(("http://", "https://")):
+            import urllib.request
+
+            with urllib.request.urlopen(path, timeout=8) as resp:
+                return resp.read()
+        with open(path, "rb") as f:
+            return f.read()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Keyframe read failed (%s): %s", path, str(exc)[:80])
+        return None
+
+
+def _select_keyframes(
+    keyframes: list[dict], timestamp: float, window: float = 90.0, max_frames: int = 4
+) -> list[str]:
+    """Return up to ``max_frames`` keyframe file paths near ``timestamp``.
+
+    Prefers frames within ``window`` seconds; if none, takes the nearest few.
+    Samples evenly across the window so the frames are representative.
+    """
+    if not keyframes:
+        return []
+    near = [k for k in keyframes if abs(float(k.get("timestamp", 0)) - timestamp) <= window]
+    if not near:
+        near = sorted(keyframes, key=lambda k: abs(float(k.get("timestamp", 0)) - timestamp))[:max_frames]
+    near = sorted(near, key=lambda k: float(k.get("timestamp", 0)))
+    if len(near) > max_frames:
+        step = len(near) / max_frames
+        near = [near[int(i * step)] for i in range(max_frames)]
+    return [str(k["file"]) for k in near if k.get("file")]
+
+
+def _call_gemini_vision(prompt: str, image_paths: list[str], api_key: str,
+                        max_tokens: int = 8000) -> str:
+    """Multimodal Gemini call: prompt + keyframe images."""
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=api_key)
+    parts = [types.Part.from_text(text=prompt)]
+    for p in image_paths:
+        data = _read_image_bytes(p)
+        if data:
+            parts.append(types.Part.from_bytes(data=data, mime_type="image/jpeg"))
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=parts,
+        config=types.GenerateContentConfig(
+            temperature=0.7,
+            max_output_tokens=max_tokens,
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
+        ),
+    )
+    return response.text or ""
+
+
+def _call_openrouter_vision(prompt: str, image_paths: list[str], api_key: str,
+                            max_tokens: int = 8000,
+                            model: str = "meta-llama/llama-3.2-11b-vision-instruct") -> str:
+    """Multimodal OpenRouter call (vision model) \u2014 paid fallback for lecture quizzes."""
+    import base64
+    import json
+    import urllib.request
+
+    content: list[dict] = [{"type": "text", "text": prompt}]
+    for p in image_paths:
+        data = _read_image_bytes(p)
+        if data:
+            b64 = base64.b64encode(data).decode()
+            content.append({"type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
+    body = json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": content}],
+        "max_tokens": max_tokens,
+        "temperature": 0.5,
+    }).encode()
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions", data=body,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+    )
+    r = json.load(urllib.request.urlopen(req, timeout=180))
+    return r["choices"][0]["message"]["content"] or ""
+
+
+def _call_vision_backoff(fn, prompt: str, images: list[str], key: str,
+                         max_tokens: int, retries: int = 4) -> str:
+    """Like ``_call_llm_backoff`` but for multimodal (image-bearing) calls."""
+    import re
+
+    for attempt in range(retries):
+        _throttle()
+        try:
+            return fn(prompt, images, key, max_tokens=max_tokens)
+        except Exception as exc:  # noqa: BLE001
+            s = str(exc)
+            is_rate = "429" in s or "RESOURCE_EXHAUSTED" in s or "rate limit" in s.lower()
+            if is_rate and attempt < retries - 1:
+                m = re.search(r"retry in ([0-9.]+)s", s)
+                delay = min(65.0, (float(m.group(1)) + 2) if m else 20.0 * (attempt + 1))
+                logger.warning("Vision LLM rate-limited \u2014 waiting %.0fs (%d/%d)",
+                               delay, attempt + 1, retries)
+                _time.sleep(delay)
+                continue
+            raise
+    return ""
+
+
+def _generate_quiz_vision_one(
+    video_id: str, timestamp: float, chunks: list[dict],
+    image_paths: list[str], count_per_cp: int = 7,
+) -> list[dict]:
+    """Generate quizzes for a SINGLE checkpoint using transcript + on-screen
+    keyframes (Gemini vision, OpenRouter vision fallback)."""
+    selected = _select_context_chunks(chunks, timestamp)
+    context = _assemble_context(selected) if selected else "[no transcript available]"
+    prompt = VISION_QUIZ_PREAMBLE + QUIZ_PROMPT.format(
+        timestamp=f"{timestamp:.0f}s", context=context, count=count_per_cp,
+    )
+    gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+    or_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    max_tokens = max(4000, 400 * count_per_cp)
+
+    raw = ""
+    if gemini_key:
+        try:
+            raw = _call_vision_backoff(_call_gemini_vision, prompt, image_paths, gemini_key, max_tokens)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Gemini vision quiz at %.0fs failed: %s", timestamp, str(exc)[:120])
+    if not raw and or_key:
+        try:
+            raw = _call_vision_backoff(_call_openrouter_vision, prompt, image_paths, or_key, max_tokens)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("OpenRouter vision quiz at %.0fs failed: %s", timestamp, str(exc)[:120])
+    if not raw:
+        return []
+    parsed = _parse_json_array(raw)
+    return [_normalize_question(q) for q in parsed if q.get("question_text")]
+
+
 def generate_quiz_questions(
     video_id: str,
     timestamp: float,
@@ -328,10 +487,18 @@ def generate_quizzes_for_checkpoints(  # noqa: keep signature stable
     chunks: list[dict],
     count_per_cp: int = 7,
     batch_size: int | None = None,
+    keyframes: list[dict] | None = None,
 ) -> dict[float, list[dict]]:
     """Generate quizzes for checkpoints, DYNAMICALLY BATCHED across several LLM
     calls so no single call blows past the model's output-token limit (which
     truncates the JSON and silently loses questions).
+
+    If ``keyframes`` is provided (LECTURE mode), each checkpoint is generated
+    individually with its nearby on-screen frames (Gemini vision \u2192 OpenRouter
+    vision), so questions can be grounded in slides/diagrams/equations/code.
+    Checkpoints with no nearby frame, or where vision yields nothing, fall back
+    to the transcript-only text path. When ``keyframes`` is None/empty
+    (PODCAST mode, or vision unavailable) the fast batched text path is used.
 
     Returns {timestamp: [questions]}. Batches are generated independently, so a
     failure in one batch never wipes the others.
@@ -339,13 +506,31 @@ def generate_quizzes_for_checkpoints(  # noqa: keep signature stable
     if not checkpoint_timestamps:
         return {}
 
+    # ── Vision path (lecture mode): per-checkpoint, transcript + frames ──
+    if keyframes:
+        out: dict[float, list[dict]] = {}
+        for ts in checkpoint_timestamps:
+            frames = _select_keyframes(keyframes, ts)
+            qs: list[dict] = []
+            if frames:
+                try:
+                    qs = _generate_quiz_vision_one(video_id, ts, chunks, frames, count_per_cp)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Vision quiz at %.0fs failed: %s", ts, str(exc)[:100])
+            if not qs:
+                # No frame nearby, or vision produced nothing → transcript fallback.
+                qs = _generate_quiz_batch(video_id, [ts], chunks, count_per_cp).get(ts, [])
+            out[ts] = qs
+        return out
+
+    # ── Text path (podcast mode / no keyframes): fast dynamic batching ──
     # Size each batch so its expected output stays well under the model's output
     # cap (~8k tokens). A question with explanations ≈ ~300 tokens.
     if batch_size is None:
         per_cp_tokens = max(1, count_per_cp * 300)
         batch_size = max(1, min(8, 6000 // per_cp_tokens))
 
-    out: dict[float, list[dict]] = {}
+    out = {}
     n = len(checkpoint_timestamps)
     for i in range(0, n, batch_size):
         batch = checkpoint_timestamps[i : i + batch_size]
