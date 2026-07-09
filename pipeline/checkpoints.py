@@ -41,9 +41,9 @@ def place_checkpoints(
     chunks: list[dict],
     video_duration_seconds: float,
     embeddings: list | None = None,
-    target_interval_minutes: float = 6.0,
+    target_interval_minutes: float = 8.0,
 ) -> list[dict]:
-    """Place checkpoints at semantic boundaries, ~1 per 5-8 minutes.
+    """Place checkpoints at semantic boundaries, ~1 per 8 minutes.
 
     Returns list of dicts with keys:
     ``timestamp_seconds``, ``chunk_index``, ``topic_label``, ``shift_score``.

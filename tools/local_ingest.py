@@ -182,6 +182,43 @@ def _set_title_and_link(video_id: str, user_id: str | None) -> str:
     return title
 
 
+def _generate_checkpoints_and_quizzes(video_id: str, chunks: list[dict], log) -> None:
+    """Place checkpoints + generate quizzes (dynamically batched) — the same
+    Phase 2 work the production backend does, so local videos get quizzes too.
+    """
+    from pipeline.checkpoints import place_checkpoints
+    from pipeline.quiz_cache import cache_questions, get_cached_questions
+    from pipeline.quiz_gen import generate_quizzes_for_checkpoints
+
+    dur = chunks[-1].get("end_time", 0) if chunks else 0
+    cps = place_checkpoints(chunks, dur)
+    with _db() as conn:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            for cp in cps:
+                cur.execute(
+                    "INSERT INTO checkpoints (id, video_id, timestamp_seconds, topic_label) "
+                    "VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+                    (str(uuid.uuid4()), video_id, cp["timestamp_seconds"], cp["topic_label"]),
+                )
+    log(f"  → {len(cps)} checkpoints")
+
+    todo = [
+        float(cp["timestamp_seconds"])
+        for cp in cps
+        if not get_cached_questions(video_id, int(float(cp["timestamp_seconds"]) // 30), 1)
+    ]
+    if not todo:
+        return
+    results = generate_quizzes_for_checkpoints(video_id, todo, chunks)
+    total = 0
+    for ts, qs in results.items():
+        if qs:
+            cache_questions(video_id, int(ts // 30), 1, qs)
+            total += len(qs)
+    log(f"  → {total} quiz questions across {len(cps)} checkpoints")
+
+
 def ingest_one(url_or_id: str, user_id: str | None = None, log=print) -> dict:
     """Ingest one video end-to-end into production. Returns a result dict.
 
@@ -221,9 +258,14 @@ def ingest_one(url_or_id: str, user_id: str | None = None, log=print) -> dict:
             digest = generate_digest(video_id=video_id, data_dir=str(PROCESSED_DIR))
         except Exception as e:
             log(f"  digest skipped: {str(e)[:80]}")
-        log("5/5 index + upload")
+        log("5/6 index + upload")
         index.index_video(video_id=video_id, chunks=chunks, keyframe_manifest=kf, digest=digest)
         n = _upload_keyframes(video_id, kf)
+        log("6/6 checkpoints + quizzes")
+        try:
+            _generate_checkpoints_and_quizzes(video_id, chunks, log)
+        except Exception as e:
+            log(f"  quiz gen skipped: {str(e)[:100]}")
         title = _set_title_and_link(video_id, user_id)
         try:
             shutil.rmtree(DATA_DIR / "videos" / video_id)

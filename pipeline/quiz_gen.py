@@ -15,14 +15,12 @@ QUIZ_PROMPT = """You are a quiz designer for an educational lecture video. Based
 
 {context}
 
-Generate exactly {count} multiple-choice questions covering Bloom's taxonomy levels in this distribution:
-  - 1 question  at level "remember"   (recall a single key fact, definition, or term)
-  - 1 question  at level "understand" (explain or paraphrase one core idea)
-  - 3 questions at level "apply"      (use the concept in a NEW situation or worked example)
-  - 3 questions at level "analyse"    (compare, contrast, break down components, identify cause/effect, spot which assumption breaks)
-  - 2 questions at level "evaluate"   (judge, critique, justify a choice between alternatives based on criteria)
+Generate exactly {count} multiple-choice questions, weighted toward higher-order Bloom's taxonomy levels:
+  - a couple of quick warm-ups at "remember" (recall a key fact/term) and "understand" (paraphrase one core idea)
+  - the MAJORITY at "apply" (use the concept in a NEW situation or worked example) and "analyse" (compare, contrast, break down components, identify cause/effect, spot which assumption breaks)
+  - at least one at "evaluate" (judge, critique, justify a choice between alternatives based on criteria)
 
-Do NOT include any "create" level questions.
+Do NOT include any "create" level questions. Always include at least one apply, one analyse, and one evaluate question.
 
 Focus most of your effort on the higher-order questions (apply, analyse, evaluate). The remember/understand questions should be quick warm-ups; the rest should make the learner actually think.
 
@@ -184,6 +182,64 @@ def _call_gemini(prompt: str, api_key: str, max_tokens: int = 12000) -> str:
     raise last_exc if last_exc else RuntimeError("Gemini call failed")
 
 
+# ── Rate limiting (Gemini free tier = 5 requests/min) ──────────────────────
+import time as _time  # noqa: E402
+
+_LAST_LLM_CALL = 0.0
+# ~5 req/min → 1 every 12s. Tunable via env; set 0 on paid tiers.
+_MIN_LLM_INTERVAL = float(os.getenv("QUIZ_LLM_MIN_INTERVAL", "13"))
+
+
+def _throttle() -> None:
+    global _LAST_LLM_CALL
+    dt = _time.time() - _LAST_LLM_CALL
+    if dt < _MIN_LLM_INTERVAL:
+        _time.sleep(_MIN_LLM_INTERVAL - dt)
+    _LAST_LLM_CALL = _time.time()
+
+
+def _call_llm_backoff(fn, prompt: str, key: str, max_tokens: int, retries: int = 4) -> str:
+    """Call an LLM with proactive throttling + 429/rate-limit backoff-retry."""
+    import re
+
+    for attempt in range(retries):
+        _throttle()
+        try:
+            return fn(prompt, key, max_tokens=max_tokens)
+        except Exception as exc:  # noqa: BLE001
+            s = str(exc)
+            is_rate = "429" in s or "RESOURCE_EXHAUSTED" in s or "rate limit" in s.lower()
+            if is_rate and attempt < retries - 1:
+                m = re.search(r"retry in ([0-9.]+)s", s)
+                delay = min(65.0, (float(m.group(1)) + 2) if m else 20.0 * (attempt + 1))
+                logger.warning("LLM rate-limited — waiting %.0fs (attempt %d/%d)", delay, attempt + 1, retries)
+                _time.sleep(delay)
+                continue
+            raise
+    return ""
+
+
+def _call_openrouter(prompt: str, api_key: str, max_tokens: int = 8000,
+                     model: str = "deepseek/deepseek-chat") -> str:
+    """Text completion via OpenRouter (OpenAI-compatible) — paid credits, no
+    per-minute free-tier wall. Used as the quiz-gen fallback."""
+    import json
+    import urllib.request
+
+    body = json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max_tokens,
+        "temperature": 0.4,
+    }).encode()
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions", data=body,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+    )
+    r = json.load(urllib.request.urlopen(req, timeout=120))
+    return r["choices"][0]["message"]["content"] or ""
+
+
 def generate_quiz_questions(
     video_id: str,
     timestamp: float,
@@ -234,14 +290,12 @@ def generate_quiz_questions(
 MULTI_QUIZ_PROMPT = """You are a quiz designer for an educational lecture video.
 You will generate quizzes for {n_checkpoints} different checkpoints from the same lecture, in a single response.
 
-For EACH checkpoint, generate exactly {count_per_cp} multiple-choice questions with this Bloom distribution:
-  - 1 question  at level "remember"   (recall a single key fact, definition, or term)
-  - 1 question  at level "understand" (explain or paraphrase one core idea)
-  - 3 questions at level "apply"      (use the concept in a NEW situation or worked example)
-  - 3 questions at level "analyse"    (compare, contrast, break down components, identify cause/effect)
-  - 2 questions at level "evaluate"   (judge, critique, justify a choice based on criteria)
+For EACH checkpoint, generate exactly {count_per_cp} multiple-choice questions, weighted toward higher-order thinking (Bloom's taxonomy):
+  - a couple of quick warm-ups at "remember" (recall a key fact/term) and "understand" (paraphrase one core idea)
+  - the MAJORITY at "apply" (use the concept in a NEW situation or worked example) and "analyse" (compare, contrast, break down components, identify cause/effect)
+  - at least one at "evaluate" (judge, critique, justify a choice based on criteria)
 
-Do NOT include any "create" level questions. Focus most of your effort on apply/analyse/evaluate.
+Do NOT include any "create" level questions. Always include at least one apply, one analyse, and one evaluate question, and spend most effort on those.
 
 Each question must:
 - Be self-contained (do not reference "the video", "the lecturer", or "the lecture")
@@ -268,16 +322,54 @@ Return ONE FLAT JSON array containing ALL {total_questions} questions across all
 Return ONLY the JSON array, no other text."""
 
 
-def generate_quizzes_for_checkpoints(
+def generate_quizzes_for_checkpoints(  # noqa: keep signature stable
     video_id: str,
     checkpoint_timestamps: list[float],
     chunks: list[dict],
-    count_per_cp: int = 10,
+    count_per_cp: int = 7,
+    batch_size: int | None = None,
 ) -> dict[float, list[dict]]:
-    """Generate quizzes for MULTIPLE checkpoints in a SINGLE LLM call.
+    """Generate quizzes for checkpoints, DYNAMICALLY BATCHED across several LLM
+    calls so no single call blows past the model's output-token limit (which
+    truncates the JSON and silently loses questions).
 
-    Returns a mapping of {timestamp: [questions]}. Falls back to per-checkpoint
-    generation if the batched call fails or returns wrong count.
+    Returns {timestamp: [questions]}. Batches are generated independently, so a
+    failure in one batch never wipes the others.
+    """
+    if not checkpoint_timestamps:
+        return {}
+
+    # Size each batch so its expected output stays well under the model's output
+    # cap (~8k tokens). A question with explanations ≈ ~300 tokens.
+    if batch_size is None:
+        per_cp_tokens = max(1, count_per_cp * 300)
+        batch_size = max(1, min(8, 6000 // per_cp_tokens))
+
+    out: dict[float, list[dict]] = {}
+    n = len(checkpoint_timestamps)
+    for i in range(0, n, batch_size):
+        batch = checkpoint_timestamps[i : i + batch_size]
+        logger.info(
+            "Quiz batch %d-%d of %d (%d checkpoints)",
+            i + 1, min(i + batch_size, n), n, len(batch),
+        )
+        try:
+            out.update(_generate_quiz_batch(video_id, batch, chunks, count_per_cp))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Quiz batch at %.0fs failed: %s", batch[0], exc)
+            for ts in batch:
+                out.setdefault(ts, [])
+    return out
+
+
+def _generate_quiz_batch(
+    video_id: str,
+    checkpoint_timestamps: list[float],
+    chunks: list[dict],
+    count_per_cp: int = 7,
+) -> dict[float, list[dict]]:
+    """Generate quizzes for a SMALL batch of checkpoints in one LLM call, with
+    per-checkpoint fallback for any the batched call missed.
     """
     if not checkpoint_timestamps:
         return {}
@@ -299,60 +391,61 @@ def generate_quizzes_for_checkpoints(
         checkpoints_block="\n\n".join(blocks),
     )
 
-    groq_key = os.getenv("GROQ_API_KEY", "").strip()
     gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+    groq_key = os.getenv("GROQ_API_KEY", "").strip()
 
     raw = ""
-    last_err: Exception | None = None
-    # 10 questions ≈ 2500 tokens with explanations + JSON overhead;
-    # multiply by checkpoints + add buffer for the outer wrapper structure
-    max_tokens = max(15000, 3500 * len(checkpoint_timestamps))
-    if groq_key:
+    # ~300 tokens per question with explanations + JSON overhead + buffer.
+    max_tokens = max(8000, 400 * count_per_cp * len(checkpoint_timestamps))
+    # Gemini first (default engine) with throttle + 429 backoff; Groq fallback.
+    if gemini_key:
         try:
-            raw = _call_groq(prompt, groq_key, max_tokens=max_tokens)
+            raw = _call_llm_backoff(_call_gemini, prompt, gemini_key, max_tokens)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Groq multi-quiz failed, falling back to Gemini: %s", exc)
-            last_err = exc
-    if not raw and gemini_key:
+            logger.warning("Gemini multi-quiz failed: %s", str(exc)[:120])
+    if not raw and groq_key:
         try:
-            raw = _call_gemini(prompt, gemini_key, max_tokens=max_tokens)
+            raw = _call_llm_backoff(_call_groq, prompt, groq_key, max_tokens)
         except Exception as exc:  # noqa: BLE001
-            logger.error("Gemini multi-quiz also failed: %s", exc)
-            last_err = exc
+            logger.warning("Groq multi-quiz failed: %s", str(exc)[:120])
+    or_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    if not raw and or_key:
+        try:
+            raw = _call_llm_backoff(_call_openrouter, prompt, or_key, max_tokens)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("OpenRouter multi-quiz failed: %s", str(exc)[:120])
 
     out: dict[float, list[dict]] = {ts: [] for ts in checkpoint_timestamps}
     if raw:
         try:
             parsed = _parse_json_array(raw)
-            # Each item is a question with checkpoint_timestamp field
             for entry in parsed:
                 if not isinstance(entry, dict) or not entry.get("question_text"):
                     continue
                 ts_val = entry.get("checkpoint_timestamp")
                 if not isinstance(ts_val, (int, float)):
                     continue
-                # Snap to nearest expected checkpoint
                 best = min(checkpoint_timestamps, key=lambda t: abs(t - float(ts_val)))
                 out[best].append(_normalize_question(entry))
         except Exception as exc:  # noqa: BLE001
             logger.warning("Failed to parse batched quiz response: %s", exc)
 
-    # Fill in any missing checkpoints with per-checkpoint generation as fallback
-    missing = [ts for ts in checkpoint_timestamps if ts not in out or not out[ts]]
-    if missing:
-        if out:
+    # Only per-checkpoint fallback if the batch call actually returned data.
+    # An empty response usually means a rate-limit window — don't hammer the
+    # API; those checkpoints stay uncached and are generated on the next run.
+    if raw:
+        missing = [ts for ts in checkpoint_timestamps if not out.get(ts)]
+        if missing:
             logger.info(
-                "Batched quiz returned %d/%d; falling back per-checkpoint for %d missing",
+                "Batch returned %d/%d; per-checkpoint fallback for %d",
                 len(checkpoint_timestamps) - len(missing), len(checkpoint_timestamps), len(missing),
             )
-        else:
-            logger.warning("Batched quiz returned 0 entries (%s); falling back per-checkpoint", last_err)
-        for ts in missing:
-            try:
-                out[ts] = generate_quiz_questions(video_id, ts, chunks, count=count_per_cp)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Fallback quiz gen at %.0fs failed: %s", ts, exc)
-                out[ts] = []
+            for ts in missing:
+                try:
+                    out[ts] = generate_quiz_questions(video_id, ts, chunks, count=count_per_cp)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Fallback quiz gen at %.0fs failed: %s", ts, str(exc)[:80])
+                    out[ts] = []
 
     return out
 
