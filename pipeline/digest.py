@@ -12,6 +12,8 @@ import logging
 import os
 from pathlib import Path
 
+from pipeline.model_prefs import gemini_model
+
 logger = logging.getLogger(__name__)
 
 _DIGEST_PROMPT = """\
@@ -91,7 +93,7 @@ def generate_digest(
     groq_key = os.getenv("GROQ_API_KEY", "")
 
     if gemini_key and engine != "groq":
-        digest = _gemini_digest(transcript, kf_paths, gemini_key)
+        digest = _gemini_digest(transcript, kf_paths, gemini_key, model=gemini_model("digest"))
     elif groq_key:
         from groq import Groq
 

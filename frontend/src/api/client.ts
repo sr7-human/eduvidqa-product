@@ -476,6 +476,27 @@ export async function setLlmPref(llm_pref: LlmPref): Promise<{ llm_pref: LlmPref
   });
 }
 
+// ── Model picker (live model lists + per-feature model preferences) ──
+
+export interface ModelOption { id: string; label: string; }
+export type ModelFeature = 'answers' | 'quizzes' | 'digest';
+export type ModelPrefs = Partial<Record<ModelFeature, string>>; // value = "provider:model" | "auto"
+
+export async function getAvailableModels(): Promise<{ gemini: ModelOption[]; openrouter: ModelOption[] }> {
+  return request<{ gemini: ModelOption[]; openrouter: ModelOption[] }>('/api/models');
+}
+
+export async function getModelPrefs(): Promise<{ model_prefs: ModelPrefs }> {
+  return request<{ model_prefs: ModelPrefs }>('/api/users/me/model-prefs');
+}
+
+export async function setModelPrefs(model_prefs: ModelPrefs): Promise<{ model_prefs: ModelPrefs }> {
+  return request<{ model_prefs: ModelPrefs }>('/api/users/me/model-prefs', {
+    method: 'PUT',
+    body: JSON.stringify({ model_prefs }),
+  });
+}
+
 export async function getQuiz(
   videoId: string,
   endTs: number,

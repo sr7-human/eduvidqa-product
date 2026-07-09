@@ -10,6 +10,8 @@ import os
 import random
 import re
 
+from pipeline.model_prefs import gemini_model, openrouter_override
+
 logger = logging.getLogger(__name__)
 
 QUIZ_PROMPT = """You are a quiz designer for an educational lecture video. Based on this lecture content near timestamp {timestamp}:
@@ -209,7 +211,7 @@ def _call_gemini(prompt: str, api_key: str, max_tokens: int = 12000) -> str:
     for attempt in range(3):
         try:
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model=gemini_model("quizzes"),
                 contents=[types.Part.from_text(text=prompt)],
                 config=types.GenerateContentConfig(
                     temperature=0.7,
@@ -266,12 +268,13 @@ def _call_llm_backoff(fn, prompt: str, key: str, max_tokens: int, retries: int =
 
 
 def _call_openrouter(prompt: str, api_key: str, max_tokens: int = 8000,
-                     model: str = "deepseek/deepseek-chat") -> str:
+                     model: str | None = None) -> str:
     """Text completion via OpenRouter (OpenAI-compatible) — paid credits, no
     per-minute free-tier wall. Used as the quiz-gen fallback."""
     import json
     import urllib.request
 
+    model = model or openrouter_override("quizzes") or "deepseek/deepseek-chat"
     body = json.dumps({
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
@@ -350,7 +353,7 @@ def _call_gemini_vision(prompt: str, image_paths: list[str], api_key: str,
         if data:
             parts.append(types.Part.from_bytes(data=data, mime_type="image/jpeg"))
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model=gemini_model("quizzes"),
         contents=parts,
         config=types.GenerateContentConfig(
             temperature=0.7,

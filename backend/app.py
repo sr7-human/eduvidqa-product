@@ -284,6 +284,27 @@ def _get_llm_pref(user_id: str | None) -> str:
         return "auto"
 
 
+def _get_model_prefs(user_id: str | None) -> dict:
+    """Return the user's per-feature model prefs, e.g.
+    {"answers": "gemini:gemini-2.5-flash", "quizzes": "auto", ...}. {} if none."""
+    if not user_id:
+        return {}
+    try:
+        conn = psycopg2.connect(_get_db_url())
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT model_prefs FROM user_quiz_prefs WHERE user_id = %s::uuid",
+                    (user_id,),
+                )
+                row = cur.fetchone()
+                return (row[0] or {}) if row else {}
+        finally:
+            conn.close()
+    except Exception:
+        return {}
+
+
 class _ScopedAPIKeys:
     """Context manager that temporarily injects user-specific GEMINI_API_KEY /
     GROQ_API_KEY into os.environ for the duration of a request, restoring the
@@ -314,6 +335,18 @@ class _ScopedAPIKeys:
                 # treats it as missing.
                 os.environ.pop(env_name, None)
             # else: leave server key in place
+
+        # Per-feature model preferences → env for the pipelines
+        # (pipeline.model_prefs reads EDUVIDQA_MODEL_<FEATURE>).
+        prefs = _get_model_prefs(self.user_id) if self.user_id else {}
+        for feature in ("answers", "quizzes", "digest"):
+            env_name = f"EDUVIDQA_MODEL_{feature.upper()}"
+            self._saved[env_name] = os.environ.get(env_name)
+            val = prefs.get(feature)
+            if val and str(val).lower() != "auto":
+                os.environ[env_name] = str(val)
+            else:
+                os.environ.pop(env_name, None)
         return self
 
     def __exit__(self, exc_type, exc, tb):
@@ -1697,6 +1730,86 @@ async def set_llm_pref(body: _LlmPrefBody, user_id: str = Depends(require_auth))
     finally:
         conn.close()
     return {"llm_pref": body.llm_pref}
+
+
+# ── Model picker (live model lists + per-feature preferences) ────────
+
+@app.get("/api/models")
+async def list_models(user_id: str = Depends(require_auth)):
+    """Live list of selectable models per provider (auto-updates as providers
+    add models). Gemini list uses the user's key; OpenRouter uses the catalog."""
+    import json as _json
+    import urllib.request as _url
+
+    keys = _get_user_keys(user_id)
+    out: dict[str, list] = {"gemini": [], "openrouter": []}
+
+    gkey = keys.get("gemini") or os.getenv("GEMINI_API_KEY", "")
+    if gkey:
+        try:
+            req = _url.Request(
+                f"https://generativelanguage.googleapis.com/v1beta/models?key={gkey}"
+            )
+            data = _json.load(_url.urlopen(req, timeout=15))
+            for m in data.get("models", []):
+                if "generateContent" not in (m.get("supportedGenerationMethods") or []):
+                    continue
+                name = (m.get("name") or "").replace("models/", "")
+                if not name.startswith("gemini"):
+                    continue
+                out["gemini"].append({"id": name, "label": m.get("displayName") or name})
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Gemini ListModels failed: %s", exc)
+
+    okey = os.getenv("OPENROUTER_API_KEY", "")
+    try:
+        headers = {"Authorization": f"Bearer {okey}"} if okey else {}
+        req = _url.Request("https://openrouter.ai/api/v1/models", headers=headers)
+        data = _json.load(_url.urlopen(req, timeout=15))
+        for m in data.get("data", []):
+            mid = m.get("id")
+            if mid:
+                out["openrouter"].append({"id": mid, "label": m.get("name") or mid})
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("OpenRouter models failed: %s", exc)
+
+    return out
+
+
+@app.get("/api/users/me/model-prefs")
+async def get_model_prefs(user_id: str = Depends(require_auth)):
+    return {"model_prefs": _get_model_prefs(user_id)}
+
+
+class _ModelPrefsBody(BaseModel):
+    model_prefs: dict
+
+
+@app.put("/api/users/me/model-prefs")
+async def set_model_prefs(body: _ModelPrefsBody, user_id: str = Depends(require_auth)):
+    import json as _json
+
+    allowed = {"answers", "quizzes", "digest"}
+    cleaned: dict[str, str] = {}
+    for k, v in (body.model_prefs or {}).items():
+        if k in allowed and isinstance(v, str) and v.strip():
+            cleaned[k] = v.strip()
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO user_quiz_prefs (user_id, pref, model_prefs, updated_at)
+                VALUES (%s::uuid, 'use_video_default', %s::jsonb, now())
+                ON CONFLICT (user_id) DO UPDATE
+                  SET model_prefs = EXCLUDED.model_prefs, updated_at = now()
+                """,
+                (user_id, _json.dumps(cleaned)),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"model_prefs": cleaned}
 
 
 @app.post("/api/videos/{video_id}/quiz")

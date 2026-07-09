@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Navbar } from '../components/Navbar';
-import { listMyKeys, saveMyKey, deleteMyKey, getQuizPref, setQuizPref, getLlmPref, setLlmPref, type StoredKey, type QuizPref, type LlmPref } from '../api/client';
+import { listMyKeys, saveMyKey, deleteMyKey, getQuizPref, setQuizPref, getLlmPref, setLlmPref, getAvailableModels, getModelPrefs, setModelPrefs, type StoredKey, type QuizPref, type LlmPref, type ModelOption, type ModelFeature, type ModelPrefs } from '../api/client';
 
 const SERVICES: Array<{
   id: 'gemini' | 'groq';
@@ -38,6 +38,9 @@ export function Settings() {
   const [llmPref, setLlmPrefState] = useState<LlmPref>('auto');
   const [llmPrefLoading, setLlmPrefLoading] = useState(true);
   const [llmPrefSaving, setLlmPrefSaving] = useState(false);
+  const [models, setModels] = useState<{ gemini: ModelOption[]; openrouter: ModelOption[] } | null>(null);
+  const [modelPrefs, setModelPrefsState] = useState<ModelPrefs>({});
+  const [modelsLoading, setModelsLoading] = useState(true);
 
   useEffect(() => {
     listMyKeys()
@@ -54,7 +57,22 @@ export function Settings() {
       .then((r) => setLlmPrefState(r.llm_pref))
       .catch(() => {})
       .finally(() => setLlmPrefLoading(false));
+    Promise.all([getAvailableModels(), getModelPrefs()])
+      .then(([m, p]) => { setModels(m); setModelPrefsState(p.model_prefs || {}); })
+      .catch(() => {})
+      .finally(() => setModelsLoading(false));
   }, []);
+
+  async function updateModelPref(feature: ModelFeature, value: string) {
+    const next = { ...modelPrefs, [feature]: value };
+    setModelPrefsState(next);
+    try {
+      await setModelPrefs(next);
+      toast.success('Model preference saved');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save model preference');
+    }
+  }
 
   const stored = (svc: 'gemini' | 'groq') => keys.find((k) => k.service === svc);
 
@@ -296,6 +314,53 @@ export function Settings() {
                   </div>
                 </label>
               ))}
+            </div>
+          )}
+        </div>
+
+        {/* Per-feature model picker */}
+        <div className="mt-8">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Advanced: model per feature</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Pick the exact model for each feature. The list auto-updates with the latest models your key can use. "Auto" uses the recommended default with automatic fallback.
+          </p>
+          {modelsLoading ? (
+            <p className="text-gray-500 dark:text-gray-400 text-sm py-4">Loading models…</p>
+          ) : (
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 space-y-4">
+              {([
+                { feature: 'answers' as ModelFeature, label: 'Answers (Q&A chat)' },
+                { feature: 'quizzes' as ModelFeature, label: 'Quizzes & pretests' },
+                { feature: 'digest' as ModelFeature, label: 'Lecture digest' },
+              ]).map(({ feature, label }) => (
+                <div key={feature} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                  <label className="text-sm font-medium text-gray-900 dark:text-white sm:w-48 shrink-0">{label}</label>
+                  <select
+                    value={modelPrefs[feature] ?? 'auto'}
+                    onChange={(e) => updateModelPref(feature, e.target.value)}
+                    className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                  >
+                    <option value="auto">Auto (recommended)</option>
+                    {models && models.gemini.length > 0 && (
+                      <optgroup label="Gemini (your key)">
+                        {models.gemini.map((m) => (
+                          <option key={`g:${m.id}`} value={`gemini:${m.id}`}>{m.label}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {models && models.openrouter.length > 0 && (
+                      <optgroup label="OpenRouter">
+                        {models.openrouter.map((m) => (
+                          <option key={`o:${m.id}`} value={`openrouter:${m.id}`}>{m.label}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
+              ))}
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                Note: OpenRouter models require credits on the shared key. If a chosen model fails, the app automatically falls back.
+              </p>
             </div>
           )}
         </div>

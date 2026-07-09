@@ -19,6 +19,8 @@ import time
 from pathlib import Path
 from typing import Iterator
 
+from pipeline.model_prefs import gemini_model, openrouter_override
+
 logger = logging.getLogger(__name__)
 
 
@@ -179,11 +181,29 @@ def generate_answer(
 
     # ── Try Gemini first, then OpenRouter (DeepSeek / Llama-Vision) ──
     or_key = os.getenv("OPENROUTER_API_KEY", "")
+    or_pref = openrouter_override("answers")  # set → user chose an OpenRouter model
+
+    # If the user explicitly picked an OpenRouter model for answers, try it first.
+    if or_pref and or_key:
+        try:
+            answer, model_name, gen_time = _call_openrouter(
+                system_prompt, context_text, question, images_b64, or_key, model=or_pref,
+            )
+            return {
+                "answer": answer,
+                "model_name": model_name,
+                "generation_time": gen_time,
+                "sources": sources,
+            }
+        except Exception as exc:
+            logger.warning("OpenRouter (user pref) failed, falling back: %s", exc)
+            _last_error = exc
 
     if gemini_key:
         try:
             answer, model_name, gen_time = _call_gemini(
                 system_prompt, context_text, question, images_b64, gemini_key,
+                model=gemini_model("answers"),
             )
             return {
                 "answer": answer,
@@ -199,6 +219,7 @@ def generate_answer(
         try:
             answer, model_name, gen_time = _call_openrouter(
                 system_prompt, context_text, question, images_b64, or_key,
+                model=or_pref or None,
             )
             return {
                 "answer": answer,
@@ -435,10 +456,27 @@ def generate_answer_stream(
     _last_error: Exception | None = None
 
     or_key = os.getenv("OPENROUTER_API_KEY", "")
+    or_pref = openrouter_override("answers")
+
+    # User explicitly chose an OpenRouter model → stream it first.
+    if or_pref and or_key:
+        try:
+            yield from _stream_openrouter(
+                system_prompt, context_text, question, images_b64, or_key, model=or_pref,
+            )
+            return
+        except _StreamMidwayError:
+            raise
+        except Exception as exc:
+            logger.warning("OpenRouter stream (user pref) failed before tokens, falling back: %s", exc)
+            _last_error = exc
 
     if gemini_key:
         try:
-            yield from _stream_gemini(system_prompt, context_text, question, images_b64, gemini_key)
+            yield from _stream_gemini(
+                system_prompt, context_text, question, images_b64, gemini_key,
+                model=gemini_model("answers"),
+            )
             return
         except _StreamMidwayError:
             raise
