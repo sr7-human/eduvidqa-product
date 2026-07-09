@@ -34,20 +34,16 @@ _IMAGES_PER_BATCH = 5
 def generate_digest(
     video_id: str,
     data_dir: str = "data/processed",
-    model: str = "meta-llama/llama-4-scout-17b-16e-instruct",
+    model: str | None = None,
 ) -> str:
     """Generate and save a comprehensive lecture digest.
 
-    Returns the full digest text.
-    Also saves to ``{data_dir}/{video_id}/digest.txt``.
+    Uses **Gemini** (vision) by default — generous free tier + large context,
+    so it takes many keyframes in one call. Falls back to Groq Llama-4 Scout
+    if Gemini is unavailable or ``INFERENCE_ENGINE=groq``.
+
+    Returns the full digest text. Also saves to ``{data_dir}/{video_id}/digest.txt``.
     """
-    from groq import Groq
-
-    api_key = os.getenv("GROQ_API_KEY", "")
-    if not api_key:
-        raise RuntimeError("GROQ_API_KEY env var not set")
-
-    client = Groq(api_key=api_key)
     base = Path(data_dir) / video_id
 
     # ── Load transcript ───────────────────────────────────────────
@@ -81,18 +77,72 @@ def generate_digest(
         len(kf_paths),
     )
 
-    # ── Small video: single-shot ──────────────────────────────────
-    if len(kf_paths) <= _IMAGES_PER_BATCH:
-        digest = _single_shot(client, model, transcript, kf_paths)
+    # ── Choose engine: Gemini is the default ──────────────────────
+    engine = (os.getenv("INFERENCE_ENGINE") or "").lower()
+    gemini_key = os.getenv("GEMINI_API_KEY", "")
+    groq_key = os.getenv("GROQ_API_KEY", "")
+
+    if gemini_key and engine != "groq":
+        digest = _gemini_digest(transcript, kf_paths, gemini_key)
+    elif groq_key:
+        from groq import Groq
+
+        client = Groq(api_key=groq_key)
+        groq_model = model or "meta-llama/llama-4-scout-17b-16e-instruct"
+        if len(kf_paths) <= _IMAGES_PER_BATCH:
+            digest = _single_shot(client, groq_model, transcript, kf_paths)
+        else:
+            digest = _batched_digest(client, groq_model, transcript, kf_paths)
     else:
-        # ── Large video: batched → merge ─────────────────────────
-        digest = _batched_digest(client, model, transcript, kf_paths)
+        raise RuntimeError("No LLM key set (need GEMINI_API_KEY or GROQ_API_KEY)")
 
     # ── Save ──────────────────────────────────────────────────────
     out_path = base / "digest.txt"
     out_path.write_text(digest, encoding="utf-8")
     logger.info("Digest saved to %s (%d chars)", out_path, len(digest))
     return digest
+
+
+def _gemini_digest(
+    transcript: str,
+    kf_paths: list[Path],
+    api_key: str,
+    model: str = "gemini-2.5-flash",
+    max_images: int = 60,
+) -> str:
+    """Generate the digest with Gemini vision (transcript + sampled keyframes).
+
+    Samples up to ``max_images`` keyframes evenly — the digest needs
+    representative frames, not every single one.
+    """
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=api_key)
+
+    if len(kf_paths) > max_images:
+        step = len(kf_paths) / max_images
+        sampled = [kf_paths[int(i * step)] for i in range(max_images)]
+    else:
+        sampled = kf_paths
+
+    parts = [types.Part.from_text(text=f"{_DIGEST_PROMPT}\n\nTRANSCRIPT:\n{transcript}")]
+    for p in sampled:
+        try:
+            parts.append(types.Part.from_bytes(data=p.read_bytes(), mime_type="image/jpeg"))
+        except Exception as exc:
+            logger.warning("Skipping keyframe %s: %s", p, exc)
+
+    response = client.models.generate_content(
+        model=model,
+        contents=parts,
+        config=types.GenerateContentConfig(
+            temperature=0.3,
+            max_output_tokens=8192,
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
+        ),
+    )
+    return (response.text or "").strip()
 
 
 # ── Internal helpers ──────────────────────────────────────────────
