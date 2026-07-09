@@ -20,3 +20,8 @@ frontend/dist/
 
 # Plaintext handoff doc (encrypted version .enc is committed)
 SECRETS_STATUS.md
+
+# PyInstaller desktop build artifacts
+build/
+dist/
+*.spec
