@@ -117,7 +117,7 @@ def _gemini_digest(
     transcript: str,
     kf_paths: list[Path],
     api_key: str,
-    model: str = "gemini-2.5-flash",
+    model: str = "gemini-flash-latest",
     max_images: int = 60,
 ) -> str:
     """Generate the digest with Gemini vision (transcript + sampled keyframes).

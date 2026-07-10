@@ -13,10 +13,12 @@ from __future__ import annotations
 import os
 
 # Built-in defaults per feature: (provider, model)
+# gemini-flash-latest is an ALIAS Google keeps pointed at the current flash model,
+# so it never gets deprecated out from under us (gemini-2.5-flash was retired).
 DEFAULTS: dict[str, tuple[str, str]] = {
-    "answers": ("gemini", "gemini-2.5-flash"),
-    "quizzes": ("gemini", "gemini-2.5-flash"),
-    "digest": ("gemini", "gemini-2.5-flash"),
+    "answers": ("gemini", "gemini-flash-latest"),
+    "quizzes": ("gemini", "gemini-flash-latest"),
+    "digest": ("gemini", "gemini-flash-latest"),
 }
 
 VALID_FEATURES = set(DEFAULTS)
@@ -37,7 +39,7 @@ def resolve(feature: str) -> tuple[str | None, str | None]:
     return None, raw.strip() or None
 
 
-def gemini_model(feature: str, default: str = "gemini-2.5-flash") -> str:
+def gemini_model(feature: str, default: str = "gemini-flash-latest") -> str:
     """Model name to use for a Gemini call for ``feature`` (or the default)."""
     provider, model = resolve(feature)
     if provider == "gemini" and model:

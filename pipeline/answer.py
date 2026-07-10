@@ -289,7 +289,7 @@ def _call_gemini(
     question: str,
     images_b64: list[str],
     api_key: str,
-    model: str = "gemini-2.5-flash",
+    model: str = "gemini-flash-latest",
 ) -> tuple[str, str, float]:
     """Call Gemini API using google-genai SDK. Returns (answer, model_name, elapsed)."""
     from google import genai
@@ -610,7 +610,7 @@ def _stream_gemini(
     question: str,
     images_b64: list[str],
     api_key: str,
-    model: str = "gemini-2.5-flash",
+    model: str = "gemini-flash-latest",
 ) -> Iterator[dict]:
     """Stream tokens from Gemini using the google-genai SDK."""
     from google import genai
