@@ -578,6 +578,8 @@ export interface StoredKey {
   service: 'gemini' | 'groq' | 'openrouter';
   masked: string;
   updated_at: string;
+  rate_limited_at?: string | null;
+  rate_limit_detail?: string | null;
 }
 
 export async function listMyKeys(): Promise<{ keys: StoredKey[] }> {

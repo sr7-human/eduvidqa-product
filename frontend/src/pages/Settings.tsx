@@ -265,6 +265,16 @@ export function Settings({ embedded = false, onClose }: { embedded?: boolean; on
                     </div>
                   )}
 
+                  {existing?.rate_limited_at && (
+                    <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 p-2.5 mb-3 text-xs text-amber-800 dark:text-amber-300">
+                      ⚠️ <strong>Rate-limited / quota hit</strong> at{' '}
+                      {new Date(existing.rate_limited_at).toLocaleTimeString()}.{' '}
+                      {svc.id === 'gemini'
+                        ? 'Free tier resets ~midnight US-Pacific (≈12:30 PM IST). Enable billing, wait for reset, or paste a different key below.'
+                        : 'Wait for the limit to reset or paste a different key below.'}
+                    </div>
+                  )}
+
                   <div className="flex gap-2">
                     <input
                       type="password"

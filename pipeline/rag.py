@@ -77,6 +77,41 @@ class LectureIndex:
             logger.warning("is_indexed failed for %s: %s", video_id, exc)
             return False
 
+    def _existing_chunk_ids(self, video_id: str) -> set[str]:
+        """chunk_ids already embedded + stored for this video (used to RESUME
+        after a mid-way failure instead of re-embedding everything)."""
+        try:
+            with self._connect() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT chunk_id FROM video_chunks "
+                    "WHERE video_id = %s AND embedding_v2 IS NOT NULL",
+                    (video_id,),
+                )
+                return {str(r[0]) for r in cur.fetchall()}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("_existing_chunk_ids failed for %s: %s", video_id, exc)
+            return set()
+
+    def _insert_chunk_rows(self, rows: list) -> None:
+        """Insert one batch of embedded chunks (own short-lived connection so
+        each batch is committed — partial progress survives a later failure)."""
+        if not rows:
+            return
+        with self._connect() as conn, conn.cursor() as cur:
+            psycopg2.extras.execute_batch(
+                cur,
+                """
+                INSERT INTO video_chunks
+                  (id, video_id, chunk_id, start_time, end_time,
+                   text, embedding_v2, linked_keyframe_ids)
+                VALUES (%s, %s, %s, %s, %s, %s, %s::vector, %s)
+                ON CONFLICT (video_id, chunk_id) DO UPDATE
+                  SET embedding_v2 = EXCLUDED.embedding_v2
+                """,
+                rows,
+                page_size=100,
+            )
+
     def index_video(
         self,
         video_id: str,
@@ -137,8 +172,9 @@ class LectureIndex:
                     (str(uuid.uuid4()), video_id),
                 )
 
-        # ── 2. Embed transcript chunks (no DB connection held) ──
-        chunk_rows: list[tuple] = []
+        # ── 2. Embed transcript chunks INCREMENTALLY + insert per batch, so a
+        #       mid-way failure (e.g. Gemini 429) KEEPS completed work and a
+        #       re-run (even with a fresh key) RESUMES instead of re-embedding. ──
         if chunks:
             clean: list[dict] = []
             for ch in chunks:
@@ -147,19 +183,32 @@ class LectureIndex:
                     clean.append({**ch, "text": text})
 
             if clean:
-                logger.info("Embedding %d chunks for %s …", len(clean), video_id)
-                vecs = self._embed.embed_batch_text([c["text"] for c in clean])
-                for ch, vec in zip(clean, vecs):
-                    chunk_rows.append((
-                        str(uuid.uuid4()),
-                        video_id,
-                        str(ch["chunk_id"]),
-                        float(ch["start_time"]),
-                        float(ch["end_time"]),
-                        ch["text"],
-                        _vec_literal(vec),
-                        list(ch.get("linked_keyframe_ids") or []),
-                    ))
+                already = self._existing_chunk_ids(video_id)
+                todo = [c for c in clean if str(c["chunk_id"]) not in already]
+                if already:
+                    logger.info(
+                        "Resuming %s: %d/%d chunks already embedded, %d to go",
+                        video_id, len(already), len(clean), len(todo),
+                    )
+                else:
+                    logger.info("Embedding %d chunks for %s …", len(todo), video_id)
+
+                _GROUP = 48
+                for gi in range(0, len(todo), _GROUP):
+                    group = todo[gi:gi + _GROUP]
+                    vecs = self._embed.embed_batch_text([c["text"] for c in group])
+                    rows = [
+                        (
+                            str(uuid.uuid4()), video_id, str(ch["chunk_id"]),
+                            float(ch["start_time"]), float(ch["end_time"]),
+                            ch["text"], _vec_literal(vec),
+                            list(ch.get("linked_keyframe_ids") or []),
+                        )
+                        for ch, vec in zip(group, vecs)
+                    ]
+                    # Commit this batch immediately → progress persists on failure.
+                    self._insert_chunk_rows(rows)
+                    total += len(rows)
 
         # ── 3. Embed keyframes (no DB connection held) ──
         kf_rows: list[tuple] = []
@@ -198,25 +247,8 @@ class LectureIndex:
                         _vec_literal(vec),
                     ))
 
-        # ── 4. Bulk insert + mark ready (fresh short-lived connection) ──
+        # ── 4. Bulk insert keyframes + mark ready (chunks already inserted above) ──
         with self._connect() as conn:
-            if chunk_rows:
-                with conn.cursor() as cur:
-                    psycopg2.extras.execute_batch(
-                        cur,
-                        """
-                        INSERT INTO video_chunks
-                          (id, video_id, chunk_id, start_time, end_time,
-                           text, embedding_v2, linked_keyframe_ids)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s::vector, %s)
-                        ON CONFLICT (video_id, chunk_id) DO UPDATE
-                          SET embedding_v2 = EXCLUDED.embedding_v2
-                        """,
-                        chunk_rows,
-                        page_size=100,
-                    )
-                total += len(chunk_rows)
-
             if kf_rows:
                 with conn.cursor() as cur:
                     psycopg2.extras.execute_batch(

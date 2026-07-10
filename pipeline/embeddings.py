@@ -140,6 +140,13 @@ class EmbeddingService:
                     s in msg
                     for s in ("503", "UNAVAILABLE", "overloaded", "429", "RESOURCE_EXHAUSTED")
                 ):
+                    # Quota/429 → flag the key as rate-limited for the Settings UI.
+                    if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+                        try:
+                            from pipeline.usage import record_rate_limit
+                            record_rate_limit("gemini", "Embedding quota hit: " + msg[:120])
+                        except Exception:  # noqa: BLE001
+                            pass
                     # Gemini sometimes tells us how long to wait — honour it.
                     server_hint: float | None = None
                     m = re.search(r"retry in ([\d.]+)s", msg, re.IGNORECASE)

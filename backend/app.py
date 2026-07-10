@@ -2249,20 +2249,45 @@ def _mask_key(key: str) -> str:
 
 @app.get("/api/users/me/keys")
 async def list_my_keys(user_id: str = Depends(require_auth)):
-    """Return which services this user has stored a key for, plus a masked preview."""
+    """Return which services this user has stored a key for, plus a masked preview
+    and whether the key recently hit a rate-limit/quota wall."""
+    import datetime
+
     conn = psycopg2.connect(_get_db_url())
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT service, key_value, updated_at FROM user_api_keys WHERE user_id = %s",
+                """
+                SELECT k.service, k.key_value, k.updated_at, h.rate_limited_at, h.detail
+                FROM user_api_keys k
+                LEFT JOIN key_health h
+                  ON h.user_id = k.user_id AND h.service = k.service
+                WHERE k.user_id = %s
+                """,
                 (user_id,),
             )
             rows = cur.fetchall()
     finally:
         conn.close()
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    def _recent_limit(ts):
+        # Only surface a rate-limit if it happened recently (free tiers reset
+        # daily, so a hit within the last ~6h likely still applies).
+        if ts and (now - ts).total_seconds() < 6 * 3600:
+            return ts.isoformat()
+        return None
+
     return {
         "keys": [
-            {"service": r[0], "masked": _mask_key(r[1]), "updated_at": str(r[2])}
+            {
+                "service": r[0],
+                "masked": _mask_key(r[1]),
+                "updated_at": str(r[2]),
+                "rate_limited_at": _recent_limit(r[3]),
+                "rate_limit_detail": r[4] if _recent_limit(r[3]) else None,
+            }
             for r in rows
         ]
     }
@@ -2292,6 +2317,11 @@ async def upsert_my_key(body: _KeyBody, user_id: str = Depends(require_auth)):
                 DO UPDATE SET key_value = EXCLUDED.key_value, updated_at = now()
                 """,
                 (user_id, body.service, body.key_value),
+            )
+            # Fresh key → clear any stale rate-limit flag.
+            cur.execute(
+                "DELETE FROM key_health WHERE user_id = %s::uuid AND service = %s",
+                (user_id, body.service),
             )
         conn.commit()
     finally:

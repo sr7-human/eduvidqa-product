@@ -12,6 +12,7 @@ import re
 
 from pipeline.model_prefs import gemini_model, openrouter_override
 from pipeline.usage import record as _record_usage
+from pipeline.usage import record_rate_limit as _record_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -259,6 +260,8 @@ def _call_llm_backoff(fn, prompt: str, key: str, max_tokens: int, retries: int =
         except Exception as exc:  # noqa: BLE001
             s = str(exc)
             is_rate = "429" in s or "RESOURCE_EXHAUSTED" in s or "rate limit" in s.lower()
+            if is_rate and "gemini" in getattr(fn, "__name__", ""):
+                _record_rate_limit("gemini", s[:120])
             if is_rate and attempt < retries - 1:
                 m = re.search(r"retry in ([0-9.]+)s", s)
                 delay = min(65.0, (float(m.group(1)) + 2) if m else 20.0 * (attempt + 1))
