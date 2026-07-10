@@ -184,6 +184,33 @@ def _update_video_status(video_id: str, status: str, detail: str | None = None) 
         conn.close()
 
 
+def _set_progress(video_id: str, step: str, pct: int | None = None, detail: str | None = None) -> None:
+    """Persist granular ingest progress so the frontend can show a live modal
+    (and detect a stuck job via the updated_at timestamp). Best-effort."""
+    import datetime
+    import json as _json
+
+    payload = _json.dumps({
+        "step": step,
+        "pct": pct,
+        "detail": detail,
+        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    })
+    try:
+        conn = psycopg2.connect(_get_db_url())
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE videos SET progress = %s::jsonb, updated_at = now() WHERE video_id = %s",
+                    (payload, video_id),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Progress update failed for %s: %s", video_id, exc)
+
+
 def _fetch_video_title(video_id: str) -> str | None:
     """Fetch a YouTube video's title via the free oEmbed endpoint (no API key)."""
     import json as _json
@@ -645,6 +672,7 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
     podcast_mode = (mode == "podcast")
     try:
         _update_video_status(video_id, "processing")
+        _set_progress(video_id, "starting", 5, "Fetching transcript…")
 
         index = _get_index()
         data_dir = settings.DATA_DIR
@@ -678,6 +706,8 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
             )
             _update_video_status(video_id, "transcript_ready")
             _link_user_video(user_id, video_id)
+            _set_progress(video_id, "transcript_ready", 25,
+                          f"{len(chunks)} transcript chunks indexed")
             logger.info(
                 "Phase 1 done for %s: %d chunks indexed (transcript_ready)",
                 video_id, len(chunks),
@@ -694,8 +724,10 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
         kf_manifest: list[dict] = []
         if podcast_mode:
             logger.info("Podcast mode for %s — skipping video download + keyframes", video_id)
+            _set_progress(video_id, "digest", 55, "Podcast mode — building digest from transcript…")
         else:
             # Step 1: Download video (non-fatal — cloud IPs often blocked by YouTube)
+            _set_progress(video_id, "download", 35, "Downloading video…")
             try:
                 video_path = _download_video(video_id, data_dir)
             except Exception as exc:
@@ -714,6 +746,8 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
                         video_id=video_id,
                         output_dir=processed_dir,
                     )
+                    _set_progress(video_id, "keyframes", 50,
+                                  f"Extracted {len(kf_manifest)} keyframes")
                 except Exception as exc:
                     logger.warning("Keyframe extraction failed (non-fatal): %s", exc)
 
@@ -727,6 +761,7 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
 
         # Step 4: Generate digest (non-fatal)
         digest = ""
+        _set_progress(video_id, "digest", 65, "Summarising the lecture…")
         try:
             from pipeline.digest import generate_digest
 
@@ -748,6 +783,7 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
 
         # Step 6: Place checkpoints (non-fatal)
         checkpoints: list[dict] = []
+        _set_progress(video_id, "checkpoints", 80, "Placing quiz checkpoints…")
         try:
             from pipeline.checkpoints import place_checkpoints
 
@@ -803,6 +839,7 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
 
             video_duration = chunks[-1].get("end_time", 0) if chunks else 0
             if chunks and video_duration:
+                _set_progress(video_id, "quizzes", 90, "Generating chapter pretests…")
                 qtypes = [
                     t.strip() for t in os.getenv("INGEST_CHAPTER_QUIZ_TYPES", "pretest").split(",")
                     if t.strip()
@@ -827,10 +864,12 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
 
         _update_video_status(video_id, "ready")
         _link_user_video(user_id, video_id)
+        _set_progress(video_id, "ready", 100, "Ready to watch")
     except Exception as exc:
         logger.exception("Ingest failed for %s", video_id)
         try:
             _update_video_status(video_id, "failed", str(exc)[:500])
+            _set_progress(video_id, "failed", None, str(exc)[:200])
         except Exception:
             pass
 
@@ -1242,11 +1281,25 @@ async def ask_question_stream(
 
 @app.get("/api/videos/{video_id}/status")
 async def video_status(video_id: str):
-    """Frontend polls this while video is processing."""
-    status = _get_video_status(video_id)
-    if status is None:
+    """Frontend polls this while video is processing (status + granular progress)."""
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT status, status_detail, progress FROM videos WHERE video_id = %s",
+                (video_id,),
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    if row is None:
         raise HTTPException(status_code=404, detail="Video not found")
-    return {"video_id": video_id, "status": status}
+    return {
+        "video_id": video_id,
+        "status": row[0],
+        "status_detail": row[1],
+        "progress": row[2] or {},
+    }
 
 
 @app.get("/api/users/me/videos")

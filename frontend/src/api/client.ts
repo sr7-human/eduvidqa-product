@@ -417,10 +417,17 @@ export async function removeVideo(
   return request(`/api/users/me/videos/${videoId}`, { method: 'DELETE' });
 }
 
+export interface VideoProgress {
+  step?: string;
+  pct?: number | null;
+  detail?: string | null;
+  updated_at?: string;
+}
+
 export async function getVideoStatus(
   videoId: string,
-): Promise<{ video_id: string; status: string }> {
-  return request<{ video_id: string; status: string }>(
+): Promise<{ video_id: string; status: string; status_detail?: string | null; progress?: VideoProgress }> {
+  return request<{ video_id: string; status: string; status_detail?: string | null; progress?: VideoProgress }>(
     `/api/videos/${videoId}/status`,
   );
 }

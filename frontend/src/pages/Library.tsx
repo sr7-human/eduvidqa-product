@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Navbar } from '../components/Navbar';
+import { ProcessingModal } from '../components/ProcessingModal';
 import {
   getMyVideos,
   getReviewQueue,
@@ -20,6 +21,7 @@ export function Library() {
   const [loading, setLoading] = useState(true);
   const [urlInput, setUrlInput] = useState('');
   const [mode, setMode] = useState<'lecture' | 'podcast'>('lecture');
+  const [progressVideo, setProgressVideo] = useState<UserVideo | null>(null);
   const [adding, setAdding] = useState(false);
   const [dueCount, setDueCount] = useState(0);
   const [page, setPage] = useState(0);
@@ -188,6 +190,14 @@ export function Library() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#0a0e1a]">
       <Navbar />
+
+      {progressVideo && (
+        <ProcessingModal
+          videoId={progressVideo.video_id}
+          title={progressVideo.title ?? undefined}
+          onClose={() => setProgressVideo(null)}
+        />
+      )}
 
       {/* Onboarding modal (shows once per session for users without keys) */}
       {showOnboarding && (
@@ -497,12 +507,27 @@ export function Library() {
                           </div>
                         </div>
                       )}
-                      {/* Status badge over thumbnail */}
-                      <span
-                        className={`absolute top-2 right-2 text-[10px] font-medium px-2 py-0.5 rounded ${statusClass}`}
+                      {/* Status badge over thumbnail (click to see live progress) */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (v.status === 'processing' || v.status === 'transcript_ready' || v.status === 'failed') {
+                            setProgressVideo(v);
+                          }
+                        }}
+                        className={`absolute top-2 right-2 text-[10px] font-medium px-2 py-0.5 rounded ${statusClass} ${
+                          v.status === 'processing' || v.status === 'transcript_ready' || v.status === 'failed'
+                            ? 'cursor-pointer hover:brightness-110'
+                            : 'cursor-default'
+                        }`}
+                        title={
+                          v.status === 'processing' || v.status === 'transcript_ready'
+                            ? 'View processing progress'
+                            : v.status === 'failed' ? 'See why it failed' : ''
+                        }
                       >
                         {statusLabel}
-                      </span>
+                      </button>
                     </div>
                     {/* Title */}
                     <div className="p-3">
