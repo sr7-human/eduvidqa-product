@@ -11,6 +11,7 @@ import random
 import re
 
 from pipeline.model_prefs import gemini_model, openrouter_override
+from pipeline.usage import record as _record_usage
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +208,7 @@ def _call_gemini(prompt: str, api_key: str, max_tokens: int = 12000) -> str:
     import time as _time
 
     client = genai.Client(api_key=api_key)
+    _record_usage("gemini", gemini_model("quizzes"))
     last_exc: Exception | None = None
     for attempt in range(3):
         try:
@@ -352,6 +354,7 @@ def _call_gemini_vision(prompt: str, image_paths: list[str], api_key: str,
         data = _read_image_bytes(p)
         if data:
             parts.append(types.Part.from_bytes(data=data, mime_type="image/jpeg"))
+    _record_usage("gemini", gemini_model("quizzes"))
     response = client.models.generate_content(
         model=gemini_model("quizzes"),
         contents=parts,

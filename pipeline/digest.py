@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 
 from pipeline.model_prefs import gemini_model
+from pipeline.usage import record as _record_usage
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +130,7 @@ def _gemini_digest(
     from google.genai import types
 
     client = genai.Client(api_key=api_key)
+    _record_usage("gemini", model)
 
     if len(kf_paths) > max_images:
         step = len(kf_paths) / max_images

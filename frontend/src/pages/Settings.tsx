@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Navbar } from '../components/Navbar';
-import { listMyKeys, saveMyKey, deleteMyKey, getQuizPref, setQuizPref, getLlmPref, setLlmPref, getAvailableModels, getModelPrefs, setModelPrefs, type StoredKey, type QuizPref, type LlmPref, type ModelOption, type ModelFeature, type ModelPrefs } from '../api/client';
+import { listMyKeys, saveMyKey, deleteMyKey, getQuizPref, setQuizPref, getLlmPref, setLlmPref, getAvailableModels, getModelPrefs, setModelPrefs, getUsage, testKey, type StoredKey, type QuizPref, type LlmPref, type ModelOption, type ModelFeature, type ModelPrefs, type UsageInfo } from '../api/client';
 
 const SERVICES: Array<{
   id: 'gemini' | 'groq';
@@ -41,6 +41,9 @@ export function Settings({ embedded = false, onClose }: { embedded?: boolean; on
   const [models, setModels] = useState<{ gemini: ModelOption[]; openrouter: ModelOption[] } | null>(null);
   const [modelPrefs, setModelPrefsState] = useState<ModelPrefs>({});
   const [modelsLoading, setModelsLoading] = useState(true);
+  const [usage, setUsage] = useState<UsageInfo | null>(null);
+  const [testing, setTesting] = useState<Record<string, boolean>>({});
+  const [testResult, setTestResult] = useState<Record<string, { ok: boolean; detail: string }>>({});
 
   useEffect(() => {
     listMyKeys()
@@ -61,7 +64,20 @@ export function Settings({ embedded = false, onClose }: { embedded?: boolean; on
       .then(([m, p]) => { setModels(m); setModelPrefsState(p.model_prefs || {}); })
       .catch(() => {})
       .finally(() => setModelsLoading(false));
+    getUsage().then(setUsage).catch(() => {});
   }, []);
+
+  async function handleTestKey(service: 'gemini' | 'groq') {
+    setTesting((t) => ({ ...t, [service]: true }));
+    try {
+      const r = await testKey(service);
+      setTestResult((tr) => ({ ...tr, [service]: r }));
+    } catch (e) {
+      setTestResult((tr) => ({ ...tr, [service]: { ok: false, detail: e instanceof Error ? e.message : 'Failed' } }));
+    } finally {
+      setTesting((t) => ({ ...t, [service]: false }));
+    }
+  }
 
   async function updateModelPref(feature: ModelFeature, value: string) {
     const next = { ...modelPrefs, [feature]: value };
@@ -123,6 +139,45 @@ export function Settings({ embedded = false, onClose }: { embedded?: boolean; on
           encrypted in your account and never shared.
         </p>
 
+        {/* Today's usage meter */}
+        {usage && (
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="font-semibold text-gray-900 dark:text-white text-sm">Today's API usage</h2>
+              <span className="text-xs text-gray-400">counting is passive — it doesn't spend quota</span>
+            </div>
+            {usage.total === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">No requests yet today.</p>
+            ) : (
+              <div className="space-y-2">
+                {Object.entries(usage.by_provider).map(([prov, count]) => {
+                  const cap = usage.free_rpd[prov];
+                  const pct = cap ? Math.min(100, Math.round((count / cap) * 100)) : 0;
+                  const near = cap && count >= cap * 0.8;
+                  return (
+                    <div key={prov}>
+                      <div className="flex justify-between text-xs mb-0.5">
+                        <span className="capitalize text-gray-700 dark:text-gray-300">{prov}</span>
+                        <span className={near ? 'text-red-500 font-medium' : 'text-gray-500 dark:text-gray-400'}>
+                          {count}{cap ? ` / ~${cap} free/day` : ' calls'}
+                        </span>
+                      </div>
+                      {cap ? (
+                        <div className="h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                          <div className={`h-full rounded-full ${near ? 'bg-red-500' : 'bg-blue-600'}`} style={{ width: `${pct}%` }} />
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+                <p className="text-[11px] text-gray-400 dark:text-gray-500 pt-1">
+                  Free-tier Gemini Flash is ~20 requests/day. One video (watching + quizzes) can use that up — enable billing or add another key for more.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Why box */}
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
           <h2 className="font-semibold text-blue-900 dark:text-blue-200 mb-1 text-sm">
@@ -174,16 +229,32 @@ export function Settings({ embedded = false, onClose }: { embedded?: boolean; on
                   </a>
 
                   {existing && (
-                    <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-900 rounded p-2 mb-3 text-sm">
-                      <code className="text-gray-700 dark:text-gray-300 font-mono">
-                        {existing.masked}
-                      </code>
-                      <button
-                        onClick={() => handleDelete(svc.id)}
-                        className="text-xs text-red-600 dark:text-red-400 hover:underline"
-                      >
-                        Remove
-                      </button>
+                    <div className="bg-gray-50 dark:bg-gray-900 rounded p-2 mb-3 text-sm">
+                      <div className="flex items-center justify-between">
+                        <code className="text-gray-700 dark:text-gray-300 font-mono">
+                          {existing.masked}
+                        </code>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => handleTestKey(svc.id)}
+                            disabled={testing[svc.id]}
+                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50"
+                          >
+                            {testing[svc.id] ? 'Testing…' : 'Test key'}
+                          </button>
+                          <button
+                            onClick={() => handleDelete(svc.id)}
+                            className="text-xs text-red-600 dark:text-red-400 hover:underline"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                      {testResult[svc.id] && (
+                        <p className={`text-xs mt-1 ${testResult[svc.id].ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                          {testResult[svc.id].ok ? '✓' : '✕'} {testResult[svc.id].detail}
+                        </p>
+                      )}
                     </div>
                   )}
 

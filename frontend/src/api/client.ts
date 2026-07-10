@@ -504,6 +504,25 @@ export async function setModelPrefs(model_prefs: ModelPrefs): Promise<{ model_pr
   });
 }
 
+// ── Usage meter + key liveness ──────────────────────────────────
+
+export interface UsageInfo {
+  by_model: { provider: string; model: string; count: number }[];
+  by_provider: Record<string, number>;
+  total: number;
+  free_rpd: Record<string, number>;
+}
+
+export async function getUsage(): Promise<UsageInfo> {
+  return request<UsageInfo>('/api/users/me/usage');
+}
+
+export async function testKey(service: 'gemini' | 'groq'): Promise<{ ok: boolean; detail: string }> {
+  return request<{ ok: boolean; detail: string }>(`/api/users/me/keys/${service}/test`, {
+    method: 'POST',
+  });
+}
+
 export async function getQuiz(
   videoId: string,
   endTs: number,

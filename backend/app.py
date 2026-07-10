@@ -374,6 +374,13 @@ class _ScopedAPIKeys:
                 os.environ[env_name] = str(val)
             else:
                 os.environ.pop(env_name, None)
+
+        # Attribute LLM calls to this user (pipeline.usage reads EDUVIDQA_USER_ID).
+        self._saved["EDUVIDQA_USER_ID"] = os.environ.get("EDUVIDQA_USER_ID")
+        if self.user_id:
+            os.environ["EDUVIDQA_USER_ID"] = str(self.user_id)
+        else:
+            os.environ.pop("EDUVIDQA_USER_ID", None)
         return self
 
     def __exit__(self, exc_type, exc, tb):
@@ -1903,6 +1910,65 @@ async def set_model_prefs(body: _ModelPrefsBody, user_id: str = Depends(require_
     finally:
         conn.close()
     return {"model_prefs": cleaned}
+
+
+# Approx free-tier requests-per-day caps (for the usage meter UI).
+_FREE_RPD = {"gemini": 20, "groq": 1000}
+
+
+@app.get("/api/users/me/usage")
+async def get_usage(user_id: str = Depends(require_auth)):
+    """Today's LLM request counts for this user (passive counter — no quota cost)."""
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT provider, model, count FROM llm_usage "
+                "WHERE user_id = %s::uuid AND day = CURRENT_DATE ORDER BY count DESC",
+                (user_id,),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    by_provider: dict[str, int] = {}
+    for prov, _model, cnt in rows:
+        by_provider[prov] = by_provider.get(prov, 0) + cnt
+    return {
+        "by_model": [{"provider": r[0], "model": r[1], "count": r[2]} for r in rows],
+        "by_provider": by_provider,
+        "total": sum(r[2] for r in rows),
+        "free_rpd": _FREE_RPD,
+    }
+
+
+@app.post("/api/users/me/keys/{service}/test")
+async def test_key(service: str, user_id: str = Depends(require_auth)):
+    """Ping the provider to check if the stored key is live. For Gemini this
+    uses ListModels (metadata only — does NOT consume generateContent quota)."""
+    import urllib.error
+    import urllib.request
+
+    if service not in {"gemini", "groq"}:
+        raise HTTPException(status_code=400, detail="Invalid service")
+    key = _get_user_keys(user_id).get(service)
+    if not key:
+        raise HTTPException(status_code=404, detail="No key stored for this service")
+    try:
+        if service == "gemini":
+            req = urllib.request.Request(
+                f"https://generativelanguage.googleapis.com/v1beta/models?key={key}"
+            )
+        else:  # groq
+            req = urllib.request.Request(
+                "https://api.groq.com/openai/v1/models",
+                headers={"Authorization": f"Bearer {key}"},
+            )
+        urllib.request.urlopen(req, timeout=12)
+        return {"ok": True, "detail": "Key is live ✓"}
+    except urllib.error.HTTPError as exc:
+        return {"ok": False, "detail": f"HTTP {exc.code} — key rejected or restricted"}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "detail": str(exc)[:140]}
 
 
 @app.post("/api/videos/{video_id}/quiz")

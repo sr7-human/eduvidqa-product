@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Iterator
 
 from pipeline.model_prefs import gemini_model, openrouter_override
+from pipeline.usage import record as _record_usage
 
 logger = logging.getLogger(__name__)
 
@@ -303,6 +304,7 @@ def _call_gemini(
         import base64 as b64mod
         parts.append(types.Part.from_bytes(data=b64mod.b64decode(b64_str), mime_type="image/jpeg"))
 
+    _record_usage("gemini", model)
     t0 = time.perf_counter()
     response = client.models.generate_content(
         model=model,
@@ -617,6 +619,7 @@ def _stream_gemini(
     from google.genai import types
 
     client = genai.Client(api_key=api_key)
+    _record_usage("gemini", model)
 
     parts = [types.Part.from_text(text=f"{system_prompt}\n\n{context_text}\n\nQUESTION: {question}")]
     for b64_str in images_b64:
