@@ -342,7 +342,7 @@ class _ScopedAPIKeys:
     picks up the user's key without needing to thread arguments everywhere.
     """
 
-    SERVICE_TO_ENV = {"gemini": "GEMINI_API_KEY", "groq": "GROQ_API_KEY"}
+    SERVICE_TO_ENV = {"gemini": "GEMINI_API_KEY", "groq": "GROQ_API_KEY", "openrouter": "OPENROUTER_API_KEY"}
 
     def __init__(self, user_id: str | None, allow_server_fallback: bool = False):
         self.user_id = user_id
@@ -1948,7 +1948,7 @@ async def test_key(service: str, user_id: str = Depends(require_auth)):
     import urllib.error
     import urllib.request
 
-    if service not in {"gemini", "groq"}:
+    if service not in {"gemini", "groq", "openrouter"}:
         raise HTTPException(status_code=400, detail="Invalid service")
     key = _get_user_keys(user_id).get(service)
     if not key:
@@ -1957,6 +1957,11 @@ async def test_key(service: str, user_id: str = Depends(require_auth)):
         if service == "gemini":
             req = urllib.request.Request(
                 f"https://generativelanguage.googleapis.com/v1beta/models?key={key}"
+            )
+        elif service == "openrouter":
+            req = urllib.request.Request(
+                "https://openrouter.ai/api/v1/credits",
+                headers={"Authorization": f"Bearer {key}"},
             )
         else:  # groq
             req = urllib.request.Request(
@@ -2262,7 +2267,7 @@ async def list_my_keys(user_id: str = Depends(require_auth)):
 
 
 class _KeyBody(BaseModel):
-    service: str = Field(..., pattern=r"^(gemini|groq)$")
+    service: str = Field(..., pattern=r"^(gemini|groq|openrouter)$")
     key_value: str = Field(..., min_length=20, max_length=300)
 
 
@@ -2294,7 +2299,7 @@ async def upsert_my_key(body: _KeyBody, user_id: str = Depends(require_auth)):
 
 @app.delete("/api/users/me/keys/{service}")
 async def delete_my_key(service: str, user_id: str = Depends(require_auth)):
-    if service not in ("gemini", "groq"):
+    if service not in ("gemini", "groq", "openrouter"):
         raise HTTPException(status_code=400, detail="Unknown service")
     conn = psycopg2.connect(_get_db_url())
     try:
@@ -2334,6 +2339,14 @@ def _validate_api_key(service: str, key_value: str) -> tuple[bool, str | None]:
             )
             if not r.choices:
                 return False, "No response"
+            return True, None
+        elif service == "openrouter":
+            import urllib.request
+            req = urllib.request.Request(
+                "https://openrouter.ai/api/v1/credits",
+                headers={"Authorization": f"Bearer {key_value}"},
+            )
+            urllib.request.urlopen(req, timeout=12)
             return True, None
     except Exception as exc:  # noqa: BLE001
         msg = str(exc)

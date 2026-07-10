@@ -5,7 +5,7 @@ import { Navbar } from '../components/Navbar';
 import { listMyKeys, saveMyKey, deleteMyKey, getQuizPref, setQuizPref, getLlmPref, setLlmPref, getAvailableModels, getModelPrefs, setModelPrefs, getUsage, testKey, type StoredKey, type QuizPref, type LlmPref, type ModelOption, type ModelFeature, type ModelPrefs, type UsageInfo } from '../api/client';
 
 const SERVICES: Array<{
-  id: 'gemini' | 'groq';
+  id: 'gemini' | 'groq' | 'openrouter';
   label: string;
   helpUrl: string;
   prefix: string;
@@ -24,6 +24,13 @@ const SERVICES: Array<{
     helpUrl: 'https://console.groq.com/keys',
     prefix: 'gsk_…',
     blurb: 'Optional. Used for answers + quizzes. Free tier is much higher (thousands/day) and 5–10× faster than Gemini.',
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    helpUrl: 'https://openrouter.ai/keys',
+    prefix: 'sk-or-…',
+    blurb: 'Optional (paid). A reliable fallback for answers + quizzes with access to many models. You bring your own credits — your usage never affects other users.',
   },
 ];
 
@@ -67,7 +74,7 @@ export function Settings({ embedded = false, onClose }: { embedded?: boolean; on
     getUsage().then(setUsage).catch(() => {});
   }, []);
 
-  async function handleTestKey(service: 'gemini' | 'groq') {
+  async function handleTestKey(service: 'gemini' | 'groq' | 'openrouter') {
     setTesting((t) => ({ ...t, [service]: true }));
     try {
       const r = await testKey(service);
@@ -90,9 +97,9 @@ export function Settings({ embedded = false, onClose }: { embedded?: boolean; on
     }
   }
 
-  const stored = (svc: 'gemini' | 'groq') => keys.find((k) => k.service === svc);
+  const stored = (svc: 'gemini' | 'groq' | 'openrouter') => keys.find((k) => k.service === svc);
 
-  async function handleSave(svc: 'gemini' | 'groq') {
+  async function handleSave(svc: 'gemini' | 'groq' | 'openrouter') {
     const value = (inputs[svc] || '').trim();
     if (!value) {
       toast.error('Paste a key first');
@@ -114,7 +121,7 @@ export function Settings({ embedded = false, onClose }: { embedded?: boolean; on
     }
   }
 
-  async function handleDelete(svc: 'gemini' | 'groq') {
+  async function handleDelete(svc: 'gemini' | 'groq' | 'openrouter') {
     if (!confirm(`Remove your ${svc} key?`)) return;
     try {
       await deleteMyKey(svc);

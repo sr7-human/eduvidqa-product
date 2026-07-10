@@ -517,7 +517,7 @@ export async function getUsage(): Promise<UsageInfo> {
   return request<UsageInfo>('/api/users/me/usage');
 }
 
-export async function testKey(service: 'gemini' | 'groq'): Promise<{ ok: boolean; detail: string }> {
+export async function testKey(service: 'gemini' | 'groq' | 'openrouter'): Promise<{ ok: boolean; detail: string }> {
   return request<{ ok: boolean; detail: string }>(`/api/users/me/keys/${service}/test`, {
     method: 'POST',
   });
@@ -575,7 +575,7 @@ export async function submitReviewAttempt(
 // ── User API keys (BYOK) ─────────────────────────────────────────
 
 export interface StoredKey {
-  service: 'gemini' | 'groq';
+  service: 'gemini' | 'groq' | 'openrouter';
   masked: string;
   updated_at: string;
 }
@@ -585,7 +585,7 @@ export async function listMyKeys(): Promise<{ keys: StoredKey[] }> {
 }
 
 export async function saveMyKey(
-  service: 'gemini' | 'groq',
+  service: 'gemini' | 'groq' | 'openrouter',
   keyValue: string,
 ): Promise<{ service: string; masked: string; ok: boolean }> {
   return request(`/api/users/me/keys`, {
@@ -595,7 +595,7 @@ export async function saveMyKey(
 }
 
 export async function deleteMyKey(
-  service: 'gemini' | 'groq',
+  service: 'gemini' | 'groq' | 'openrouter',
 ): Promise<{ service: string; deleted: boolean }> {
   return request(`/api/users/me/keys/${service}`, { method: 'DELETE' });
 }
