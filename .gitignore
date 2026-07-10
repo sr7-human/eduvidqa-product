@@ -4,11 +4,23 @@
 __pycache__/
 *.pyc
 
-# data/: chroma + processed ARE pushed; videos/raw downloads/cache stay local
+# data/: chroma (vector DB) IS pushed. processed/ keyframes+transcripts are
+# regenerated on ingest and served from Supabase storage → keep them LOCAL only
+# (they were bloating the repo with thousands of .jpg files).
 data/videos/
 data/cache/
+data/processed/
 data/UHBmv7qCey4/
 data/_PwhiWxHK8o/
+
+# Local scratch / one-off artifacts (not part of the app)
+EduVidQA_Hackathon_Presentation*.html
+EduVidQA_Hackathon_Presentation*.pdf
+gen_v2.py
+gen_v3.py
+generate_presentation.py
+prototype/
+demo-standalone/
 
 media/
 .gradio/
