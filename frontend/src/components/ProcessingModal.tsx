@@ -3,6 +3,7 @@ import { getVideoStatus, type VideoProgress } from '../api/client';
 
 const STEPS: { key: string; label: string }[] = [
   { key: 'starting', label: 'Fetching transcript' },
+  { key: 'embedding', label: 'Creating embeddings (Gemini)' },
   { key: 'transcript_ready', label: 'Transcript indexed' },
   { key: 'download', label: 'Downloading video' },
   { key: 'keyframes', label: 'Extracting keyframes' },

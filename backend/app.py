@@ -704,6 +704,8 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
         )
 
         if chunks:
+            _set_progress(video_id, "embedding", 15,
+                          f"Creating embeddings for {len(chunks)} chunks (Gemini)…")
             index.index_video(
                 video_id=video_id,
                 chunks=chunks,
