@@ -342,26 +342,52 @@ def _openrouter_messages(system_prompt, context_text, question, images_b64):
 
 
 def _call_openrouter(system_prompt, context_text, question, images_b64, api_key, model=None):
-    """Non-streaming OpenRouter call (OpenAI-compatible). Vision model if images."""
+    """Non-streaming OpenRouter call. Tries FREE models first (0 credit cost),
+    then the cheap paid model. Vision models when images are present."""
     import json
+    import urllib.error
     import urllib.request
 
-    model = model or (_OR_VISION_MODEL if images_b64 else _OR_TEXT_MODEL)
-    body = json.dumps({
-        "model": model,
-        "messages": _openrouter_messages(system_prompt, context_text, question, images_b64),
-        "max_tokens": 4096,
-        "temperature": 0.3,
-    }).encode()
-    req = urllib.request.Request(
-        _OPENROUTER_URL, data=body,
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+    from pipeline.model_prefs import (
+        OR_FREE_TEXT_MODELS, OR_FREE_VISION_MODELS,
+        OR_TEXT_PAID_FALLBACK, OR_VISION_PAID_FALLBACK,
     )
-    t0 = time.perf_counter()
-    r = json.load(urllib.request.urlopen(req, timeout=90))
-    elapsed = round(time.perf_counter() - t0, 2)
-    text = (r["choices"][0]["message"]["content"] or "").strip()
-    return text, f"openrouter/{model}", elapsed
+
+    if model:
+        candidates = [model]
+    elif images_b64:
+        candidates = [*OR_FREE_VISION_MODELS, OR_VISION_PAID_FALLBACK]
+    else:
+        candidates = [*OR_FREE_TEXT_MODELS, OR_TEXT_PAID_FALLBACK]
+
+    last_exc: Exception | None = None
+    for m in candidates:
+        body = json.dumps({
+            "model": m,
+            "messages": _openrouter_messages(system_prompt, context_text, question, images_b64),
+            "max_tokens": 4096,
+            "temperature": 0.3,
+        }).encode()
+        req = urllib.request.Request(
+            _OPENROUTER_URL, data=body,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        )
+        t0 = time.perf_counter()
+        try:
+            r = json.load(urllib.request.urlopen(req, timeout=90))
+            text = (r["choices"][0]["message"]["content"] or "").strip()
+            if text:
+                return text, f"openrouter/{m}", round(time.perf_counter() - t0, 2)
+        except urllib.error.HTTPError as exc:
+            last_exc = exc
+            if exc.code in (429, 402, 503):
+                _record_usage("openrouter", m)
+                continue
+            raise
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            continue
+    raise last_exc or RuntimeError("All OpenRouter models unavailable")
 
 
 # ── Streaming variants ──────────────────────────────────────────
@@ -564,46 +590,71 @@ def _stream_openrouter(
     api_key: str,
     model: str | None = None,
 ) -> Iterator[dict]:
-    """Stream tokens from OpenRouter (OpenAI-compatible SSE). Vision if images."""
+    """Stream tokens from OpenRouter (OpenAI-compatible SSE). Tries FREE models
+    first (0 credit cost), then the cheap paid model. Vision if images."""
     import json
+    import urllib.error
     import urllib.request
 
-    model = model or (_OR_VISION_MODEL if images_b64 else _OR_TEXT_MODEL)
-    body = json.dumps({
-        "model": model,
-        "messages": _openrouter_messages(system_prompt, context_text, question, images_b64),
-        "max_tokens": 4096,
-        "temperature": 0.3,
-        "stream": True,
-    }).encode()
-    req = urllib.request.Request(
-        _OPENROUTER_URL, data=body,
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+    from pipeline.model_prefs import (
+        OR_FREE_TEXT_MODELS, OR_FREE_VISION_MODELS,
+        OR_TEXT_PAID_FALLBACK, OR_VISION_PAID_FALLBACK,
     )
-    t0 = time.perf_counter()
-    yielded_any = False
-    resp = urllib.request.urlopen(req, timeout=90)
-    try:
-        for raw in resp:
-            line = raw.decode("utf-8", "replace").strip()
-            if not line or not line.startswith("data:"):
-                continue
-            data = line[len("data:"):].strip()
-            if data == "[DONE]":
-                break
-            try:
-                delta = json.loads(data)["choices"][0]["delta"].get("content")
-            except Exception:
-                delta = None
-            if delta:
-                yielded_any = True
-                yield {"type": "token", "text": delta}
-    except Exception as exc:
+
+    if model:
+        candidates = [model]
+    elif images_b64:
+        candidates = [*OR_FREE_VISION_MODELS, OR_VISION_PAID_FALLBACK]
+    else:
+        candidates = [*OR_FREE_TEXT_MODELS, OR_TEXT_PAID_FALLBACK]
+
+    last_exc: Exception | None = None
+    for m in candidates:
+        body = json.dumps({
+            "model": m,
+            "messages": _openrouter_messages(system_prompt, context_text, question, images_b64),
+            "max_tokens": 4096,
+            "temperature": 0.3,
+            "stream": True,
+        }).encode()
+        req = urllib.request.Request(
+            _OPENROUTER_URL, data=body,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        )
+        t0 = time.perf_counter()
+        yielded_any = False
+        try:
+            resp = urllib.request.urlopen(req, timeout=90)
+        except urllib.error.HTTPError as exc:
+            last_exc = exc
+            if exc.code in (429, 402, 503):
+                continue  # rate-limited / no credit → try next free model
+            raise
+        try:
+            for raw in resp:
+                line = raw.decode("utf-8", "replace").strip()
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[len("data:"):].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    delta = json.loads(data)["choices"][0]["delta"].get("content")
+                except Exception:
+                    delta = None
+                if delta:
+                    yielded_any = True
+                    yield {"type": "token", "text": delta}
+        except Exception as exc:  # noqa: BLE001
+            if yielded_any:
+                raise _StreamMidwayError(f"OpenRouter stream interrupted: {exc}") from exc
+            last_exc = exc
+            continue
         if yielded_any:
-            raise _StreamMidwayError(f"OpenRouter stream interrupted: {exc}") from exc
-        raise
-    elapsed = round(time.perf_counter() - t0, 2)
-    yield {"type": "end", "model_name": f"openrouter/{model}", "generation_time": elapsed}
+            elapsed = round(time.perf_counter() - t0, 2)
+            yield {"type": "end", "model_name": f"openrouter/{m}", "generation_time": elapsed}
+            return
+    raise last_exc or RuntimeError("All OpenRouter models unavailable")
 
 
 def _stream_gemini(

@@ -271,24 +271,44 @@ def _call_llm_backoff(fn, prompt: str, key: str, max_tokens: int, retries: int =
 
 def _call_openrouter(prompt: str, api_key: str, max_tokens: int = 8000,
                      model: str | None = None) -> str:
-    """Text completion via OpenRouter (OpenAI-compatible) — paid credits, no
-    per-minute free-tier wall. Used as the quiz-gen fallback."""
+    """Text completion via OpenRouter. Tries FREE models first (0 credit cost),
+    then the cheap paid model. Free models 429 often, so we fall through the
+    list until one responds."""
     import json
+    import urllib.error
     import urllib.request
 
-    model = model or openrouter_override("quizzes") or "deepseek/deepseek-chat"
-    body = json.dumps({
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": max_tokens,
-        "temperature": 0.4,
-    }).encode()
-    req = urllib.request.Request(
-        "https://openrouter.ai/api/v1/chat/completions", data=body,
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-    )
-    r = json.load(urllib.request.urlopen(req, timeout=120))
-    return r["choices"][0]["message"]["content"] or ""
+    from pipeline.model_prefs import OR_FREE_TEXT_MODELS, OR_TEXT_PAID_FALLBACK
+
+    # Explicit/user-chosen model wins; otherwise free list → paid fallback.
+    explicit = model or openrouter_override("quizzes")
+    candidates = [explicit] if explicit else [*OR_FREE_TEXT_MODELS, OR_TEXT_PAID_FALLBACK]
+
+    for m in candidates:
+        body = json.dumps({
+            "model": m,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+            "temperature": 0.4,
+        }).encode()
+        req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/chat/completions", data=body,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        )
+        try:
+            r = json.load(urllib.request.urlopen(req, timeout=120))
+            content = r["choices"][0]["message"]["content"] or ""
+            if content.strip():
+                return content
+        except urllib.error.HTTPError as exc:
+            if exc.code in (429, 402, 503):  # rate-limited/no-credit → try next
+                logger.info("OpenRouter %s unavailable (%s) — trying next", m, exc.code)
+                continue
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.info("OpenRouter %s failed (%s) — trying next", m, str(exc)[:60])
+            continue
+    return ""
 
 
 # ── Vision helpers (lecture mode: quizzes grounded in on-screen frames) ─────
@@ -369,11 +389,14 @@ def _call_gemini_vision(prompt: str, image_paths: list[str], api_key: str,
 
 def _call_openrouter_vision(prompt: str, image_paths: list[str], api_key: str,
                             max_tokens: int = 8000,
-                            model: str = "meta-llama/llama-3.2-11b-vision-instruct") -> str:
-    """Multimodal OpenRouter call (vision model) \u2014 paid fallback for lecture quizzes."""
+                            model: str | None = None) -> str:
+    """Multimodal OpenRouter call. Tries FREE vision models first, then paid."""
     import base64
     import json
+    import urllib.error
     import urllib.request
+
+    from pipeline.model_prefs import OR_FREE_VISION_MODELS, OR_VISION_PAID_FALLBACK
 
     content: list[dict] = [{"type": "text", "text": prompt}]
     for p in image_paths:
@@ -382,18 +405,33 @@ def _call_openrouter_vision(prompt: str, image_paths: list[str], api_key: str,
             b64 = base64.b64encode(data).decode()
             content.append({"type": "image_url",
                             "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
-    body = json.dumps({
-        "model": model,
-        "messages": [{"role": "user", "content": content}],
-        "max_tokens": max_tokens,
-        "temperature": 0.5,
-    }).encode()
-    req = urllib.request.Request(
-        "https://openrouter.ai/api/v1/chat/completions", data=body,
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-    )
-    r = json.load(urllib.request.urlopen(req, timeout=180))
-    return r["choices"][0]["message"]["content"] or ""
+
+    candidates = [model] if model else [*OR_FREE_VISION_MODELS, OR_VISION_PAID_FALLBACK]
+    for m in candidates:
+        body = json.dumps({
+            "model": m,
+            "messages": [{"role": "user", "content": content}],
+            "max_tokens": max_tokens,
+            "temperature": 0.5,
+        }).encode()
+        req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/chat/completions", data=body,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        )
+        try:
+            r = json.load(urllib.request.urlopen(req, timeout=180))
+            out = r["choices"][0]["message"]["content"] or ""
+            if out.strip():
+                return out
+        except urllib.error.HTTPError as exc:
+            if exc.code in (429, 402, 503):
+                logger.info("OpenRouter vision %s unavailable (%s) — trying next", m, exc.code)
+                continue
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.info("OpenRouter vision %s failed (%s) — trying next", m, str(exc)[:60])
+            continue
+    return ""
 
 
 def _call_vision_backoff(fn, prompt: str, images: list[str], key: str,

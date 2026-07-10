@@ -24,6 +24,24 @@ DEFAULTS: dict[str, tuple[str, str]] = {
 VALID_FEATURES = set(DEFAULTS)
 VALID_PROVIDERS = {"gemini", "openrouter", "groq"}
 
+# Free OpenRouter models (0 credit cost) to try, in order, when OpenRouter is
+# used as a fallback on a $0-credit key. Free models are heavily shared and
+# 429-rate-limit often, so we try several, then fall back to the cheap paid
+# model which works under light load.
+OR_FREE_TEXT_MODELS = [
+    "openai/gpt-oss-20b:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
+    "openai/gpt-oss-120b:free",
+    "qwen/qwen3-next-80b-a3b-instruct:free",
+]
+OR_TEXT_PAID_FALLBACK = "deepseek/deepseek-chat"
+
+OR_FREE_VISION_MODELS = [
+    "google/gemma-4-31b-it:free",
+    "nvidia/nemotron-nano-12b-v2-vl:free",
+]
+OR_VISION_PAID_FALLBACK = "meta-llama/llama-3.2-11b-vision-instruct"
+
 
 def resolve(feature: str) -> tuple[str | None, str | None]:
     """Return (provider, model) override for a feature, or (None, None) if the
