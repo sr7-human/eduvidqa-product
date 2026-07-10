@@ -13,6 +13,8 @@ import { Privacy } from './pages/Privacy';
 import { Terms } from './pages/Terms';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { CookieBanner } from './components/CookieBanner';
+import { SettingsModalProvider } from './contexts/SettingsModalContext';
+import { GlobalSettingsModal } from './components/GlobalSettingsModal';
 
 export default function App() {
   return (
@@ -20,6 +22,7 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Toaster position="bottom-right" />
+        <SettingsModalProvider>
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
@@ -31,6 +34,8 @@ export default function App() {
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
         </Routes>
+        <GlobalSettingsModal />
+        </SettingsModalProvider>
         <CookieBanner />
       </BrowserRouter>
     </AuthProvider>

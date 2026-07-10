@@ -1,10 +1,12 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useSettingsModal } from '../contexts/SettingsModalContext';
 
 export function Navbar() {
   const { user, signOut } = useAuth();
   const { theme, toggle } = useTheme();
+  const { openSettings } = useSettingsModal();
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
@@ -19,7 +21,12 @@ export function Navbar() {
         <Link to="/library" className="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">Library</Link>
         <Link to="/playlists" className="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">Playlists</Link>
         <Link to="/review" className="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">Review</Link>
-        <Link to="/settings" className="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">Settings</Link>
+        <button
+          onClick={openSettings}
+          className="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
+        >
+          Settings
+        </button>
         {user?.email && <span className="text-sm text-gray-500 dark:text-gray-400">{user.email}</span>}
         {/* Theme toggle */}
         <button

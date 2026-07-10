@@ -27,7 +27,7 @@ const SERVICES: Array<{
   },
 ];
 
-export function Settings() {
+export function Settings({ embedded = false, onClose }: { embedded?: boolean; onClose?: () => void } = {}) {
   const [keys, setKeys] = useState<StoredKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [inputs, setInputs] = useState<Record<string, string>>({});
@@ -109,13 +109,13 @@ export function Settings() {
     }
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50 dark:bg-[#0a0e1a] overflow-y-auto">
-      <Navbar />
+  const content = (
       <div className="max-w-3xl mx-auto px-4 py-6 pb-20">
-        <Link to="/library" className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
-          ← Back to Library
-        </Link>
+        {!embedded && (
+          <Link to="/library" className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
+            ← Back to Library
+          </Link>
+        )}
 
         <h1 className="text-2xl font-bold mt-4 mb-1 text-gray-900 dark:text-white">Settings</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
@@ -370,6 +370,35 @@ export function Settings() {
           Delete your account in Library to wipe everything.
         </p>
       </div>
+  );
+
+  if (embedded) {
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 overflow-y-auto"
+        onClick={onClose}
+      >
+        <div
+          className="relative bg-gray-50 dark:bg-[#0a0e1a] rounded-2xl shadow-2xl w-full max-w-3xl my-8 max-h-[92vh] overflow-y-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={onClose}
+            aria-label="Close settings"
+            className="absolute top-3 right-4 text-gray-400 hover:text-gray-700 dark:hover:text-white text-2xl z-10"
+          >
+            ✕
+          </button>
+          {content}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-[#0a0e1a] overflow-y-auto">
+      <Navbar />
+      {content}
     </div>
   );
 }
