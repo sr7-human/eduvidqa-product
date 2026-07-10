@@ -296,22 +296,23 @@ export function Watch() {
 
   // Fetch checkpoints + chapter quiz schedule on mount / when videoId changes
   useEffect(() => {
-    if (videoId) {
-      getCheckpoints(videoId)
-        .then(setCheckpoints)
-        .catch(() => {
-          /* no checkpoints available */
-        });
-      getQuizSchedule(videoId)
-        .then((schedule) => {
-          setQuizSchedule(schedule);
-          // Reset completed events on video change
-          completedEventsRef.current = new Set();
-        })
-        .catch(() => {
-          /* no quiz schedule — video may not have chapters yet */
-        });
-    }
+    if (!videoId) return;
+    // Reset the per-video "already shown" dedup SYNCHRONOUSLY when the video
+    // changes — NOT inside the async .then below. If we reset it after the
+    // fetch resolves, a second resolution (React StrictMode / re-fetch) can
+    // wipe the record of an already-shown pretest and make it pop up twice.
+    completedEventsRef.current = new Set();
+    prevTimeRef.current = 0;
+    getCheckpoints(videoId)
+      .then(setCheckpoints)
+      .catch(() => {
+        /* no checkpoints available */
+      });
+    getQuizSchedule(videoId)
+      .then(setQuizSchedule)
+      .catch(() => {
+        /* no quiz schedule — video may not have chapters yet */
+      });
   }, [videoId]);
 
   const handleChapterQuizClose = useCallback(() => {
