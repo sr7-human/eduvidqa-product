@@ -4,13 +4,20 @@ export interface AskRequest {
   youtube_url: string;
   question: string;
   timestamp: number;
+  scope?: 'point' | 'range' | 'all';
+  start_timestamp?: number;
+  end_timestamp?: number;
   skip_quality_eval?: boolean;
+  image_b64?: string;
 }
 
 export interface ProcessRequest {
   youtube_url: string;
   mode?: 'lecture' | 'podcast';
+  video_type?: VideoQualityType;
 }
+
+export type VideoQualityType = 'auto' | 'handheld' | 'slides' | 'animation';
 
 // --- Response types ---
 

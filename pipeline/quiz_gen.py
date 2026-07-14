@@ -16,30 +16,73 @@ from pipeline.usage import record_rate_limit as _record_rate_limit
 
 logger = logging.getLogger(__name__)
 
+# Canonical 10-question Bloom plan: the first 3 are low-order warm-ups (L1-L2),
+# the majority are higher-order (apply / analyse / evaluate).
+CHECKPOINT_BLOOM_PLAN: list[str] = [
+    "remember",
+    "understand", "understand",
+    "apply", "apply", "apply",
+    "analyse", "analyse",
+    "evaluate", "evaluate",
+]
+_BLOOM_ORDER = {b: i for i, b in enumerate(["remember", "understand", "apply", "analyse", "evaluate"])}
+
+# Prepended to every quiz-generation prompt so any math renders correctly in the
+# KaTeX-enabled quiz UI (inline $...$, display $$...$$, single backslashes).
+_MATH_RULE = (
+    "MATH FORMATTING: write ALL mathematics as LaTeX — inline as $ ... $ and "
+    "display as $$ ... $$. Use single backslashes (e.g. \\times, \\frac, x_1, \\gamma). "
+    "Do NOT use \\( \\) or \\[ \\] delimiters, and do NOT double-escape backslashes. "
+    "Subscripts like x_1 and operators like \\times must be inside $ ... $."
+)
+
+
+def validate_checkpoint_questions(questions: list[dict], target_count: int = 10) -> list[dict]:
+    """Keep only structurally-valid questions and order them by Bloom level
+    (easy -> hard). A question is NOT dropped merely for missing option
+    explanations, so the final count stays at/near the target instead of
+    silently shrinking to 5-6."""
+    valid: list[dict] = []
+    seen: set[str] = set()
+    for q in questions:
+        text = str(q.get("question_text", "")).strip()
+        opts = q.get("options")
+        correct = str(q.get("correct_answer", "")).strip()[:1].upper()
+        if not text or text.casefold() in seen:
+            continue
+        if not isinstance(opts, list) or len(opts) != 4:
+            continue
+        if correct not in {"A", "B", "C", "D"}:
+            continue
+        valid.append(q)
+        seen.add(text.casefold())
+    valid.sort(key=lambda q: _BLOOM_ORDER.get(str(q.get("bloom_level", "understand")).lower(), 5))
+    return valid[:target_count]
+
 QUIZ_PROMPT = """You are a quiz designer for an educational lecture video. Based on this lecture content near timestamp {timestamp}:
 
 {context}
 
-Generate exactly {count} multiple-choice questions, weighted toward higher-order Bloom's taxonomy levels:
-  - a couple of quick warm-ups at "remember" (recall a key fact/term) and "understand" (paraphrase one core idea)
-  - the MAJORITY at "apply" (use the concept in a NEW situation or worked example) and "analyse" (compare, contrast, break down components, identify cause/effect, spot which assumption breaks)
-  - at least one at "evaluate" (judge, critique, justify a choice between alternatives based on criteria)
+Generate exactly {count} multiple-choice questions that FOLLOW BLOOM'S TAXONOMY, ordered from easiest to hardest.
 
-Do NOT include any "create" level questions. Always include at least one apply, one analyse, and one evaluate question.
-
-Focus most of your effort on the higher-order questions (apply, analyse, evaluate). The remember/understand questions should be quick warm-ups; the rest should make the learner actually think.
+Bloom distribution (keep this order):
+  - The FIRST 3 are quick warm-ups: 1 "remember" (recall a key fact/term) + 2 "understand" (paraphrase/explain one core idea).
+  - The MAJORITY of the rest make the learner actually think: about 3 "apply" (use the concept in a NEW situation or worked example) + 2 "analyse" (compare, contrast, break down components, identify cause/effect, spot which assumption breaks) + 2 "evaluate" (judge, critique, justify a choice between alternatives based on criteria).
+  - Do NOT include any "create" level questions.
 
 Each question must:
 - Be self-contained (do not reference "the video", "the lecturer", or "the lecture")
 - Have exactly 4 options labelled "A: ...", "B: ...", "C: ...", "D: ..."
 - Have exactly one correct answer
 - Test the targeted cognitive level genuinely (an analyse-level Q must require analysis, not recall)
+- Include `option_explanations`: an object with keys "A", "B", "C", "D". For the CORRECT option, one sentence on WHY it is right. For EACH wrong option, one sentence on WHY it is wrong AND name the specific misconception. Never just say "incorrect".
 
 Return ONLY a JSON array of {count} objects in this exact shape:
 [{{"question_text": "...",
    "options": ["A: ...", "B: ...", "C: ...", "D: ..."],
    "correct_answer": "A",
    "explanation": "why the correct answer is correct",
+   "option_explanations": {{"A": "why A is right/wrong", "B": "why B is right/wrong", "C": "why C is right/wrong", "D": "why D is right/wrong"}},
    "difficulty": "easy|medium|hard",
    "bloom_level": "remember|understand|apply|analyse|evaluate"}}]"""
 
@@ -186,6 +229,18 @@ def _normalize_question(q: dict, shuffle: bool = True) -> dict:
         "difficulty": str(q.get("difficulty", "medium")).strip().lower() or "medium",
         "bloom_level": bloom,
     }
+    # Carry per-option explanations (why each option is right/wrong) so wrong
+    # answers can be explained in the UI. Kept in sync through _shuffle_options.
+    oe = q.get("option_explanations")
+    if isinstance(oe, dict):
+        cleaned = {
+            k: str(v).strip()
+            for k, v in oe.items()
+            if k in ("A", "B", "C", "D") and str(v).strip()
+        }
+        out["option_explanations"] = cleaned or None
+    else:
+        out["option_explanations"] = None
     if shuffle:
         _shuffle_options(out)
     return out
@@ -462,7 +517,7 @@ def _call_vision_backoff(fn, prompt: str, images: list[str], key: str,
 
 def _generate_quiz_vision_one(
     video_id: str, timestamp: float, chunks: list[dict],
-    image_paths: list[str], count_per_cp: int = 7,
+    image_paths: list[str], count_per_cp: int = 10,
 ) -> list[dict]:
     """Generate quizzes for a SINGLE checkpoint using transcript + on-screen
     keyframes (Gemini vision, OpenRouter vision fallback)."""
@@ -471,6 +526,7 @@ def _generate_quiz_vision_one(
     prompt = VISION_QUIZ_PREAMBLE + QUIZ_PROMPT.format(
         timestamp=f"{timestamp:.0f}s", context=context, count=count_per_cp,
     )
+    prompt = _MATH_RULE + "\n\n" + prompt
     gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
     or_key = os.getenv("OPENROUTER_API_KEY", "").strip()
     max_tokens = max(4000, 400 * count_per_cp)
@@ -509,7 +565,7 @@ def generate_quiz_questions(
         return []
 
     context = _assemble_context(selected)
-    prompt = QUIZ_PROMPT.format(timestamp=f"{timestamp:.0f}s", context=context, count=count)
+    prompt = _MATH_RULE + "\n\n" + QUIZ_PROMPT.format(timestamp=f"{timestamp:.0f}s", context=context, count=count)
 
     groq_key = os.getenv("GROQ_API_KEY", "").strip()
     gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
@@ -534,7 +590,8 @@ def generate_quiz_questions(
         raise RuntimeError(f"All LLM providers failed: {last_err}")
 
     parsed = _parse_json_array(raw)
-    return [_normalize_question(q) for q in parsed if q.get("question_text")]
+    normalized = [_normalize_question(q) for q in parsed if q.get("question_text")]
+    return validate_checkpoint_questions(normalized, target_count=count)
 
 
 # ── Multi-checkpoint batched generation ──────────────────────────
@@ -554,6 +611,7 @@ Each question must:
 - Have exactly 4 options labelled "A: ...", "B: ...", "C: ...", "D: ..."
 - Have exactly one correct answer
 - Test the targeted cognitive level genuinely
+- Include `option_explanations`: an object with keys "A","B","C","D" — for the correct option say WHY it is right; for each wrong option say WHY it is wrong AND name the misconception.
 
 Lecture content per checkpoint:
 {checkpoints_block}
@@ -566,6 +624,7 @@ Return ONE FLAT JSON array containing ALL {total_questions} questions across all
     "options": ["A: ...", "B: ...", "C: ...", "D: ..."],
     "correct_answer": "A",
     "explanation": "...",
+    "option_explanations": {{"A": "why A is right/wrong", "B": "why B is right/wrong", "C": "why C is right/wrong", "D": "why D is right/wrong"}},
     "difficulty": "medium",
     "bloom_level": "apply"}},
   ...{total_questions} total entries...
@@ -578,7 +637,7 @@ def generate_quizzes_for_checkpoints(  # noqa: keep signature stable
     video_id: str,
     checkpoint_timestamps: list[float],
     chunks: list[dict],
-    count_per_cp: int = 7,
+    count_per_cp: int = 10,
     batch_size: int | None = None,
     keyframes: list[dict] | None = None,
 ) -> dict[float, list[dict]]:
@@ -976,7 +1035,7 @@ def generate_chapter_quizzes(
     context = _assemble_context(selected)
     bloom_counts = _get_bloom_counts(quiz_type, count)
 
-    prompt = CHAPTER_QUIZ_PROMPTS[quiz_type].format(
+    prompt = _MATH_RULE + "\n\n" + CHAPTER_QUIZ_PROMPTS[quiz_type].format(
         chapter_title=title,
         context=context,
         count=count,

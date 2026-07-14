@@ -12,15 +12,19 @@ import {
   extractVideoId,
   listMyKeys,
   removeVideo,
+  suggestVideoType,
   type UserVideo,
   type VideoPreview,
 } from '../api/client';
+import type { VideoQualityType } from '../types';
 
 export function Library() {
   const [videos, setVideos] = useState<UserVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [urlInput, setUrlInput] = useState('');
   const [mode, setMode] = useState<'lecture' | 'podcast'>('lecture');
+  const [videoType, setVideoType] = useState<VideoQualityType>('auto');
+  const [suggesting, setSuggesting] = useState(false);
   const [progressVideo, setProgressVideo] = useState<UserVideo | null>(null);
   const [adding, setAdding] = useState(false);
   const [dueCount, setDueCount] = useState(0);
@@ -167,9 +171,8 @@ export function Library() {
 
   const handleConfirmAdd = async () => {
     setPreview(null);
-    setAdding(true);
-    try {
-      const res = (await processVideo({ youtube_url: urlInput, mode })) as unknown as Record<string, unknown>;
+    setAdding(true);    try {
+      const res = (await processVideo({ youtube_url: urlInput, mode, video_type: mode === 'lecture' ? videoType : undefined })) as unknown as Record<string, unknown>;
       toast.success(String(res.message ?? 'Video submitted'));
       setUrlInput('');
       // Reload library so any new videos (single or playlist) show up
@@ -184,6 +187,20 @@ export function Library() {
       toast.error(e instanceof Error ? e.message : 'Failed to add video');
     } finally {
       setAdding(false);
+    }
+  };
+
+  const handleSuggest = async () => {
+    if (!urlInput) return;
+    setSuggesting(true);
+    try {
+      const r = await suggestVideoType(urlInput);
+      setVideoType(r.video_type);
+      toast.success(`AI suggests: ${r.video_type}`);
+    } catch {
+      toast.error('Could not analyse the video — pick a type manually.');
+    } finally {
+      setSuggesting(false);
     }
   };
 
@@ -395,6 +412,75 @@ export function Library() {
           </span>
         </div>
 
+        {/* Keyframe quality (lecture mode only — podcast has no frames) */}
+        {mode === 'lecture' && (
+          <div className="flex flex-wrap items-center gap-2 mb-4 text-sm">
+            <span className="text-gray-500 dark:text-gray-400">Quality:</span>
+            <span className="relative group inline-flex items-center">
+              <span
+                className="flex items-center justify-center w-4 h-4 rounded-full border border-gray-400 dark:border-gray-500 text-gray-500 dark:text-gray-400 text-[10px] font-semibold cursor-help select-none"
+                aria-label="What do these quality types mean?"
+              >
+                i
+              </span>
+              {/* Hover tooltip explaining each type in plain English */}
+              <div className="pointer-events-none absolute left-0 top-6 z-20 hidden group-hover:block w-72 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 text-xs text-gray-600 dark:text-gray-300 shadow-lg">
+                <p className="mb-2 font-medium text-gray-800 dark:text-gray-100">
+                  Which one should I pick?
+                </p>
+                <p className="mb-1.5">
+                  <span className="font-semibold">Standard lecture (720p)</span> — Normal
+                  class: teacher with a board or slides. Good for most videos. Pick this if unsure.
+                  <span className="text-gray-400 dark:text-gray-500"> 💾 Medium storage.</span>
+                </p>
+                <p className="mb-1.5">
+                  <span className="font-semibold">Handheld / moving camera (1080p)</span> —
+                  Camera moves around and the board looks far or small. Sharpest quality so the
+                  writing stays readable.
+                  <span className="text-gray-400 dark:text-gray-500"> 💾 Highest storage (~2× Standard).</span>
+                </p>
+                <p className="mb-1.5">
+                  <span className="font-semibold">Slides / screen-share / PiP (480p)</span> —
+                  A fixed screen or slides fill the frame (maybe a small teacher in a corner).
+                  Clear even at lower quality.
+                  <span className="text-gray-400 dark:text-gray-500"> 💾 Low storage (~½ of Standard).</span>
+                </p>
+                <p>
+                  <span className="font-semibold">Pure animation (360p)</span> — Fully animated,
+                  big clean visuals. Lowest quality is plenty.
+                  <span className="text-gray-400 dark:text-gray-500"> 💾 Lowest storage.</span>
+                </p>
+                <p className="mt-2 text-gray-400 dark:text-gray-500">
+                  Lower quality saves storage — pick the lowest that's still readable. Not sure?
+                  Tap 🤖 Suggest and the AI picks for you.
+                </p>
+              </div>
+            </span>
+            <select
+              value={videoType}
+              onChange={(e) => setVideoType(e.target.value as VideoQualityType)}
+              className="px-3 py-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="auto">Standard lecture (720p)</option>
+              <option value="handheld">Handheld / moving camera (1080p)</option>
+              <option value="slides">Slides / screen-share / PiP (480p)</option>
+              <option value="animation">Pure animation (360p)</option>
+            </select>
+            <button
+              type="button"
+              onClick={handleSuggest}
+              disabled={suggesting || !urlInput}
+              className="px-3 py-1 rounded-full border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-blue-500 disabled:opacity-50 transition"
+              title="Let AI look at a few frames and pick the best quality"
+            >
+              {suggesting ? 'Analysing…' : '🤖 Suggest'}
+            </button>
+            <span className="text-xs text-gray-400 dark:text-gray-500">
+              Higher = sharper on-screen text, more storage. Applies to the whole playlist.
+            </span>
+          </div>
+        )}
+
         {/* Search box */}
         {videos.length > 0 && (
           <div className="mb-3">
@@ -528,6 +614,15 @@ export function Library() {
                       >
                         {statusLabel}
                       </button>
+                      {/* Watch-progress bar (YouTube-style) along the bottom of the thumbnail */}
+                      {!isFailed && typeof v.last_position === 'number' && typeof v.duration === 'number' && v.duration > 0 && v.last_position > 5 && (
+                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/40" title={`Watched ${Math.round((v.last_position / v.duration) * 100)}%`}>
+                          <div
+                            className="h-full bg-red-500"
+                            style={{ width: `${Math.min(100, (v.last_position / v.duration) * 100)}%` }}
+                          />
+                        </div>
+                      )}
                     </div>
                     {/* Title */}
                     <div className="p-3">

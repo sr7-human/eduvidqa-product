@@ -192,7 +192,7 @@ def _extract_pass(
 
         frame_id = f"kf_{sec:06d}"
         out_path = kf_dir / f"{frame_id}.jpg"
-        cv2.imwrite(str(out_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        cv2.imwrite(str(out_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 92])
 
         kept.append(
             {

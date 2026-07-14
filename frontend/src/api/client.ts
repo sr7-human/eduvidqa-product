@@ -343,6 +343,13 @@ export async function processVideo(req: ProcessRequest): Promise<ProcessResponse
   });
 }
 
+export async function suggestVideoType(youtubeUrl: string): Promise<{ video_type: import('../types').VideoQualityType; note: string }> {
+  return request('/api/suggest-video-type', {
+    method: 'POST',
+    body: JSON.stringify({ youtube_url: youtubeUrl }),
+  });
+}
+
 export interface VideoPreview {
   video_id: string;
   title: string;
@@ -360,11 +367,24 @@ export interface UserVideo {
   video_id: string;
   status: string;
   title?: string | null;
+  duration?: number | null;
+  last_position?: number | null;
+  last_watched_at?: string | null;
   [key: string]: unknown;
 }
 
 export async function getMyVideos(): Promise<UserVideo[]> {
   return request<UserVideo[]>('/api/users/me/videos');
+}
+
+/** Persist how far (seconds) the user has watched a video. `duration` (when
+ * known from the player) backfills the video's total length so the library can
+ * render a progress %. */
+export async function saveWatchProgress(videoId: string, position: number, duration?: number): Promise<void> {
+  await request(`/api/users/me/videos/${videoId}/progress`, {
+    method: 'PUT',
+    body: JSON.stringify({ position, duration }),
+  });
 }
 
 export interface Playlist {
@@ -470,7 +490,7 @@ export async function setQuizPref(pref: QuizPref): Promise<{ pref: QuizPref }> {
 
 // ── LLM preference ────────────────────────────────────────────
 
-export type LlmPref = 'auto' | 'groq' | 'gemini';
+export type LlmPref = 'auto' | 'groq' | 'gemini' | 'openrouter';
 
 export async function getLlmPref(): Promise<{ llm_pref: LlmPref }> {
   return request<{ llm_pref: LlmPref }>('/api/users/me/llm-pref');

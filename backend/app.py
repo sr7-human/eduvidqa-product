@@ -21,6 +21,7 @@ except Exception:
     pass
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -133,9 +134,173 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # DB helpers (Supabase Postgres via psycopg2)
 # ---------------------------------------------------------------------------
 
+_DB_DSN_CACHE: tuple[float, str] | None = None
+
+
 def _get_db_url() -> str:
+    """Build a hardened psycopg2 DSN and cache it (with the DB host pre-resolved
+    to an IP) for 5 minutes.
+
+    Two problems this fixes:
+    1. No timeout → one blocking connect()/query in an async endpoint freezes the
+       whole single-worker backend (health, library, ask — everything hangs).
+    2. A fresh DNS lookup on EVERY request floods the macOS resolver under load
+       and intermittently fails ("could not translate host name …") → the app
+       behaves non-deterministically (random 500s / slow loads). Pinning the
+       resolved IP via ``hostaddr`` makes every connection skip DNS.
+    """
+    global _DB_DSN_CACHE
+    import time as _time
+    now = _time.time()
+    if _DB_DSN_CACHE is not None and now - _DB_DSN_CACHE[0] < 300:
+        return _DB_DSN_CACHE[1]
+
     from backend.supabase_config import get_database_url
-    return get_database_url()
+    import urllib.parse as _up
+
+    url = get_database_url()
+    parts = _up.urlsplit(url)
+    extra: list[str] = []
+    if "connect_timeout" not in url:
+        opts = _up.quote("-c statement_timeout=12000 -c idle_in_transaction_session_timeout=12000")
+        extra.append("connect_timeout=8")
+        extra.append(f"options={opts}")
+    # Resolve the DB host to an IP once and pin it via hostaddr. host= stays in
+    # the DSN for SSL SNI + pooler routing; hostaddr makes libpq skip DNS.
+    if parts.hostname and "hostaddr=" not in url:
+        try:
+            import socket
+            extra.append("hostaddr=" + socket.gethostbyname(parts.hostname))
+        except Exception:
+            pass  # fall back to normal DNS if resolution fails
+    if extra:
+        sep = "&" if parts.query else "?"
+        url = url + sep + "&".join(extra)
+
+    _DB_DSN_CACHE = (now, url)
+    return url
+
+
+# ── Connection pool ─────────────────────────────────────────────────────────
+# Every request used to open a BRAND-NEW psycopg2 connection (fresh DNS lookup +
+# TCP + TLS handshake). Under the app's polling load that churn flooded the DNS
+# resolver and intermittently froze the single asyncio worker (health, library,
+# ask — everything hung). A small reusable pool fixes the root cause: connections
+# are borrowed and returned, so the hot path never does a fresh connect. It is
+# wired transparently by monkey-patching psycopg2.connect, so all existing call
+# sites benefit with zero edits.
+import threading as _threading
+from psycopg2 import pool as _pg_pool
+
+_REAL_PG_CONNECT = psycopg2.connect
+_POOL = None
+_POOL_LOCK = _threading.Lock()
+
+
+class _RealConnectPool(_pg_pool.ThreadedConnectionPool):
+    """Pool whose internal connect bypasses the monkey-patch (no recursion)."""
+
+    def _connect(self, key=None):
+        conn = _REAL_PG_CONNECT(*self._args, **self._kwargs)
+        # Autocommit: the app only does single-statement CRUD per request, so
+        # each execute commits immediately. This avoids leaving an idle
+        # transaction open on a pooled connection (and the extra rollback
+        # round-trip on release). Explicit conn.commit() calls become harmless
+        # no-ops.
+        try:
+            conn.autocommit = True
+        except Exception:
+            pass
+        if key is not None:
+            self._used[key] = conn
+            self._rused[id(conn)] = key
+        else:
+            self._pool.append(conn)
+        return conn
+
+
+def _get_pool():
+    global _POOL
+    if _POOL is None:
+        with _POOL_LOCK:
+            if _POOL is None:
+                _POOL = _RealConnectPool(1, 16, dsn=_get_db_url())
+    return _POOL
+
+
+class _PooledConnection:
+    """Thin proxy that delegates everything to a real connection but, instead of
+    truly closing on .close()/context-exit, returns it to the pool for reuse."""
+
+    __slots__ = ("_pool", "_conn", "_done")
+
+    def __init__(self, pool, conn):
+        object.__setattr__(self, "_pool", pool)
+        object.__setattr__(self, "_conn", conn)
+        object.__setattr__(self, "_done", False)
+
+    def __getattr__(self, name):
+        return getattr(object.__getattribute__(self, "_conn"), name)
+
+    def __setattr__(self, name, value):
+        setattr(object.__getattribute__(self, "_conn"), name, value)
+
+    def _release(self):
+        if object.__getattribute__(self, "_done"):
+            return
+        object.__setattr__(self, "_done", True)
+        pool = object.__getattribute__(self, "_pool")
+        conn = object.__getattribute__(self, "_conn")
+        try:
+            if getattr(conn, "closed", 0):
+                pool.putconn(conn, close=True)
+            else:
+                pool.putconn(conn)
+        except Exception:
+            try:
+                pool.putconn(conn, close=True)
+            except Exception:
+                pass
+
+    def close(self):
+        self._release()
+
+    def __enter__(self):
+        object.__getattribute__(self, "_conn").__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        conn = object.__getattribute__(self, "_conn")
+        try:
+            conn.__exit__(exc_type, exc, tb)
+        finally:
+            self._release()
+        return False
+
+
+def _pooled_connect(dsn=None, *args, **kwargs):
+    """Drop-in for psycopg2.connect: pools the app's standard single-arg DSN
+    calls; anything else (and the pool's own internal connects) uses the real
+    connector."""
+    if dsn is not None and not args and not kwargs:
+        try:
+            pool = _get_pool()
+            raw = pool.getconn()
+            if getattr(raw, "closed", 0):
+                try:
+                    pool.putconn(raw, close=True)
+                except Exception:
+                    pass
+                raw = pool.getconn()
+            return _PooledConnection(pool, raw)
+        except Exception:
+            # Pool exhausted/broken — fall back to a direct short-lived conn.
+            return _REAL_PG_CONNECT(dsn)
+    return _REAL_PG_CONNECT(dsn, *args, **kwargs)
+
+
+# Route every psycopg2.connect(...) in this module through the pool.
+psycopg2.connect = _pooled_connect
 
 
 def _register_video(video_id: str, mode: str = "lecture") -> None:
@@ -168,7 +333,23 @@ def _get_video_status(video_id: str) -> str | None:
     return row[0] if row else None
 
 
+def _durable_jobs_enabled() -> bool:
+    return os.getenv("DURABLE_JOBS_V1", "0") == "1"
+
+
 def _update_video_status(video_id: str, status: str, detail: str | None = None) -> None:
+    if _durable_jobs_enabled():
+        from backend.processing_jobs import (
+            LeaseLostError,
+            current_job_lease,
+            update_video_status as _fenced_status,
+        )
+
+        lease = current_job_lease()
+        if lease is not None:
+            if not _fenced_status(lease, status, detail):
+                raise LeaseLostError(f"Lost ingest lease for {video_id}")
+            return
     conn = psycopg2.connect(_get_db_url())
     try:
         with conn.cursor() as cur:
@@ -187,6 +368,18 @@ def _update_video_status(video_id: str, status: str, detail: str | None = None) 
 def _set_progress(video_id: str, step: str, pct: int | None = None, detail: str | None = None) -> None:
     """Persist granular ingest progress so the frontend can show a live modal
     (and detect a stuck job via the updated_at timestamp). Best-effort."""
+    if _durable_jobs_enabled():
+        from backend.processing_jobs import (
+            LeaseLostError,
+            current_job_lease,
+            update_video_progress,
+        )
+
+        lease = current_job_lease()
+        if lease is not None:
+            if not update_video_progress(lease, step, pct, detail):
+                raise LeaseLostError(f"Lost ingest lease for {video_id}")
+            return
     import datetime
     import json as _json
 
@@ -504,7 +697,7 @@ async def process_video(
                 _register_video(vid, body.mode)
                 _link_user_video(user_id, vid)
                 background_tasks.add_task(
-                    _ingest_video_bg, vid, f"https://www.youtube.com/watch?v={vid}", user_id, body.mode,
+                    _ingest_video_bg, vid, f"https://www.youtube.com/watch?v={vid}", user_id, body.mode, body.video_type,
                 )
                 queued += 1
             except Exception as exc:
@@ -551,8 +744,42 @@ async def process_video(
     # Register + queue background work
     _register_video(video_id, body.mode)
     _link_user_video(user_id, video_id)
-    background_tasks.add_task(_ingest_video_bg, video_id, body.youtube_url, user_id, body.mode)
+    background_tasks.add_task(_ingest_video_bg, video_id, body.youtube_url, user_id, body.mode, body.video_type)
     return {"video_id": video_id, "status": "processing", "message": "Processing started"}
+
+
+class _SuggestTypeBody(BaseModel):
+    youtube_url: str = Field(..., max_length=200)
+
+
+@app.post("/api/suggest-video-type")
+@limiter.limit("6/minute")
+async def suggest_video_type_endpoint(
+    request: Request,
+    body: _SuggestTypeBody,
+    user_id: str = Depends(require_auth),
+):
+    """Sample a few frames and let a vision model guess the keyframe-quality
+    preset (auto / handheld / slides / animation). Best-effort — always returns
+    a usable preset, defaulting to 'auto'.
+    """
+    try:
+        video_id = parse_video_id(body.youtube_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    from pipeline.video_quality import suggest_video_type
+
+    is_demo = (video_id == DEMO_VIDEO_ID)
+    try:
+        with _ScopedAPIKeys(user_id or None, allow_server_fallback=is_demo):
+            key, note = await run_in_threadpool(
+                suggest_video_type, video_id, os.getenv("GROQ_API_KEY") or None
+            )
+    except Exception as exc:
+        logger.warning("suggest_video_type failed for %s: %s", video_id, exc)
+        return {"video_type": "auto", "note": "could not analyse — using default"}
+    return {"video_type": key, "note": note}
 
 
 def _extract_playlist_id(url: str) -> str | None:
@@ -654,7 +881,7 @@ def _persist_playlist(user_id: str, playlist_id: str, title: str, video_ids: lis
         conn.close()
 
 
-def _ingest_video_bg(video_id: str, youtube_url: str, user_id: str, mode: str = "lecture") -> None:
+def _ingest_video_bg(video_id: str, youtube_url: str, user_id: str, mode: str = "lecture", video_type: str = "auto") -> None:
     """Background ingest — runs in a thread via FastAPI BackgroundTasks.
 
     Two-phase flow for instant UX:
@@ -671,11 +898,38 @@ def _ingest_video_bg(video_id: str, youtube_url: str, user_id: str, mode: str = 
     For the demo video, falls back to the server's keys.
     """
     is_demo = (video_id == DEMO_VIDEO_ID)
-    with _ScopedAPIKeys(user_id or None, allow_server_fallback=is_demo):
-        _ingest_video_bg_inner(video_id, youtube_url, user_id, mode)
+    if not _durable_jobs_enabled():
+        with _ScopedAPIKeys(user_id or None, allow_server_fallback=is_demo):
+            _ingest_video_bg_inner(video_id, youtube_url, user_id, mode, video_type)
+        return
+
+    from backend.processing_jobs import (
+        LeaseLostError,
+        claim_job,
+        complete_job,
+        fail_job,
+        maintain_lease,
+        use_job_lease,
+    )
+
+    lease = claim_job(video_id)
+    if lease is None:
+        logger.info("Ingest not started for %s: another worker owns it or it is complete", video_id)
+        return
+    try:
+        with maintain_lease(lease), use_job_lease(lease):
+            with _ScopedAPIKeys(user_id or None, allow_server_fallback=is_demo):
+                _ingest_video_bg_inner(video_id, youtube_url, user_id, mode, video_type)
+        if not complete_job(lease):
+            raise LeaseLostError(f"Lost ingest lease before completing {video_id}")
+    except LeaseLostError:
+        logger.warning("Ingest worker lost ownership for %s; stopping stale worker", video_id)
+    except Exception as exc:
+        fail_job(lease, str(exc))
+        logger.exception("Durable ingest attempt failed for %s", video_id)
 
 
-def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: str = "lecture") -> None:
+def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: str = "lecture", video_type: str = "auto") -> None:
     podcast_mode = (mode == "podcast")
     try:
         _update_video_status(video_id, "processing")
@@ -738,7 +992,8 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
             # Step 1: Download video (non-fatal — cloud IPs often blocked by YouTube)
             _set_progress(video_id, "download", 35, "Downloading video…")
             try:
-                video_path = _download_video(video_id, data_dir)
+                from pipeline.video_quality import max_height_for
+                video_path = _download_video(video_id, data_dir, max_height=max_height_for(video_type))
             except Exception as exc:
                 logger.warning(
                     "Video download failed for %s (will proceed transcript-only): %s",
@@ -883,8 +1138,13 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
             pass
 
 
-def _download_video(video_id: str, data_dir: str) -> str:
-    """Download video .mp4. Tries yt-dlp first, falls back to pytubefix."""
+def _download_video(video_id: str, data_dir: str, max_height: int = 720) -> str:
+    """Download video .mp4. Tries yt-dlp first, falls back to pytubefix.
+
+    ``max_height`` caps the resolution (keyframes are extracted at the video's
+    native resolution, so this controls keyframe sharpness — see
+    ``pipeline/video_quality.py``).
+    """
     vid_dir = Path(data_dir) / "videos" / video_id
     vid_dir.mkdir(parents=True, exist_ok=True)
     mp4_path = vid_dir / f"{video_id}.mp4"
@@ -893,8 +1153,11 @@ def _download_video(video_id: str, data_dir: str) -> str:
         return str(mp4_path)
 
     url = f"https://www.youtube.com/watch?v={video_id}"
-    from pipeline.ingest import get_cookiefile
-    cookiefile = get_cookiefile()
+    from pipeline.ingest import get_cookie_ydl_opts
+    from pipeline.video_quality import format_for_height
+
+    fmt = format_for_height(max_height)
+    cookie_opts = get_cookie_ydl_opts()
 
     # --- Attempt 1: yt-dlp with Chrome impersonation (bypasses cloud IP blocks) ---
     try:
@@ -902,14 +1165,14 @@ def _download_video(video_id: str, data_dir: str) -> str:
         from yt_dlp.networking.impersonate import ImpersonateTarget
 
         ydl_opts = {
-            "format": "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360]/best",
+            "format": fmt,
             "outtmpl": str(mp4_path),
             "no_playlist": True,
             "merge_output_format": "mp4",
             "quiet": True,
-            "cookiefile": cookiefile,
             "impersonate": ImpersonateTarget("chrome"),
             "extractor_args": {"youtube": {"player_client": ["web", "default", "android", "ios"]}},
+            **cookie_opts,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
@@ -924,13 +1187,13 @@ def _download_video(video_id: str, data_dir: str) -> str:
         import yt_dlp
 
         ydl_opts = {
-            "format": "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360]/best",
+            "format": fmt,
             "outtmpl": str(mp4_path),
             "no_playlist": True,
             "merge_output_format": "mp4",
             "quiet": True,
-            "cookiefile": cookiefile,
             "extractor_args": {"youtube": {"player_client": ["android", "ios", "web", "default"]}},
+            **cookie_opts,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
@@ -957,6 +1220,32 @@ def _download_video(video_id: str, data_dir: str) -> str:
         logger.error("pytubefix download also failed: %s", exc)
 
     raise RuntimeError(f"Could not download video {video_id} — both yt-dlp and pytubefix failed")
+
+
+def _decode_user_image(image_b64: str | None) -> str | None:
+    """Decode a user-pasted screenshot (data URL or bare base64) to a temp JPEG
+    file, to use as the visual frame instead of a live YouTube download."""
+    if not image_b64:
+        return None
+    try:
+        import base64 as _b64
+        import tempfile as _tempfile
+        import uuid as _uuid
+        from pathlib import Path as _Path
+        data = image_b64
+        if data.startswith("data:"):
+            data = data.split(",", 1)[1] if "," in data else ""
+        raw = _b64.b64decode(data)
+        if len(raw) < 100:
+            return None
+        out_dir = _Path(_tempfile.gettempdir()) / "eduvidqa-userimg"
+        out_dir.mkdir(exist_ok=True)
+        path = out_dir / f"{_uuid.uuid4().hex}.jpg"
+        path.write_bytes(raw)
+        return str(path)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("user image decode failed (non-fatal): %s", exc)
+        return None
 
 
 @app.post("/api/ask", response_model=AskResponse)
@@ -1012,18 +1301,26 @@ async def ask_question(
 
     t0 = time.perf_counter()
 
-    # 3. Extract live frame at exact timestamp (non-fatal)
+    # Range vs point: in range mode we answer about a [start, end) interval and
+    # must not use a single live frame or the whole-video digest.
+    range_mode = body.scope == "range" and body.start_timestamp is not None and body.end_timestamp is not None
+    whole_video = body.scope == "all"
+    answer_ts = ((body.start_timestamp + body.end_timestamp) / 2.0) if range_mode else body.timestamp
+
+    # 3. Extract live frame at exact timestamp (point mode only, non-fatal).
+    # A user-pasted screenshot, if supplied, wins — exact frame, no YouTube call.
     from pipeline.live_frame import extract_live_frame
 
-    live_frame = None
-    try:
-        live_frame = extract_live_frame(
-            video_id=video_id,
-            timestamp=body.timestamp,
-            data_dir=os.path.join(settings.DATA_DIR, "processed"),
-        )
-    except Exception as exc:
-        logger.warning("live_frame extraction failed (non-fatal): %s", exc)
+    live_frame = _decode_user_image(body.image_b64)
+    if live_frame is None and not range_mode and not whole_video:
+        try:
+            live_frame = extract_live_frame(
+                video_id=video_id,
+                timestamp=body.timestamp,
+                data_dir=os.path.join(settings.DATA_DIR, "processed"),
+            )
+        except Exception as exc:
+            logger.warning("live_frame extraction failed (non-fatal): %s", exc)
 
     # 4. Retrieve relevant chunks + keyframes + digest
     retrieval: dict = {"ranked_chunks": [], "relevant_keyframes": [], "digest": ""}
@@ -1031,8 +1328,11 @@ async def ask_question(
         retrieval = index.retrieve(
             question=body.question,
             video_id=video_id,
-            timestamp=body.timestamp,
-            top_k=10,
+            timestamp=answer_ts,
+            top_k=16 if whole_video else 10,
+            start_time=body.start_timestamp if range_mode else None,
+            end_time=body.end_timestamp if range_mode else None,
+            whole_video=whole_video,
         )
     except Exception as exc:
         logger.error("Retrieval failed for %s — answering without context: %s", video_id, exc)
@@ -1042,10 +1342,14 @@ async def ask_question(
 
     try:
         with _ScopedAPIKeys(user_id, allow_server_fallback=is_demo):
+            # Crop this one frame to its board/slide content (1 vision call).
+            if live_frame:
+                from pipeline.live_frame import crop_to_content
+                live_frame = crop_to_content(live_frame, os.getenv("GROQ_API_KEY") or None)
             result = generate_answer(
                 question=body.question,
                 video_id=video_id,
-                timestamp=body.timestamp,
+                timestamp=answer_ts,
                 retrieval_result=retrieval,
                 live_frame_path=live_frame,
                 groq_api_key=os.getenv("GROQ_API_KEY") or None,
@@ -1160,8 +1464,14 @@ async def ask_question_stream(
     _skip_eval = body.skip_quality_eval if body.skip_quality_eval is not None else True
     _question = body.question
     _timestamp = body.timestamp
+    _range_mode = body.scope == "range" and body.start_timestamp is not None and body.end_timestamp is not None
+    _whole = body.scope == "all"
+    _range_start = body.start_timestamp
+    _range_end = body.end_timestamp
+    _answer_ts = ((body.start_timestamp + body.end_timestamp) / 2.0) if _range_mode else body.timestamp
     _video_id = video_id
     _index = index
+    _user_image = body.image_b64
     _llm_pref = _get_llm_pref(user_id)  # 'auto' | 'groq' | 'gemini'
     logger.info("LLM pref for user %s: %s", user_id, _llm_pref)
 
@@ -1176,23 +1486,29 @@ async def ask_question_stream(
         yield _sse({"type": "status", "text": "Retrieving context…"})
 
         # 1) Retrieval (embedding + pgvector) — now inside the stream
-        live_frame = None
-        try:
-            live_frame = extract_live_frame(
-                video_id=_video_id,
-                timestamp=_timestamp,
-                data_dir=os.path.join(settings.DATA_DIR, "processed"),
-            )
-        except Exception as exc:
-            logger.warning("live_frame extraction failed (non-fatal): %s", exc)
+        # A user-pasted screenshot, if supplied, is the visual frame (exact,
+        # no YouTube call); otherwise fetch the live frame.
+        live_frame = _decode_user_image(_user_image)
+        if live_frame is None and not _range_mode and not _whole:
+            try:
+                live_frame = extract_live_frame(
+                    video_id=_video_id,
+                    timestamp=_timestamp,
+                    data_dir=os.path.join(settings.DATA_DIR, "processed"),
+                )
+            except Exception as exc:
+                logger.warning("live_frame extraction failed (non-fatal): %s", exc)
 
         retrieval: dict = {"ranked_chunks": [], "relevant_keyframes": [], "digest": ""}
         try:
             retrieval = _index.retrieve(
                 question=_question,
                 video_id=_video_id,
-                timestamp=_timestamp,
-                top_k=10,
+                timestamp=_answer_ts,
+                top_k=16 if _whole else 10,
+                start_time=_range_start if _range_mode else None,
+                end_time=_range_end if _range_mode else None,
+                whole_video=_whole,
             )
         except Exception as exc:
             logger.error("Retrieval failed for %s — answering without context: %s", _video_id, exc)
@@ -1217,22 +1533,27 @@ async def ask_question_stream(
 
         try:
             with _ScopedAPIKeys(_user_id, allow_server_fallback=_is_demo):
-                # Apply user's LLM preference
+                # The top-level "Answer model" preference (_llm_pref) is now
+                # authoritative — the pipeline picks the provider from it and the
+                # Advanced per-feature dropdown picks the exact model.
                 groq_key = os.getenv("GROQ_API_KEY") or None
                 gemini_key = os.getenv("GEMINI_API_KEY") or None
-                if _llm_pref == "groq":
-                    gemini_key = ""   # empty string → pipeline won't use Gemini
-                elif _llm_pref == "gemini":
-                    groq_key = ""     # empty string → pipeline won't use Groq
+
+                # Crop this one frame to its board/slide content (1 vision call).
+                if live_frame:
+                    from pipeline.live_frame import crop_to_content
+                    live_frame = crop_to_content(live_frame, groq_key)
 
                 for event in generate_answer_stream(
                     question=_question,
                     video_id=_video_id,
-                    timestamp=_timestamp,
+                    timestamp=_answer_ts,
                     retrieval_result=retrieval,
                     live_frame_path=live_frame,
                     groq_api_key=groq_key,
                     gemini_api_key=gemini_key,
+                    prefer=_llm_pref,
+                    point_mode=(not _range_mode and not _whole),
                 ):
                     if event.get("type") == "token":
                         full_text_parts.append(event.get("text", ""))
@@ -1342,6 +1663,50 @@ async def my_videos(user_id: str = Depends(require_auth)):
         }
         for r in rows
     ]
+
+
+class _WatchProgressBody(BaseModel):
+    position: float = Field(..., ge=0, le=360000)
+    duration: float | None = Field(default=None, ge=0, le=360000)
+
+
+@app.put("/api/users/me/videos/{video_id}/progress")
+async def set_watch_progress(
+    video_id: str,
+    body: _WatchProgressBody,
+    user_id: str = Depends(require_auth),
+):
+    """Persist how far (seconds) the user has watched a video so the library can
+    show a per-video progress bar and 'continue watching'. Also opportunistically
+    backfills videos.duration_seconds (often NULL from ingest) using the real
+    duration reported by the player, so the progress bar can compute a %."""
+    conn = psycopg2.connect(_get_db_url())
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO user_videos (id, user_id, video_id, last_position_seconds, last_watched_at)
+                VALUES (%s, %s::uuid, %s, %s, now())
+                ON CONFLICT (user_id, video_id)
+                DO UPDATE SET last_position_seconds = EXCLUDED.last_position_seconds,
+                              last_watched_at = now(),
+                              deleted_at = NULL
+                """,
+                (str(uuid.uuid4()), user_id, video_id, body.position),
+            )
+            if body.duration and body.duration > 0:
+                cur.execute(
+                    """
+                    UPDATE videos SET duration_seconds = %s
+                    WHERE video_id = %s
+                      AND (duration_seconds IS NULL OR duration_seconds = 0)
+                    """,
+                    (int(body.duration), video_id),
+                )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
@@ -1811,7 +2176,7 @@ async def get_llm_pref(user_id: str = Depends(require_auth)):
 
 
 class _LlmPrefBody(BaseModel):
-    llm_pref: str = Field(..., pattern=r"^(auto|groq|gemini)$")
+    llm_pref: str = Field(..., pattern=r"^(auto|groq|gemini|openrouter)$")
 
 
 @app.put("/api/users/me/llm-pref")
@@ -1836,46 +2201,92 @@ async def set_llm_pref(body: _LlmPrefBody, user_id: str = Depends(require_auth))
 
 # ── Model picker (live model lists + per-feature preferences) ────────
 
-@app.get("/api/models")
-async def list_models(user_id: str = Depends(require_auth)):
-    """Live list of selectable models per provider (auto-updates as providers
-    add models). Gemini list uses the user's key; OpenRouter uses the catalog."""
+# In-process cache for the live model catalogs (Settings model picker). Providers
+# are hit at most once per _MODELS_CACHE_TTL seconds instead of on every open, and
+# the two providers are fetched concurrently with a short timeout.
+_MODELS_CACHE: dict[str, tuple[float, dict]] = {}
+_MODELS_CACHE_TTL = 45 * 60  # 45 minutes
+_MODELS_TIMEOUT = 6  # seconds per provider (was 15s, and sequential)
+
+
+def _fetch_gemini_models(gkey: str) -> list[dict]:
+    """Blocking Gemini ListModels call (run in a thread). Returns [] on failure."""
+    if not gkey:
+        return []
     import json as _json
     import urllib.request as _url
 
-    keys = _get_user_keys(user_id)
-    out: dict[str, list] = {"gemini": [], "openrouter": []}
+    out: list[dict] = []
+    try:
+        req = _url.Request(
+            f"https://generativelanguage.googleapis.com/v1beta/models?key={gkey}"
+        )
+        data = _json.load(_url.urlopen(req, timeout=_MODELS_TIMEOUT))
+        for m in data.get("models", []):
+            if "generateContent" not in (m.get("supportedGenerationMethods") or []):
+                continue
+            name = (m.get("name") or "").replace("models/", "")
+            if not name.startswith("gemini"):
+                continue
+            out.append({"id": name, "label": m.get("displayName") or name})
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Gemini ListModels failed: %s", exc)
+    return out
 
-    gkey = keys.get("gemini") or os.getenv("GEMINI_API_KEY", "")
-    if gkey:
-        try:
-            req = _url.Request(
-                f"https://generativelanguage.googleapis.com/v1beta/models?key={gkey}"
-            )
-            data = _json.load(_url.urlopen(req, timeout=15))
-            for m in data.get("models", []):
-                if "generateContent" not in (m.get("supportedGenerationMethods") or []):
-                    continue
-                name = (m.get("name") or "").replace("models/", "")
-                if not name.startswith("gemini"):
-                    continue
-                out["gemini"].append({"id": name, "label": m.get("displayName") or name})
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Gemini ListModels failed: %s", exc)
 
-    okey = os.getenv("OPENROUTER_API_KEY", "")
+def _fetch_openrouter_models(okey: str) -> list[dict]:
+    """Blocking OpenRouter catalog call (run in a thread). Returns [] on failure."""
+    import json as _json
+    import urllib.request as _url
+
+    out: list[dict] = []
     try:
         headers = {"Authorization": f"Bearer {okey}"} if okey else {}
         req = _url.Request("https://openrouter.ai/api/v1/models", headers=headers)
-        data = _json.load(_url.urlopen(req, timeout=15))
+        data = _json.load(_url.urlopen(req, timeout=_MODELS_TIMEOUT))
         for m in data.get("data", []):
             mid = m.get("id")
             if mid:
-                out["openrouter"].append({"id": mid, "label": m.get("name") or mid})
+                out.append({"id": mid, "label": m.get("name") or mid})
     except Exception as exc:  # noqa: BLE001
         logger.warning("OpenRouter models failed: %s", exc)
-
     return out
+
+
+@app.get("/api/models")
+async def list_models(user_id: str = Depends(require_auth)):
+    """Live list of selectable models per provider (auto-updates as providers
+    add models). Gemini list uses the user's key; OpenRouter uses the catalog.
+
+    Fast path: results are cached in-process for ``_MODELS_CACHE_TTL`` seconds and
+    the two providers are fetched **concurrently** with a short timeout, so the
+    Settings model section no longer blocks for up to 30 s on every open.
+    """
+    import asyncio
+
+    keys = _get_user_keys(user_id)
+    gkey = keys.get("gemini") or os.getenv("GEMINI_API_KEY", "")
+
+    # Cache key: gemini-key fingerprint (OpenRouter list is global). Avoids
+    # re-hitting Google/OpenRouter on every Settings open.
+    cache_key = (gkey[-6:] if gkey else "nokey")
+    cached = _MODELS_CACHE.get(cache_key)
+    if cached and (time.time() - cached[0]) < _MODELS_CACHE_TTL:
+        return cached[1]
+
+    okey = os.getenv("OPENROUTER_API_KEY", "")
+    gemini_list, openrouter_list = await asyncio.gather(
+        asyncio.to_thread(_fetch_gemini_models, gkey),
+        asyncio.to_thread(_fetch_openrouter_models, okey),
+    )
+    out = {"gemini": gemini_list, "openrouter": openrouter_list}
+
+    # Only cache a non-empty successful result so a transient provider outage
+    # doesn't pin an empty list for 45 minutes.
+    if gemini_list or openrouter_list:
+        _MODELS_CACHE[cache_key] = (time.time(), out)
+    return out
+
 
 
 @app.get("/api/users/me/model-prefs")
@@ -1947,6 +2358,7 @@ async def get_usage(user_id: str = Depends(require_auth)):
 async def test_key(service: str, user_id: str = Depends(require_auth)):
     """Ping the provider to check if the stored key is live. For Gemini this
     uses ListModels (metadata only — does NOT consume generateContent quota)."""
+    import asyncio
     import urllib.error
     import urllib.request
 
@@ -1970,7 +2382,7 @@ async def test_key(service: str, user_id: str = Depends(require_auth)):
                 "https://api.groq.com/openai/v1/models",
                 headers={"Authorization": f"Bearer {key}"},
             )
-        urllib.request.urlopen(req, timeout=12)
+        await asyncio.to_thread(urllib.request.urlopen, req, timeout=12)
         return {"ok": True, "detail": "Key is live ✓"}
     except urllib.error.HTTPError as exc:
         return {"ok": False, "detail": f"HTTP {exc.code} — key rejected or restricted"}
@@ -2301,8 +2713,12 @@ class _KeyBody(BaseModel):
 @app.post("/api/users/me/keys")
 async def upsert_my_key(body: _KeyBody, user_id: str = Depends(require_auth)):
     """Validate then store a user's API key for a service."""
-    # Validate the key by making a tiny test call
-    valid, err = _validate_api_key(body.service, body.key_value)
+    # Validate the key by making a tiny test call. Run it in a thread so the
+    # blocking provider request never freezes the async event loop (which would
+    # make concurrent requests look like "backend unreachable").
+    import asyncio
+
+    valid, err = await asyncio.to_thread(_validate_api_key, body.service, body.key_value)
     if not valid:
         raise HTTPException(status_code=400, detail=f"Invalid {body.service} key: {err}")
 

@@ -285,12 +285,22 @@ class LectureIndex:
         video_id: str,
         timestamp: float,
         top_k: int = 12,
+        start_time: float | None = None,
+        end_time: float | None = None,
+        whole_video: bool = False,
     ) -> dict[str, Any]:
         """Return ranked chunks + relevant keyframes + digest for a question.
 
         Auto-detects whether the video uses v2 (3072-dim) or v1 (1024-dim)
         embeddings and generates the query vector at the matching dimension.
+
+        When ``start_time`` and ``end_time`` are both given (RANGE mode), only
+        transcript chunks and keyframes inside ``[start_time, end_time)`` are
+        considered, and the whole-video digest is omitted so no evidence from
+        outside the selected interval leaks into the answer.
         """
+        range_mode = start_time is not None and end_time is not None
+        center = ((float(start_time) + float(end_time)) / 2.0) if range_mode else float(timestamp)
         # Detect which embedding column this video uses
         use_v2 = False
         with self._connect() as conn, conn.cursor() as cur:
@@ -348,17 +358,19 @@ class LectureIndex:
             digest_text = (row[0] if row and row[0] else "") or ""
 
         # ── 4. Re-rank chunks: combined semantic + temporal ────
-        alpha = 0.3
+        # Whole-lecture mode → alpha 0 = pure semantic, so the most relevant
+        # parts anywhere in the video win (no bias toward the current moment).
+        alpha = 0.0 if whole_video else 0.3
         ranked: list[dict] = []
-        for chunk_id, text, start_time, end_time, linked, sim in chunk_rows:
-            mid = (float(start_time) + float(end_time)) / 2.0
-            temporal = 1.0 / (1.0 + abs(mid - float(timestamp)) / 60.0)
+        for chunk_id, text, c_start, c_end, linked, sim in chunk_rows:
+            mid = (float(c_start) + float(c_end)) / 2.0
+            temporal = 1.0 / (1.0 + abs(mid - center) / 60.0)
             combined = (1 - alpha) * float(sim) + alpha * temporal
             ranked.append({
                 "chunk_id": chunk_id,
                 "text": text,
-                "start_time": float(start_time),
-                "end_time": float(end_time),
+                "start_time": float(c_start),
+                "end_time": float(c_end),
                 "relevance_score": round(combined, 6),
                 "video_id": video_id,
                 "type": "chunk",

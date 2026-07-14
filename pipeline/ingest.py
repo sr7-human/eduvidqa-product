@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -67,6 +68,60 @@ def get_cookiefile() -> str | None:
         logger.warning("Failed to write cookie file: %s", exc)
         _COOKIEFILE_PATH = None
     return _COOKIEFILE_PATH
+
+
+_DENO_PATH_ENSURED = False
+
+
+def ensure_yt_js_runtime() -> None:
+    """Make sure a JS runtime (deno) is on PATH for yt-dlp's challenge solver.
+
+    YouTube now requires solving an "n" JavaScript signature challenge before it
+    hands out plain (range-downloadable) video formats. yt-dlp solves it with the
+    bundled ``yt-dlp-ejs`` package, but that needs a supported JS runtime — deno.
+    The official installer drops it at ``~/.deno/bin``; add that to PATH if the
+    process didn't inherit it. No-op if deno is already reachable.
+    """
+    global _DENO_PATH_ENSURED
+    if _DENO_PATH_ENSURED:
+        return
+    _DENO_PATH_ENSURED = True
+    if shutil.which("deno"):
+        return
+    for cand in (Path.home() / ".deno" / "bin", Path("/opt/homebrew/bin"), Path("/usr/local/bin")):
+        if (cand / "deno").exists():
+            os.environ["PATH"] = f"{cand}{os.pathsep}{os.environ.get('PATH', '')}"
+            logger.info("Added %s to PATH for yt-dlp JS runtime (deno)", cand)
+            return
+    logger.warning("deno not found — yt-dlp may fail to solve YouTube JS challenges")
+
+
+def get_cookie_ydl_opts() -> dict:
+    """yt-dlp options that let it get past YouTube's anti-bot defences:
+
+    * Cookies (authenticate) so it stops issuing the 'not a bot' challenge:
+      1. ``YOUTUBE_COOKIES_FROM_BROWSER`` (e.g. ``chrome`` / ``chrome:Default``)
+         — reads a logged-in browser profile live. Best for local dev.
+      2. A cookies.txt from ``YOUTUBE_COOKIES_B64`` / ``YOUTUBE_COOKIES`` — best
+         for servers.
+    * ``remote_components`` (+ deno on PATH) so it can solve the "n" JS signature
+      challenge and expose range-downloadable formats (SABR workaround). The
+      bundled ``yt-dlp-ejs`` package handles this locally; the remote fallback is
+      allowed in case that package is missing.
+    """
+    ensure_yt_js_runtime()
+    opts: dict = {"remote_components": ["ejs:github"]}
+    browser = os.getenv("YOUTUBE_COOKIES_FROM_BROWSER", "").strip()
+    if browser:
+        parts = browser.split(":")
+        name = parts[0].strip()
+        profile = parts[1].strip() if len(parts) > 1 and parts[1].strip() else None
+        opts["cookiesfrombrowser"] = (name, profile, None, None)
+        return opts
+    cf = get_cookiefile()
+    if cf:
+        opts["cookiefile"] = cf
+    return opts
 
 
 def build_transcript_api():
@@ -171,7 +226,7 @@ def _whisper_transcribe(video_id: str) -> list[dict]:
             "outtmpl": outtmpl,
             "no_playlist": True,
             "quiet": True,
-            "cookiefile": get_cookiefile(),
+            **get_cookie_ydl_opts(),
         }
 
         # Attempt 1: Chrome impersonation (bypasses cloud-IP blocks).
@@ -305,11 +360,12 @@ def extract_frames(
             logger.info("Downloading video (360p) for frame extraction …")
             import yt_dlp
             ydl_opts = {
-                "format": "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360]/best",
+                "format": "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
                 "outtmpl": str(video_path),
                 "no_playlist": True,
                 "merge_output_format": "mp4",
                 "quiet": True,
+                **get_cookie_ydl_opts(),
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])

@@ -104,7 +104,8 @@ interface Props {
   statusText?: string;
   timestamp: number;
   autoMode: boolean;
-  onSend: (question: string) => void;
+  onSend: (question: string, imageB64?: string) => void;
+  onStop?: () => void;
   onSeek: (seconds: number) => void;
   onInputFocus: () => void;
 }
@@ -116,11 +117,61 @@ export default function ChatInterface({
   timestamp,
   autoMode,
   onSend,
+  onStop,
   onSeek,
   onInputFocus,
 }: Props) {
   const [input, setInput] = useState('');
+  const [pendingImage, setPendingImage] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Read an image File, downscale to ≤1280px JPEG (keeps payload small), and
+  // stash it as a data URL to send alongside the next question.
+  function readImageFile(file: File | null | undefined) {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const src = reader.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const maxW = 1280;
+        const scale = Math.min(1, maxW / img.width);
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { setPendingImage(src); return; }
+        ctx.drawImage(img, 0, 0, w, h);
+        setPendingImage(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = () => setPendingImage(src);
+      img.src = src;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handlePaste(e: React.ClipboardEvent) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        readImageFile(items[i].getAsFile());
+        e.preventDefault();
+        break;
+      }
+    }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    const file = Array.from(e.dataTransfer?.files ?? []).find((f) => f.type.startsWith('image/'));
+    if (file) readImageFile(file);
+  }
 
   useEffect(() => {
     // Use 'auto' (instant) instead of 'smooth' so token-by-token streaming
@@ -130,9 +181,12 @@ export default function ChatInterface({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
-    onSend(input.trim());
+    // Allow sending even while a previous answer is still streaming — the
+    // parent aborts the in-flight request and starts this one.
+    if (!input.trim()) return;
+    onSend(input.trim(), pendingImage ?? undefined);
     setInput('');
+    setPendingImage(null);
   }
 
   return (
@@ -244,25 +298,78 @@ export default function ChatInterface({
       {/* Input bar */}
       <form
         onSubmit={handleSubmit}
-        className="border-t border-dark-border px-4 py-3 bg-dark-card/80 backdrop-blur-sm"
+        onDragOver={(e) => { e.preventDefault(); if (!dragOver) setDragOver(true); }}
+        onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
+        onDrop={handleDrop}
+        className={`border-t px-4 py-3 bg-dark-card/80 backdrop-blur-sm transition-colors ${dragOver ? 'border-accent ring-2 ring-accent/40' : 'border-dark-border'}`}
       >
+        {dragOver && (
+          <div className="mb-2 text-xs text-accent text-center py-2 border border-dashed border-accent/50 rounded-lg">
+            🖼️ Drop your screenshot here
+          </div>
+        )}
+        {pendingImage && (
+          <div className="mb-2 flex items-center gap-2">
+            <div className="relative">
+              <img src={pendingImage} alt="attached" className="h-16 rounded-lg border border-dark-border object-cover" />
+              <button
+                type="button"
+                onClick={() => setPendingImage(null)}
+                className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-black/80 hover:bg-red-600 text-white text-xs flex items-center justify-center"
+                title="Remove image"
+                aria-label="Remove image"
+              >
+                ✕
+              </button>
+            </div>
+            <span className="text-xs text-gray-500">Screenshot attached — sent with your question</span>
+          </div>
+        )}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => { readImageFile(e.target.files?.[0]); e.target.value = ''; }}
+        />
         <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="px-3 py-2.5 rounded-xl border border-dark-border text-gray-400 hover:text-gray-100 hover:border-accent transition shrink-0"
+            title="Attach a screenshot (or just paste one)"
+            aria-label="Attach a screenshot"
+          >
+            📎
+          </button>
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onFocus={onInputFocus}
+            onPaste={handlePaste}
             placeholder="Ask about the lecture..."
-            disabled={isLoading}
             className="flex-1 bg-dark-bg border border-dark-border rounded-xl px-4 py-2.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition disabled:opacity-50"
           />
-          <button
-            type="submit"
-            disabled={isLoading || !input.trim()}
-            className="bg-accent hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl transition-colors text-sm font-medium shrink-0"
-          >
-            Send
-          </button>
+          {isLoading ? (
+            <button
+              type="button"
+              onClick={onStop}
+              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-xl transition-colors text-sm font-medium shrink-0 flex items-center gap-1.5"
+              title="Stop generating"
+            >
+              <span className="w-2.5 h-2.5 bg-white rounded-[2px]" />
+              Stop
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!input.trim()}
+              className="bg-accent hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl transition-colors text-sm font-medium shrink-0"
+            >
+              Send
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2 mt-1.5 text-xs text-gray-500">
           <span>⏱️ {formatTime(timestamp)}</span>

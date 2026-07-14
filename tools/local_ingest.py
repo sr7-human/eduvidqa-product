@@ -107,7 +107,7 @@ def expand_playlist(url: str) -> list[str]:
     return [e["id"] for e in entries if e.get("id")]
 
 
-def _download_video(video_id: str, log) -> Path:
+def _download_video(video_id: str, log, max_height: int = 720) -> Path:
     vid_dir = DATA_DIR / "videos" / video_id
     vid_dir.mkdir(parents=True, exist_ok=True)
     mp4 = vid_dir / f"{video_id}.mp4"
@@ -116,13 +116,19 @@ def _download_video(video_id: str, log) -> Path:
         return mp4
     import yt_dlp
 
+    from pipeline.ingest import get_cookie_ydl_opts
+    from pipeline.video_quality import format_for_height
+
     ydl_opts = {
-        "format": "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360]/best",
+        "format": format_for_height(max_height),
         "outtmpl": str(mp4),
         "no_playlist": True,
         "merge_output_format": "mp4",
         "quiet": True,
         "extractor_args": {"youtube": {"player_client": ["web", "default", "android", "ios"]}},
+        # Cookies + JS-challenge solver (deno/yt-dlp-ejs) so YouTube's SABR
+        # experiment doesn't hide the downloadable formats.
+        **get_cookie_ydl_opts(),
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
@@ -223,13 +229,21 @@ def _generate_checkpoints_and_quizzes(video_id: str, chunks: list[dict], log,
     log(f"  → {total} quiz questions across {len(cps)} checkpoints")
 
 
-def ingest_one(url_or_id: str, user_id: str | None = None, log=print) -> dict:
+def ingest_one(url_or_id: str, user_id: str | None = None, log=print,
+               video_type: str = "auto") -> dict:
     """Ingest one video end-to-end into production. Returns a result dict.
+
+    ``video_type`` selects a keyframe-resolution preset (see
+    ``pipeline/video_quality.py``): auto=720p, handheld=1080p, slides=480p,
+    animation=360p.
 
     Idempotent: if the video is already indexed it is skipped (only re-links +
     ensures keyframes) — this is what makes playlist **resume** work: just run
     the same playlist again and completed videos are skipped.
     """
+    from pipeline.video_quality import max_height_for
+
+    max_height = max_height_for(video_type)
     try:
         video_id = parse_video_id(url_or_id)
     except Exception:
@@ -247,7 +261,7 @@ def ingest_one(url_or_id: str, user_id: str | None = None, log=print) -> dict:
             result.update(status="ready", title=title, skipped=True)
             return result
 
-        log("1/5 download"); mp4 = _download_video(video_id, log)
+        log(f"1/5 download ({max_height}p)"); mp4 = _download_video(video_id, log, max_height=max_height)
         log("2/5 keyframes")
         kf = extract_keyframes(video_path=str(mp4), video_id=video_id, output_dir=str(PROCESSED_DIR))
         log(f"  → {len(kf)} keyframes")

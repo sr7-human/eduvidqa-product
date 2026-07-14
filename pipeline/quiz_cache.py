@@ -38,10 +38,11 @@ def get_cached_questions(
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, question_text, options, correct_answer, explanation, difficulty, bloom_level
+                SELECT id, question_text, options, correct_answer, explanation, difficulty, bloom_level, option_explanations
                 FROM questions
                 WHERE video_id = %s AND ts_bucket_30s = %s AND prompt_version = %s
                 ORDER BY
+                    order_idx,
                     CASE bloom_level
                         WHEN 'remember'   THEN 1
                         WHEN 'understand' THEN 2
@@ -69,6 +70,7 @@ def get_cached_questions(
             "explanation": r[4],
             "difficulty": r[5],
             "bloom_level": r[6] if len(r) > 6 else "understand",
+            "option_explanations": r[7] if isinstance(r[7], dict) else None,
         }
         for r in rows
     ]
@@ -86,15 +88,15 @@ def cache_questions(
     conn = psycopg2.connect(_db_url())
     try:
         with conn.cursor() as cur:
-            for q in questions:
+            for idx, q in enumerate(questions):
                 cur.execute(
                     """
                     INSERT INTO questions (
                         id, video_id, ts_bucket_30s, prompt_version,
                         question_text, options, correct_answer, explanation,
-                        difficulty, bloom_level
+                        difficulty, bloom_level, option_explanations, order_idx
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (video_id, ts_bucket_30s, prompt_version, question_text)
                     DO NOTHING
                     """,
@@ -109,6 +111,8 @@ def cache_questions(
                         q.get("explanation", ""),
                         q.get("difficulty", "medium"),
                         q.get("bloom_level", "understand"),
+                        json.dumps(q["option_explanations"]) if isinstance(q.get("option_explanations"), dict) else None,
+                        q.get("order_idx", idx),
                     ),
                 )
         conn.commit()
@@ -152,23 +156,20 @@ def get_or_generate(
     chunks: list[dict],
     prompt_version: int = 1,
 ) -> list[dict]:
-    """Cache check -> nearest bucket fallback -> generate only if nothing cached."""
+    """Return this exact checkpoint's cached quiz, or generate a fresh 10-question
+    Bloom set for it. NO nearest-bucket substitution: a checkpoint never shows a
+    different topic's questions."""
     ts_bucket = int(timestamp // 30)
 
-    # 1. Exact bucket match
+    # Exact bucket match
     cached = get_cached_questions(video_id, ts_bucket, prompt_version)
     if cached:
         logger.info("Quiz cache HIT: %s@bucket%s", video_id, ts_bucket)
         return cached
 
-    # 2. Find nearest cached bucket (no LLM call)
-    nearest = _find_nearest_cached(video_id, ts_bucket, prompt_version)
-    if nearest:
-        logger.info("Quiz cache NEAREST HIT: %s@bucket%s → serving %d questions", video_id, ts_bucket, len(nearest))
-        return nearest
-
-    # 3. Nothing cached at all for this video → generate (first time only)
-    logger.info("Quiz cache MISS (no questions for video): %s@bucket%s — generating", video_id, ts_bucket)
+    # No exact cache → generate for THIS exact checkpoint. We deliberately do NOT
+    # fall back to a nearby bucket, which would serve unrelated-topic questions.
+    logger.info("Quiz cache MISS: %s@bucket%s — generating", video_id, ts_bucket)
     from pipeline.quiz_gen import generate_quiz_questions
 
     questions = generate_quiz_questions(video_id, timestamp, chunks)

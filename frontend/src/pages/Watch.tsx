@@ -11,8 +11,10 @@ import {
   getQuiz,
   getQuizSchedule,
   getVideoStatus,
+  getMyVideos,
   whoami,
   adminRegenerateQuiz,
+  saveWatchProgress,
   VideoProcessingError,
 } from '../api/client';
 import type { ChatMessage, Checkpoint, QuizQuestion, QuizScheduleEvent, QuizSchedule, YTPlayer } from '../types';
@@ -37,13 +39,18 @@ export function Watch() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [statusText, setStatusText] = useState<string | undefined>();
-  const [, setPlayerReady] = useState(false);
+  const [playerReady, setPlayerReady] = useState(false);
 
   // Processing state (when /api/ask returns 202)
   const [processingStatus, setProcessingStatus] = useState<string | null>(null);
 
   // Quiz state
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
+  // Question scope: single timestamp (point), a [start, end) interval (range),
+  // or the whole lecture ('all' = search everywhere for relevant parts).
+  const [questionScope, setQuestionScope] = useState<'point' | 'range' | 'all'>('point');
+  const [rangeStart, setRangeStart] = useState<number | null>(null);
+  const [rangeEnd, setRangeEnd] = useState<number | null>(null);
   const [videoDuration, setVideoDuration] = useState(0);
   const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[] | null>(null);
   const [showQuiz, setShowQuiz] = useState(false);  const [playerState, setPlayerState] = useState<'playing' | 'paused' | 'other'>('other');
@@ -56,6 +63,20 @@ export function Watch() {
   const [chapterQuizOpen, setChapterQuizOpen] = useState(false);
   const completedEventsRef = useRef<Set<string>>(new Set());
   const prevTimeRef = useRef<number>(0);
+  // Checkpoints already auto-popped (so we never re-interrupt or flood on seek).
+  const autoCheckpointRef = useRef<Set<number>>(new Set());
+  // Video-time (s) of the last auto quiz, to enforce a cooldown between popups
+  // so a chapter event and a nearby checkpoint never interrupt back-to-back.
+  const lastAutoQuizRef = useRef<number>(-1e9);
+  // Wall-clock (ms) of the last watch-progress save, throttled to ~10s.
+  const lastProgressSaveRef = useRef<number>(0);
+  // Where to resume playback from (seconds). Also used to suppress quizzes the
+  // user has already passed on a previous watch.
+  const [resumeAt, setResumeAt] = useState<number>(0);
+  const resumeAppliedRef = useRef(false);
+  // In-flight answer stream, so the user can Stop it or fire a new query
+  // without waiting for the previous response to finish.
+  const abortRef = useRef<AbortController | null>(null);
 
   // Layout state: chat panel width as a % of total (default 40%, range 20–70%).
   const [chatPct, setChatPct] = useState<number>(() => {
@@ -105,45 +126,134 @@ export function Watch() {
 
   const handleTimeUpdate = useCallback((time: number) => {
     setCurrentTime(time);
+    // Persist watch progress at most once every ~20s (best-effort, non-blocking).
+    const nowMs = Date.now();
+    if (videoId && time > 0 && nowMs - lastProgressSaveRef.current > 20000) {
+      lastProgressSaveRef.current = nowMs;
+      const dur = playerRef.current?.getDuration?.() || undefined;
+      saveWatchProgress(videoId, Math.floor(time), dur).catch(() => {});
+    }
+    const prev = prevTimeRef.current;
+    // Only react to forward crossings within a small delta (avoid seek floods).
+    const forwardCross = time > prev && time - prev < 3;
+    // Cooldown so closing one quiz doesn't immediately trigger another nearby
+    // one (the "quiz pops again right after I close it" bug).
+    const cooled = time - lastAutoQuizRef.current > 60;
 
-    // Detect quiz-schedule crossings
-    if (quizSchedule && quizSchedule.events.length > 0 && !chapterQuizOpen) {
-      const prev = prevTimeRef.current;
-      // Only detect forward crossings within a reasonable delta (avoid seek-triggered floods)
-      if (time > prev && time - prev < 3) {
-        for (const evt of quizSchedule.events) {
-          const key = `${evt.chapter_id}:${evt.type}:${evt.timestamp}`;
-          if (completedEventsRef.current.has(key)) continue;
-          // Check if we just crossed this timestamp
-          if (prev < evt.timestamp && time >= evt.timestamp) {
-            completedEventsRef.current.add(key);
-            setActiveQuizEvent(evt);
-            setChapterQuizOpen(true);
-            // Pause the player
-            if (playerRef.current) {
-              playerRef.current.seekTo(evt.timestamp, true);
-              // YT API: pauseVideo is available on the player object
-              (playerRef.current as unknown as { pauseVideo(): void }).pauseVideo?.();
-            }
-            break; // one quiz at a time
+    // Detect chapter quiz-schedule crossings (pretest / mid / end)
+    if (quizSchedule && quizSchedule.events.length > 0 && !chapterQuizOpen && !showQuiz && forwardCross && cooled) {
+      for (const evt of quizSchedule.events) {
+        const key = `${evt.chapter_id}:${evt.type}:${evt.timestamp}`;
+        if (completedEventsRef.current.has(key)) continue;
+        // Check if we just crossed this timestamp
+        if (prev < evt.timestamp && time >= evt.timestamp) {
+          completedEventsRef.current.add(key);
+          lastAutoQuizRef.current = time;
+          setActiveQuizEvent(evt);
+          setChapterQuizOpen(true);
+          // Pause the player
+          if (playerRef.current) {
+            playerRef.current.seekTo(evt.timestamp, true);
+            // YT API: pauseVideo is available on the player object
+            (playerRef.current as unknown as { pauseVideo(): void }).pauseVideo?.();
           }
+          break; // one quiz at a time
+        }
+      }
+    }
+
+    // Auto-popup the Test-me quiz at each semantic checkpoint. Every processed
+    // video has checkpoints (many have no chapters), so this is what makes a
+    // quiz appear on its own as you watch. Each checkpoint fires at most once;
+    // dismissing/skipping does not re-trigger it.
+    if (checkpoints.length > 0 && !chapterQuizOpen && !showQuiz && forwardCross && cooled) {
+      for (const cp of checkpoints) {
+        const cpTs = Math.floor(cp.timestamp_seconds);
+        if (autoCheckpointRef.current.has(cpTs)) continue;
+        if (prev < cp.timestamp_seconds && time >= cp.timestamp_seconds) {
+          autoCheckpointRef.current.add(cpTs);
+          lastAutoQuizRef.current = time;
+          (playerRef.current as unknown as { pauseVideo(): void })?.pauseVideo?.();
+          getQuiz(videoId, cpTs)
+            .then(({ questions }) => {
+              if (questions && questions.length > 0) {
+                setQuizQuestions(questions);
+                setShowQuiz(true);
+              }
+            })
+            .catch((err) => console.error('Auto checkpoint quiz failed:', err));
+          break; // one quiz at a time
         }
       }
     }
     prevTimeRef.current = time;
-  }, [quizSchedule, chapterQuizOpen]);
+  }, [quizSchedule, chapterQuizOpen, checkpoints, showQuiz, videoId]);
 
   const handlePlayerReady = useCallback(() => {
     setPlayerReady(true);
   }, []);
 
+  // Save the final watch position when leaving the page (prevTimeRef holds the
+  // last known video time from handleTimeUpdate).
+  useEffect(() => {
+    return () => {
+      const t = prevTimeRef.current;
+      if (videoId && t > 0) {
+        const dur = playerRef.current?.getDuration?.() || undefined;
+        saveWatchProgress(videoId, Math.floor(t), dur).catch(() => {});
+      }
+    };
+  }, [videoId]);
+
+  // Fetch this video's last watched position (for resume + quiz suppression).
+  useEffect(() => {
+    resumeAppliedRef.current = false;
+    setResumeAt(0);
+    if (!videoId) return;
+    getMyVideos()
+      .then((vids) => {
+        const me = vids.find((v) => v.video_id === videoId);
+        const pos = typeof me?.last_position === 'number' ? me.last_position : 0;
+        setResumeAt(pos > 5 ? pos : 0);
+      })
+      .catch(() => {});
+  }, [videoId]);
+
+  // Once the player is ready AND we know where to resume, seek there once.
+  useEffect(() => {
+    if (!playerReady || resumeAppliedRef.current || resumeAt <= 5) return;
+    if (playerRef.current) {
+      resumeAppliedRef.current = true;
+      playerRef.current.seekTo(resumeAt, true);
+      setCurrentTime(resumeAt);
+      prevTimeRef.current = resumeAt;
+    }
+  }, [playerReady, resumeAt]);
+
+  // Suppress auto-quizzes (chapter pretest/mid/end + checkpoints) for the part
+  // of the video the user already watched — no re-popping on a rewatch.
+  useEffect(() => {
+    if (resumeAt <= 0) return;
+    if (quizSchedule) {
+      for (const evt of quizSchedule.events) {
+        if (evt.timestamp <= resumeAt) {
+          completedEventsRef.current.add(`${evt.chapter_id}:${evt.type}:${evt.timestamp}`);
+        }
+      }
+    }
+    for (const cp of checkpoints) {
+      if (cp.timestamp_seconds <= resumeAt) {
+        autoCheckpointRef.current.add(Math.floor(cp.timestamp_seconds));
+      }
+    }
+  }, [resumeAt, quizSchedule, checkpoints]);
   // A pretest at the very start (timestamp ≈ 0) can't be caught by the forward-
   // crossing detector (there's nothing to "cross"), and the video is paused at
   // 0:00 so no time updates fire. Trigger it once the schedule is loaded — this
   // is the intended "prime me on what's ahead" moment, before pressing play.
   useEffect(() => {
     if (!quizSchedule || quizSchedule.events.length === 0) return;
-    if (chapterQuizOpen || currentTime > 2) return;
+    if (chapterQuizOpen || showQuiz || currentTime > 2) return;
     const startEvt = quizSchedule.events.find(
       (e) => e.type === 'pretest' && e.timestamp <= 1,
     );
@@ -151,10 +261,11 @@ export function Watch() {
     const key = `${startEvt.chapter_id}:${startEvt.type}:${startEvt.timestamp}`;
     if (completedEventsRef.current.has(key)) return;
     completedEventsRef.current.add(key);
+    lastAutoQuizRef.current = currentTime;
     setActiveQuizEvent(startEvt);
     setChapterQuizOpen(true);
     (playerRef.current as unknown as { pauseVideo(): void })?.pauseVideo?.();
-  }, [quizSchedule, currentTime, chapterQuizOpen]);
+  }, [quizSchedule, currentTime, chapterQuizOpen, showQuiz]);
 
   const handlePlayerRef = useCallback((player: YTPlayer) => {
     playerRef.current = player;
@@ -354,8 +465,31 @@ export function Watch() {
     return () => clearInterval(interval);
   }, [processingStatus, videoId]);
 
-  async function handleSend(question: string) {
+  function fmtClock(s: number): string {
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  }
+  // Set a range boundary (from a slider or the "now" button), keeping start <= end.
+  function setRangeFrom(which: 'start' | 'end', seconds: number) {
+    const s = Math.max(0, Math.floor(seconds));
+    if (which === 'start') {
+      setRangeStart(s);
+      setRangeEnd((e) => (e !== null && e < s ? s : e));
+    } else {
+      setRangeEnd(s);
+      setRangeStart((st) => (st !== null && st > s ? s : st));
+    }
+  }
+
+  async function handleSend(question: string, imageB64?: string) {
     const ts = effectiveTimestamp;
+    if (questionScope === 'range') {
+      if (rangeStart === null || rangeEnd === null) { toast.error('Set both the start and end of the range first.'); return; }
+      if (rangeEnd <= rangeStart) { toast.error('Range end must be after the start.'); return; }
+      if (rangeEnd - rangeStart > 1800) { toast.error('Range must be 30 minutes or less.'); return; }
+    }
+    const useRange = questionScope === 'range' && rangeStart !== null && rangeEnd !== null;
     const userMsg: ChatMessage = {
       role: 'user',
       content: question,
@@ -370,6 +504,11 @@ export function Watch() {
     ]);
     setIsLoading(true);
     setStatusText(undefined);
+
+    // Cancel any answer already streaming so a new query starts immediately.
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     let firstTokenSeen = false;
     const updateAssistant = (
@@ -393,6 +532,12 @@ export function Watch() {
           question,
           timestamp: Math.floor(ts),
           skip_quality_eval: true,
+          ...(imageB64 ? { image_b64: imageB64 } : {}),
+          ...(questionScope === 'all'
+            ? { scope: 'all' as const }
+            : useRange
+            ? { scope: 'range' as const, start_timestamp: Math.floor(rangeStart!), end_timestamp: Math.floor(rangeEnd!) }
+            : {}),
         },
         {
           onSources: (sources) => {
@@ -434,9 +579,16 @@ export function Watch() {
             }));
           },
         },
+        controller.signal,
       );
     } catch (err) {
-      if (err instanceof VideoProcessingError) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        // User pressed Stop (or fired a new query) — keep any partial text.
+        updateAssistant((m) => ({
+          ...m,
+          content: m.content ? `${m.content}\n\n_⏹️ stopped_` : '_⏹️ stopped_',
+        }));
+      } else if (err instanceof VideoProcessingError) {
         setProcessingStatus('processing');
         toast(
           'Video is being processed in the background. Please retry in a minute.',
@@ -454,9 +606,23 @@ export function Watch() {
         }));
       }
     } finally {
-      setIsLoading(false);
-      setAutoMode(true);
+      // Only the CURRENT stream should clear the loading state — a stale abort
+      // from a superseded query must not wipe the new query's spinner.
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setIsLoading(false);
+        setAutoMode(true);
+      }
     }
+  }
+
+  // Stop the in-flight answer without sending a new one.
+  function handleStop() {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    setIsLoading(false);
   }
 
   return (
@@ -562,6 +728,65 @@ export function Watch() {
           className="w-full flex flex-col min-h-0 h-[50vh] md:h-auto"
           style={{ flexBasis: `${chatPct}%`, flexShrink: 0, flexGrow: 0 }}
         >
+          {/* Point / Range scope for questions */}
+          <div className="px-3 pt-2 flex flex-wrap items-center gap-2 text-xs">
+            <div className="inline-flex rounded-md border border-dark-border overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setQuestionScope('point')}
+                className={`px-2.5 py-1 ${questionScope === 'point' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}
+              >Point</button>
+              <button
+                type="button"
+                onClick={() => setQuestionScope('range')}
+                className={`px-2.5 py-1 ${questionScope === 'range' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}
+              >Range</button>
+              <button
+                type="button"
+                onClick={() => setQuestionScope('all')}
+                className={`px-2.5 py-1 ${questionScope === 'all' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}
+                title="Search the entire lecture for parts relevant to your question"
+              >Whole</button>
+            </div>
+            {questionScope === 'all' && (
+              <span className="text-[11px] text-gray-500">Searches the whole lecture for wherever your topic is covered.</span>
+            )}
+            {questionScope === 'range' && (() => {
+              const dur = Math.max(1, Math.floor(videoDuration || 0));
+              const startVal = rangeStart ?? 0;
+              const endVal = rangeEnd ?? dur;
+              return (
+                <div className="flex flex-col gap-1.5 w-full sm:flex-1 min-w-[220px]">
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-500 w-9">Start</span>
+                    <input
+                      type="range" aria-label="Range start"
+                      min={0} max={dur} value={startVal}
+                      onChange={(e) => setRangeFrom('start', Number(e.target.value))}
+                      className="flex-1 accent-emerald-500 cursor-pointer"
+                    />
+                    <span className="font-mono text-gray-300 w-12 text-right">{rangeStart !== null ? fmtClock(rangeStart) : '--:--'}</span>
+                    <button type="button" onClick={() => setRangeFrom('start', effectiveTimestamp)} className="text-blue-400 hover:text-blue-300" title="Use current time">now</button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-500 w-9">End</span>
+                    <input
+                      type="range" aria-label="Range end"
+                      min={0} max={dur} value={endVal}
+                      onChange={(e) => setRangeFrom('end', Number(e.target.value))}
+                      className="flex-1 accent-emerald-500 cursor-pointer"
+                    />
+                    <span className="font-mono text-gray-300 w-12 text-right">{rangeEnd !== null ? fmtClock(rangeEnd) : '--:--'}</span>
+                    <button type="button" onClick={() => setRangeFrom('end', effectiveTimestamp)} className="text-blue-400 hover:text-blue-300" title="Use current time">now</button>
+                  </div>
+                  <div className="flex items-center gap-3 text-[11px] text-gray-500">
+                    <span>Drag the handles, or tap “now” to set from the current moment.</span>
+                    <button type="button" onClick={() => { setRangeStart(null); setRangeEnd(null); }} className="text-gray-400 hover:text-gray-200">clear</button>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
           <ChatInterface
             messages={messages}
             isLoading={isLoading}
@@ -569,6 +794,7 @@ export function Watch() {
             timestamp={effectiveTimestamp}
             autoMode={autoMode}
             onSend={handleSend}
+            onStop={handleStop}
             onSeek={handleSeek}
             onInputFocus={handleInputFocus}
           />

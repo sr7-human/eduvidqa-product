@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import {
   getChapterQuiz,
   submitAttempt,
@@ -10,6 +14,20 @@ import type {
   QuizQuestion,
   QuizType,
 } from '../types';
+
+// Inline markdown + LaTeX renderer (KaTeX CSS is loaded globally in main.tsx).
+// `p -> fragment` keeps it inline so it drops cleanly into buttons/spans.
+function Md({ children }: { children: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
+      components={{ p: ({ children }) => <>{children}</> }}
+    >
+      {children}
+    </ReactMarkdown>
+  );
+}
 
 const TYPE_THEME: Record<QuizType | 'checkpoint', {
   emoji: string;
@@ -94,6 +112,9 @@ export function ChapterQuizModal({
   const [submitting, setSubmitting] = useState(false);
   const [showWrong, setShowWrong] = useState(false);  // accordion for "why are these wrong"
   const [score, setScore] = useState({ correct: 0, total: 0 });
+  // Per-question submitted state, so Previous/Next can revisit answered
+  // questions read-only without resubmitting or changing the score.
+  const [answers, setAnswers] = useState<Record<number, AttemptState>>({});
 
   useEffect(() => {
     if (preloadedQuestions) {
@@ -126,7 +147,9 @@ export function ChapterQuizModal({
     setSubmitting(true);
     try {
       const result = await submitAttempt(q.id, selected);
-      setAttempt({ result, selected });
+      const state: AttemptState = { result, selected };
+      setAttempt(state);
+      setAnswers((a) => ({ ...a, [idx]: state }));
       setScore((s) => ({
         correct: s.correct + (result.is_correct ? 1 : 0),
         total: s.total + 1,
@@ -138,16 +161,26 @@ export function ChapterQuizModal({
     }
   }
 
+  function goTo(newIdx: number) {
+    if (newIdx < 0 || newIdx >= total) return;
+    const saved = answers[newIdx] ?? null;
+    setIdx(newIdx);
+    setSelected(saved ? saved.selected : null);
+    setAttempt(saved);
+    setShowWrong(false);
+  }
+
   function handleNext() {
     if (idx + 1 < total) {
-      setIdx(idx + 1);
-      setSelected(null);
-      setAttempt(null);
-      setShowWrong(false);
+      goTo(idx + 1);
     } else {
       // Last question — done
       onClose();
     }
+  }
+
+  function handlePrev() {
+    if (idx > 0) goTo(idx - 1);
   }
 
   // Loading state
@@ -224,7 +257,7 @@ export function ChapterQuizModal({
 
         {/* Question */}
         <div className="mb-4">
-          <p className="text-gray-100 text-[15px] leading-relaxed">{q.question_text}</p>
+          <p className="text-gray-100 text-[15px] leading-relaxed"><Md>{q.question_text}</Md></p>
         </div>
 
         {/* Options */}
@@ -254,7 +287,7 @@ export function ChapterQuizModal({
                 disabled={isAnswered}
                 className={`${base} ${cls}`}
               >
-                {opt}
+                <Md>{opt}</Md>
                 {isAnswered && isCorrectOpt && <span className="ml-2">✅</span>}
                 {isPickedWrong && <span className="ml-2">❌</span>}
               </button>
@@ -273,14 +306,14 @@ export function ChapterQuizModal({
             {optExpl && optExpl[correct as 'A'|'B'|'C'|'D'] && (
               <div className="flex gap-2">
                 <span className="text-emerald-400 shrink-0">✅ {correct}:</span>
-                <span className="text-emerald-50">{optExpl[correct as 'A'|'B'|'C'|'D']}</span>
+                <span className="text-emerald-50"><Md>{optExpl[correct as 'A'|'B'|'C'|'D'] ?? ''}</Md></span>
               </div>
             )}
             {/* Picked-wrong explanation */}
             {!attempt!.result.is_correct && optExpl && optExpl[attempt!.selected as 'A'|'B'|'C'|'D'] && (
               <div className="flex gap-2">
                 <span className="text-red-400 shrink-0">❌ {attempt!.selected}:</span>
-                <span className="text-red-100">{optExpl[attempt!.selected as 'A'|'B'|'C'|'D']}</span>
+                <span className="text-red-100"><Md>{optExpl[attempt!.selected as 'A'|'B'|'C'|'D'] ?? ''}</Md></span>
               </div>
             )}
             {/* Other distractors collapsed */}
@@ -302,7 +335,7 @@ export function ChapterQuizModal({
                       {others.map((l) => (
                         <div key={l} className="flex gap-2 text-xs">
                           <span className="text-gray-500 shrink-0">{l}:</span>
-                          <span className="text-gray-300">{optExpl[l]}</span>
+                          <span className="text-gray-300"><Md>{optExpl[l] ?? ''}</Md></span>
                         </div>
                       ))}
                     </div>
@@ -312,21 +345,30 @@ export function ChapterQuizModal({
             })()}
             {/* Fallback to legacy single-explanation if option_explanations is missing */}
             {!optExpl && attempt!.result.explanation && (
-              <p className="text-gray-200">{attempt!.result.explanation}</p>
+              <p className="text-gray-200"><Md>{attempt!.result.explanation}</Md></p>
             )}
           </motion.div>
         )}
 
         {/* Footer */}
-        <div className="flex justify-between items-center mt-2">
-          {!blocking && !isAnswered ? (
+        <div className="flex justify-between items-center mt-2 gap-2">
+          <div className="flex items-center gap-3">
             <button
-              onClick={onClose}
-              className="text-xs text-gray-500 hover:text-gray-300"
+              onClick={handlePrev}
+              disabled={idx === 0}
+              className="px-3 py-2 text-xs text-gray-400 hover:text-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              Skip for now
+              ← Previous
             </button>
-          ) : <span />}
+            {!blocking && !isAnswered && (
+              <button
+                onClick={onClose}
+                className="text-xs text-gray-500 hover:text-gray-300"
+              >
+                Skip for now
+              </button>
+            )}
+          </div>
           {!isAnswered ? (
             <button
               onClick={handleSubmit}

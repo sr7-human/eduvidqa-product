@@ -8,10 +8,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg git curl unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 20 — used by yt-dlp as JS runtime for YouTube extraction
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/*
+# Install deno — the JS runtime yt-dlp uses (with yt-dlp-ejs) to solve
+# YouTube's "n" signature challenge. Node is NOT supported by yt-dlp's EJS
+# challenge solver, so deno is required for video/frame downloads to work.
+RUN curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh -s -- -y \
+    && deno --version
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --default-timeout=300 -r requirements.txt

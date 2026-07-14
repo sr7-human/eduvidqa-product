@@ -47,7 +47,9 @@ export function Settings({ embedded = false, onClose }: { embedded?: boolean; on
   const [llmPrefSaving, setLlmPrefSaving] = useState(false);
   const [models, setModels] = useState<{ gemini: ModelOption[]; openrouter: ModelOption[] } | null>(null);
   const [modelPrefs, setModelPrefsState] = useState<ModelPrefs>({});
-  const [modelsLoading, setModelsLoading] = useState(true);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [orGuideOpen, setOrGuideOpen] = useState(false);
   const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [testing, setTesting] = useState<Record<string, boolean>>({});
   const [testResult, setTestResult] = useState<Record<string, { ok: boolean; detail: string }>>({});
@@ -67,12 +69,22 @@ export function Settings({ embedded = false, onClose }: { embedded?: boolean; on
       .then((r) => setLlmPrefState(r.llm_pref))
       .catch(() => {})
       .finally(() => setLlmPrefLoading(false));
-    Promise.all([getAvailableModels(), getModelPrefs()])
-      .then(([m, p]) => { setModels(m); setModelPrefsState(p.model_prefs || {}); })
-      .catch(() => {})
-      .finally(() => setModelsLoading(false));
+    // Model PREFS are a cheap DB read (load now); the live model CATALOGS are
+    // the slow live provider calls, so we defer them until Advanced is opened.
+    getModelPrefs()
+      .then((p) => setModelPrefsState(p.model_prefs || {}))
+      .catch(() => {});
     getUsage().then(setUsage).catch(() => {});
   }, []);
+
+  function loadModelsOnce() {
+    if (models || modelsLoading) return;
+    setModelsLoading(true);
+    getAvailableModels()
+      .then((m) => setModels(m))
+      .catch(() => {})
+      .finally(() => setModelsLoading(false));
+  }
 
   async function handleTestKey(service: 'gemini' | 'groq' | 'openrouter') {
     setTesting((t) => ({ ...t, [service]: true }));
@@ -235,6 +247,26 @@ export function Settings({ embedded = false, onClose }: { embedded?: boolean; on
                     Get a free {svc.label} key →
                   </a>
 
+                  {svc.id === 'openrouter' && (
+                    <div className="mb-3">
+                      <button
+                        onClick={() => setOrGuideOpen((v) => !v)}
+                        className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        {orGuideOpen ? 'Hide guide' : 'How to get an OpenRouter key →'}
+                      </button>
+                      {orGuideOpen && (
+                        <ol className="mt-2 list-decimal list-inside text-xs text-gray-600 dark:text-gray-400 space-y-1 bg-gray-50 dark:bg-gray-900 rounded p-3">
+                          <li>Sign up at <a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">openrouter.ai</a> (Google/GitHub login works).</li>
+                          <li>Add credits under <strong>Settings → Credits</strong> — even $5 is plenty, and some models are free.</li>
+                          <li>Open <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">openrouter.ai/keys</a> → <strong>Create Key</strong>.</li>
+                          <li>Copy the key (starts with <code className="font-mono">sk-or-</code>) and paste it below.</li>
+                          <li className="text-amber-700 dark:text-amber-400">A valid key with <strong>zero credits</strong> still returns <code className="font-mono">HTTP 402</code> — add credits first.</li>
+                        </ol>
+                      )}
+                    </div>
+                  )}
+
                   {existing && (
                     <div className="bg-gray-50 dark:bg-gray-900 rounded p-2 mb-3 text-sm">
                       <div className="flex items-center justify-between">
@@ -367,6 +399,7 @@ export function Settings({ embedded = false, onClose }: { embedded?: boolean; on
                 { value: 'auto' as LlmPref, label: 'Auto (recommended)', desc: 'Tries Groq first (faster), falls back to Gemini if unavailable.' },
                 { value: 'groq' as LlmPref, label: 'Groq only', desc: 'Llama 4 Scout via Groq — fast (2-5s), high free quota. May fail if key is missing/expired.' },
                 { value: 'gemini' as LlmPref, label: 'Gemini only', desc: 'Gemini 2.5 Flash — reliable but slower (10-20s). Lower free quota.' },
+                { value: 'openrouter' as LlmPref, label: 'OpenRouter', desc: 'Free DeepSeek / Llama models via OpenRouter. Needs an OpenRouter key above. Falls back to Gemini if unavailable.' },
               ]).map((opt) => (
                 <label
                   key={opt.value}
@@ -406,13 +439,18 @@ export function Settings({ embedded = false, onClose }: { embedded?: boolean; on
           )}
         </div>
 
-        {/* Per-feature model picker */}
+        {/* Per-feature model picker (lazy-loaded on expand → keeps Settings fast) */}
         <div className="mt-8">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Advanced: model per feature</h2>
+          <button
+            onClick={() => { const next = !advancedOpen; setAdvancedOpen(next); if (next) loadModelsOnce(); }}
+            className="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white mb-1"
+          >
+            <span className="text-sm">{advancedOpen ? '▾' : '▸'}</span> Advanced: model per feature
+          </button>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
             Pick the exact model for each feature. The list auto-updates with the latest models your key can use. "Auto" uses the recommended default with automatic fallback.
           </p>
-          {modelsLoading ? (
+          {!advancedOpen ? null : modelsLoading ? (
             <p className="text-gray-500 dark:text-gray-400 text-sm py-4">Loading models…</p>
           ) : (
             <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 space-y-4">

@@ -32,32 +32,45 @@ class _StreamMidwayError(Exception):
 
 _SYSTEM_PROMPT = """\
 You are an expert AI teaching assistant. A student is watching a lecture \
-video and has paused at {timestamp_fmt} to ask a question. Answer clearly \
-and pedagogically, using the provided context.
+video and has paused at {timestamp_fmt} to ask a question. Answer clearly, \
+concisely, and pedagogically, using ONLY the provided context.
 
-Guiding principle:
-- Better learning preserves the DEEP STRUCTURAL LOGIC of an idea while \
-abstracting away the non-essential clutter, so as to remove the initial \
-cognitive load. Lead with the core mental model; strip away detail that does \
-not serve understanding.
+FORMAT EVERY ANSWER (default = short, skimmable bullet points — never long paragraphs):
+- Begin with a difficulty tag in square brackets — [Beginner], [Intermediate], \
+or [Advanced] — followed by a 1-2 line TL;DR of the answer.
+- Then give the direct answer as a few tight bullets in plain, layman's language.
+- Prefer ONE concrete real-life analogy (Indian/everyday context only when it \
+fits naturally — never force it).
+- On the first use of any jargon/technical term, add a short meaning plus its \
+ETYMOLOGICAL root (e.g. Greek/Latin origin) so the name itself becomes a memory \
+hook. If the origin is uncertain, say so — never invent it.
 
-Rules:
-1. CLARITY is your top priority — explain every technical term simply.
-2. Reference what's shown on screen when relevant.
-3. Use examples, step-by-step breakdowns, and REAL-LIFE ANALOGIES that a \
-complete layman could picture (everyday, concrete, sensory).
-4. For any jargon or technical word, give a short ETYMOLOGICAL BREAKDOWN — \
-its roots/origin (e.g. Greek/Latin parts) — so the name itself becomes a \
-memory hook for the meaning.
-5. Only state facts supported by the lecture content provided.
-6. If the question isn't related to the video, politely say so.
+DEPTH ON DEMAND (stay SHORT by default):
+- Do NOT dump everything every time. Add a deeper section ONLY when it genuinely \
+helps this question, or when the student asks for more (e.g. "explain in detail", \
+"go deep", "deep dive"). When warranted, add clearly-labelled bullet sections in \
+this order:
+  - Technical depth with 2-3 varied examples (different contexts / edge cases / applications).
+  - 2-3 common misconceptions.
+  - One mnemonic, acronym, or 1-line story to retain the core idea.
+  - Exam angle: how it's typically tested (MCQ traps, conceptual vs numerical, \
+common patterns) — only if exam-relevant.
+  - Research frontier: where it stands, open debates, key terms/papers — only \
+for academic/technical topics.
+  - 3-5 Bloom's-taxonomy questions (Remember, Understand, Apply, Analyse, \
+Evaluate). Put ALL their answers together at the very END as short keywords only.
+  - 3-5 quick revision Q&A pairs.
+  - 1-2 related follow-up topics worth asking next.
 
-Length:
-- Default to SHORT, focused answers (2–5 sentences, or a tiny bullet list). \
-Resist the urge to over-explain.
-- Only give a long, detailed walkthrough if the student EXPLICITLY asks for \
-it (e.g. "explain in detail", "step by step", "go deep", "long form", \
-"derivation").
+GROUNDING & SCOPE:
+- State only facts supported by the provided lecture context; reference what's \
+shown on screen when relevant.
+- If the question isn't related to the video, politely say so.
+- Refer to a keyframe image only when it actually clarifies the point.
+- Each attached on-screen frame is labelled with its exact timestamp. When asked \
+WHEN or "at which moment" something VISUAL happens (drawing a curve, writing on \
+the board, a specific slide), answer with those frame timestamp(s); if none match \
+well, say so honestly rather than guessing.
 
 Math formatting:
 - For inline math, wrap with single dollar signs: $x^2 + y^2$
@@ -401,6 +414,7 @@ def _build_context(
     timestamp: float,
     retrieval_result: dict,
     live_frame_path: str | None,
+    point_mode: bool = False,
 ) -> tuple[str, list[str], list[dict]]:
     """Shared context assembly used by both blocking and streaming paths.
 
@@ -431,18 +445,37 @@ def _build_context(
     context_text = "\n".join(context_lines)
 
     images_b64: list[str] = []
+    frame_notes: list[str] = []  # tells the model WHEN each attached frame occurs
     if live_frame_path:
         b64 = _read_image_b64(live_frame_path)
         if b64:
             images_b64.append(b64)
+            frame_notes.append(f"Frame {len(images_b64)}: at {_fmt_timestamp(timestamp)} (the current moment)")
+    kf_sources: list[dict] = []
     for kf in relevant_keyframes:
         if len(images_b64) >= 4:
             break
+        kf_ts = float(kf.get("timestamp", 0) or 0)
+        # Point mode = "what's happening at THIS moment". Don't attach frames
+        # from far away in the video — they make the model read OTHER boards and
+        # mix in unrelated formulas. Keep only frames near the current moment.
+        if point_mode and abs(kf_ts - timestamp) > 120:
+            continue
         kf_file = kf.get("file", "")
-        if kf_file:
-            b64 = _read_image_b64(kf_file)
-            if b64:
-                images_b64.append(b64)
+        if not kf_file:
+            continue
+        b64 = _read_image_b64(kf_file)
+        if not b64:
+            continue
+        images_b64.append(b64)
+        kf_sim = float(kf.get("similarity", 0) or 0)
+        frame_notes.append(f"Frame {len(images_b64)}: on-screen at {_fmt_timestamp(kf_ts)} (visual match {kf_sim:.0%})")
+        kf_sources.append({"start_time": kf_ts, "end_time": kf_ts, "relevance_score": kf_sim})
+
+    # Tell the model exactly WHEN each attached frame occurs so it can answer
+    # "at which moment …" questions with real, clickable timestamps.
+    if frame_notes:
+        context_text += "\n[On-screen frames attached to this message]\n" + "\n".join(frame_notes) + "\n"
 
     sources = [
         {
@@ -451,7 +484,7 @@ def _build_context(
             "relevance_score": ch.get("similarity", 0),
         }
         for ch in ranked_chunks[:10]
-    ]
+    ] + kf_sources
     return context_text, images_b64, sources
 
 
@@ -463,6 +496,8 @@ def generate_answer_stream(
     live_frame_path: str | None,
     groq_api_key: str | None = None,
     gemini_api_key: str | None = None,
+    prefer: str = "auto",
+    point_mode: bool = False,
 ) -> Iterator[dict]:
     """Streaming counterpart of :func:`generate_answer`.
 
@@ -477,53 +512,60 @@ def generate_answer_stream(
     gemini_key = gemini_api_key if gemini_api_key is not None else os.getenv("GEMINI_API_KEY", "")
 
     context_text, images_b64, _sources = _build_context(
-        question, timestamp, retrieval_result, live_frame_path,
+        question, timestamp, retrieval_result, live_frame_path, point_mode=point_mode,
     )
     system_prompt = _SYSTEM_PROMPT.format(timestamp_fmt=_fmt_timestamp(timestamp))
 
     _last_error: Exception | None = None
 
     or_key = os.getenv("OPENROUTER_API_KEY", "")
-    or_pref = openrouter_override("answers")
+    or_pref = openrouter_override("answers")  # WHICH OpenRouter model (Advanced)
 
-    # User explicitly chose an OpenRouter model → stream it first.
-    if or_pref and or_key:
+    def _try_groq() -> Iterator[dict]:
+        yield from _stream_groq(system_prompt, context_text, question, images_b64, groq_key)
+
+    def _try_gemini() -> Iterator[dict]:
+        yield from _stream_gemini(
+            system_prompt, context_text, question, images_b64, gemini_key,
+            model=gemini_model("answers"),
+        )
+
+    def _try_openrouter() -> Iterator[dict]:
+        yield from _stream_openrouter(
+            system_prompt, context_text, question, images_b64, or_key, model=or_pref or None,
+        )
+
+    # The top-level "Answer model" choice decides the PROVIDER (and its order);
+    # the Advanced per-feature dropdown decides WHICH model within a provider.
+    # This keeps the two settings consistent instead of the override silently
+    # winning over the radio.
+    if prefer == "groq":
+        plan = [("groq", bool(groq_key), _try_groq)]
+    elif prefer == "gemini":
+        plan = [("gemini", bool(gemini_key), _try_gemini)]
+    elif prefer == "openrouter":
+        plan = [("openrouter", bool(or_key), _try_openrouter),
+                ("gemini", bool(gemini_key), _try_gemini)]
+    else:  # auto: honor an OpenRouter model override first, then fast Groq, then Gemini
+        plan = [("openrouter", bool(or_pref and or_key), _try_openrouter),
+                ("groq", bool(groq_key), _try_groq),
+                ("gemini", bool(gemini_key), _try_gemini),
+                ("openrouter", bool(or_key), _try_openrouter)]
+
+    for name, available, fn in plan:
+        if not available:
+            continue
         try:
-            yield from _stream_openrouter(
-                system_prompt, context_text, question, images_b64, or_key, model=or_pref,
-            )
+            yield from fn()
             return
         except _StreamMidwayError:
             raise
         except Exception as exc:
-            logger.warning("OpenRouter stream (user pref) failed before tokens, falling back: %s", exc)
+            logger.warning("%s stream failed before tokens, trying next: %s", name, exc)
             _last_error = exc
 
-    if gemini_key:
-        try:
-            yield from _stream_gemini(
-                system_prompt, context_text, question, images_b64, gemini_key,
-                model=gemini_model("answers"),
-            )
-            return
-        except _StreamMidwayError:
-            raise
-        except Exception as exc:
-            logger.warning("Gemini stream failed before any tokens, falling back to OpenRouter: %s", exc)
-            _last_error = exc
-
-    if or_key:
-        try:
-            yield from _stream_openrouter(system_prompt, context_text, question, images_b64, or_key)
-            return
-        except _StreamMidwayError:
-            raise
-        except Exception as exc:
-            logger.error("OpenRouter stream also failed: %s", exc)
-            _last_error = exc
-
-    if not groq_key and not gemini_key:
-        raise RuntimeError("No LLM API key available (need GROQ_API_KEY or GEMINI_API_KEY)")
+    if not (groq_key or gemini_key or or_key):
+        raise RuntimeError("No LLM API key available (add a Groq, Gemini or OpenRouter key in Settings)")
     raise RuntimeError(f"All LLM streaming backends failed. Last error: {_last_error}")
 
 
@@ -624,11 +666,16 @@ def _stream_openrouter(
         t0 = time.perf_counter()
         yielded_any = False
         try:
-            resp = urllib.request.urlopen(req, timeout=90)
+            resp = urllib.request.urlopen(req, timeout=30)
         except urllib.error.HTTPError as exc:
             last_exc = exc
-            if exc.code in (429, 402, 503):
-                continue  # rate-limited / no credit → try next free model
+            if exc.code == 402:
+                # No OpenRouter credits — every other model will 402 the same
+                # way. Stop immediately so we fall back (e.g. to Gemini) in
+                # seconds instead of burning minutes retrying each free model.
+                break
+            if exc.code in (429, 503):
+                continue  # rate-limited / model down → try next free model
             raise
         try:
             for raw in resp:
