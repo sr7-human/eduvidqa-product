@@ -442,6 +442,20 @@ export function Watch() {
       .catch(() => setIsAdmin(false));
   }, []);
 
+  // Timeline markers: use real (legacy) checkpoints if the video has them,
+  // otherwise derive markers from CHAPTER starts (pretest events). Semantic
+  // checkpoints are no longer created — chapters are the single quiz structure —
+  // so this keeps the timeline populated for new videos.
+  const timelineMarkers: Checkpoint[] = checkpoints.length > 0
+    ? checkpoints
+    : (quizSchedule?.events ?? [])
+        .filter((e) => e.type === 'pretest')
+        .map((e) => ({
+          id: e.chapter_id || `ch-${Math.floor(e.timestamp)}`,
+          timestamp_seconds: e.timestamp,
+          topic_label: e.chapter_title || 'Chapter',
+        }));
+
   // Poll video status while still ingesting (processing OR transcript_ready)
   useEffect(() => {
     if (!processingStatus || processingStatus === 'ready' || processingStatus === 'failed') return;
@@ -662,7 +676,7 @@ export function Watch() {
             />
 
             <CheckpointMarkers
-              checkpoints={checkpoints}
+              checkpoints={timelineMarkers}
               videoDuration={videoDuration}
               onCheckpointClick={handleCheckpointClick}
             />

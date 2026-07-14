@@ -1045,29 +1045,38 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
             manage_status=False,
         )
 
-        # Step 6: Place checkpoints (non-fatal)
+        # Step 6: Semantic checkpoints — CONSOLIDATED INTO CHAPTERS (off by default).
+        # The old "semantic" checkpoints weren't actually semantic in production
+        # (place_checkpoints was called without embeddings → fell back to a
+        # text-length heuristic) and duplicated the chapter pretest/mid/end flow,
+        # which now covers every video (YouTube chapters or the progressive
+        # formula). So we no longer place them. Re-enable with
+        # INGEST_SEMANTIC_CHECKPOINTS=1 if ever needed.
         checkpoints: list[dict] = []
-        _set_progress(video_id, "checkpoints", 80, "Placing quiz checkpoints…")
-        try:
-            from pipeline.checkpoints import place_checkpoints
+        if os.getenv("INGEST_SEMANTIC_CHECKPOINTS", "0") == "1":
+            _set_progress(video_id, "checkpoints", 80, "Placing quiz checkpoints…")
+            try:
+                from pipeline.checkpoints import place_checkpoints
 
-            video_duration = chunks[-1].get("end_time", 0) if chunks else 0
-            checkpoints = place_checkpoints(chunks, video_duration)
+                video_duration = chunks[-1].get("end_time", 0) if chunks else 0
+                checkpoints = place_checkpoints(chunks, video_duration)
 
-            with psycopg2.connect(_get_db_url()) as cp_conn:
-                with cp_conn.cursor() as cp_cur:
-                    for cp in checkpoints:
-                        cp_cur.execute(
-                            """
-                            INSERT INTO checkpoints (id, video_id, timestamp_seconds, topic_label)
-                            VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING
-                            """,
-                            (str(uuid.uuid4()), video_id, cp["timestamp_seconds"], cp["topic_label"]),
-                        )
-                cp_conn.commit()
-            logger.info("Placed %d checkpoints for %s", len(checkpoints), video_id)
-        except Exception as exc:
-            logger.warning("Checkpoint placement failed (non-fatal): %s", exc)
+                with psycopg2.connect(_get_db_url()) as cp_conn:
+                    with cp_conn.cursor() as cp_cur:
+                        for cp in checkpoints:
+                            cp_cur.execute(
+                                """
+                                INSERT INTO checkpoints (id, video_id, timestamp_seconds, topic_label)
+                                VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING
+                                """,
+                                (str(uuid.uuid4()), video_id, cp["timestamp_seconds"], cp["topic_label"]),
+                            )
+                    cp_conn.commit()
+                logger.info("Placed %d checkpoints for %s", len(checkpoints), video_id)
+            except Exception as exc:
+                logger.warning("Checkpoint placement failed (non-fatal): %s", exc)
+        else:
+            logger.info("Semantic checkpoints skipped for %s (consolidated into chapters)", video_id)
 
         # Step 7: (optional) pre-generate checkpoint quizzes. OFF by default —
         # "Test me" generates them on-demand, so ingest never burns LLM quota
