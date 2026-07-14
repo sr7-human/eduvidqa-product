@@ -694,8 +694,16 @@ export function Watch() {
           ← Back to Library
         </Link>
         {processingStatus === 'processing' && (
-          <span className="ml-4 text-yellow-700">
-            ⏳ Preparing transcript…
+          <span className="ml-4 inline-flex gap-2 items-center">
+            <span className="text-yellow-700">⏳ Preparing…</span>
+            <button
+              onClick={() => handleStartIngest('all')}
+              disabled={ingesting}
+              className="px-2.5 py-0.5 rounded-full border border-yellow-500 text-yellow-700 hover:bg-yellow-50 disabled:opacity-50 text-xs"
+              title="If it seems stuck (e.g. after a server restart), restart processing from where it left off"
+            >
+              Stuck? Resume
+            </button>
           </span>
         )}
         {processingStatus === 'stub' && (
