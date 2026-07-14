@@ -1192,10 +1192,18 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
                 ]
                 # Prefer the creator's real YouTube chapters when the video has
                 # them (semantically authored); fall back to the time formula.
+                # Hard-bounded (25s) so a slow/blocked yt-dlp probe can never
+                # freeze the ingest at "Organising chapters".
+                yt_chapters: list[dict] = []
                 try:
+                    import concurrent.futures
+
                     from pipeline.ingest import get_youtube_chapters
-                    yt_chapters = get_youtube_chapters(video_id)
-                except Exception:
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _ex:
+                        yt_chapters = _ex.submit(get_youtube_chapters, video_id).result(timeout=25)
+                except Exception as exc:  # noqa: BLE001 (incl. TimeoutError → fall back to formula)
+                    logger.warning("YouTube chapter probe skipped for %s (%s) — using time formula",
+                                   video_id, str(exc)[:80])
                     yt_chapters = []
                 if yt_chapters:
                     logger.info("Using %d YouTube chapters for %s", len(yt_chapters), video_id)
