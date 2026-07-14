@@ -1103,12 +1103,14 @@ def generate_chapter_quizzes(
         vision_prompt = _MATH_RULE + "\n\n" + VISION_QUIZ_PREAMBLE + base_prompt
         if gemini_key:
             try:
-                raw = _call_vision_backoff(_call_gemini_vision, vision_prompt, image_paths, gemini_key, max_tokens)
+                # retries=1: on a 429, fail fast to OpenRouter vision / the text
+                # chain instead of waiting minutes on Gemini's free-tier backoff.
+                raw = _call_vision_backoff(_call_gemini_vision, vision_prompt, image_paths, gemini_key, max_tokens, retries=1)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Gemini vision chapter quiz failed: %s", str(exc)[:120])
         if not raw and or_key:
             try:
-                raw = _call_vision_backoff(_call_openrouter_vision, vision_prompt, image_paths, or_key, max_tokens)
+                raw = _call_vision_backoff(_call_openrouter_vision, vision_prompt, image_paths, or_key, max_tokens, retries=2)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("OpenRouter vision chapter quiz failed: %s", str(exc)[:120])
 

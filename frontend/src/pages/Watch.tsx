@@ -200,7 +200,7 @@ export function Watch() {
       const upcoming = quizSchedule.events
         .filter((e) => e.timestamp > time)
         .sort((a, b) => a.timestamp - b.timestamp)
-        .slice(0, 2);
+        .slice(0, 1);
       for (const evt of upcoming) {
         const key = `${evt.chapter_id}:${evt.type}`;
         if (prefetchedRef.current.has(key)) continue;
