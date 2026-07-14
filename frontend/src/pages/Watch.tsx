@@ -8,6 +8,7 @@ import ChatInterface from '../components/ChatInterface';
 import {
   askQuestionStream,
   getCheckpoints,
+  getChapterQuiz,
   getQuiz,
   getQuizSchedule,
   getVideoStatus,
@@ -65,6 +66,9 @@ export function Watch() {
   const prevTimeRef = useRef<number>(0);
   // Checkpoints already auto-popped (so we never re-interrupt or flood on seek).
   const autoCheckpointRef = useRef<Set<number>>(new Set());
+  // Chapter quizzes already prefetched (warmed in the background so they're
+  // cached before the learner reaches them — no wait, esp. for vision quizzes).
+  const prefetchedRef = useRef<Set<string>>(new Set());
   // Video-time (s) of the last auto quiz, to enforce a cooldown between popups
   // so a chapter event and a nearby checkpoint never interrupt back-to-back.
   const lastAutoQuizRef = useRef<number>(-1e9);
@@ -187,6 +191,24 @@ export function Watch() {
       }
     }
     prevTimeRef.current = time;
+
+    // Prefetch: warm the next 1-2 upcoming chapter quizzes in the background so
+    // they're already cached (esp. vision quizzes that take ~20s to build)
+    // before the learner reaches them — no wait on arrival.
+    if (quizSchedule && quizSchedule.events.length > 0) {
+      const upcoming = quizSchedule.events
+        .filter((e) => e.timestamp > time)
+        .sort((a, b) => a.timestamp - b.timestamp)
+        .slice(0, 2);
+      for (const evt of upcoming) {
+        const key = `${evt.chapter_id}:${evt.type}`;
+        if (prefetchedRef.current.has(key)) continue;
+        prefetchedRef.current.add(key);
+        getChapterQuiz(videoId, evt.chapter_id, evt.type).catch(() => {
+          prefetchedRef.current.delete(key); // allow a retry later on failure
+        });
+      }
+    }
   }, [quizSchedule, chapterQuizOpen, checkpoints, showQuiz, videoId]);
 
   const handlePlayerReady = useCallback(() => {
@@ -413,6 +435,7 @@ export function Watch() {
     // fetch resolves, a second resolution (React StrictMode / re-fetch) can
     // wipe the record of an already-shown pretest and make it pop up twice.
     completedEventsRef.current = new Set();
+    prefetchedRef.current = new Set();
     prevTimeRef.current = 0;
     getCheckpoints(videoId)
       .then(setCheckpoints)
