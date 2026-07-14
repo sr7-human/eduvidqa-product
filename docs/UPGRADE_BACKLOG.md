@@ -166,3 +166,59 @@ Legend: **DONE** = shipped · **PARTIAL** = some code exists but incomplete · *
 - **Semantic checkpoints** (`checkpoints.py`): topic-shift markers on the timeline; optional manual "Test me" quiz.
 - **Chapter learning flow** (`chapters.py`): **pretest** at chapter start (priming) · **mid_recall** mid-chapter (lock-in) · **end_recall** at chapter end (synthesis). Current counts: pretest 4, mid_recall 3, end_recall 4.
 - The overlap between these two systems is the source of item 5 (auto-popup confusion) and needs a single clear decision.
+
+---
+
+## 12. Vision-grounded chapter quizzes (keyframe-aware) + lazy prefetch
+**Status:** PROPOSED (partly designed 2026-07-14) · **decision: NOT sure yet — capture only**
+
+**Observed (user):** "The whole point of keyframes is that quizzes should look at the board/visuals and generate from what's actually written — right now chapter quizzes ignore the frames. Also we could use two Groq keys (one to detect the whiteboard region, one for quiz gen), or pre-crop all frames. And maybe only enable this for a teacher-selected set of lectures."
+
+**Confirmed facts (code):**
+- `generate_chapter_quizzes` (pretest / mid_recall / end_recall) is **TEXT-ONLY** — it never reads keyframes. The vision helpers (`_call_gemini_vision`, `_select_keyframes`) exist but are used only by `generate_quizzes_for_checkpoints` (the "Test me" checkpoint quizzes), NOT the chapter flow. **This is the gap.**
+- A 7-hr video → **8 chapters** (hard cap `min(8, round(min/12))`), ~**338 keyframes/chapter** avg (2705/8). Can't send all.
+- `_call_gemini_vision` bundles **multiple images in ONE call** (not one-per-call).
+
+**Groq free/Developer base limits (verified 2026-07-14, `llama-4-scout`):** 30 RPM · **1,000 RPD** · 30K TPM · **500K TPD**. Limits are **per-ORGANIZATION, not per-key** → two keys from the *same* Groq account do NOT double capacity (need two separate accounts).
+
+**Design decisions reached:**
+- **Rule:** chapter quiz uses **vision IF keyframes exist for that chapter's time-range, else text**. No per-type special-casing. The *very first pretest* of a video naturally falls back to text (Phase-2 keyframes not ready yet) — exactly the desired behaviour.
+- **Frame selection per quiz (bundle in 1 vision call):** mid_recall → ~4 frames near the recall point (±90s); end_recall → ~6-8 frames evenly spanning the chapter; pretest → text (first) / ~4 near chapter start.
+- **Do NOT pre-crop all ~2700 frames** — infeasible on Groq free tier (500K TPD; images are token-heavy → 2700 imgs ≈ 1.3-2.7M tokens) AND wasteful (crops frames for lectures nobody watches).
+- **Do LAZY crop:** when a quiz is generated on-demand (prefetched 1-2 chapters ahead), crop only its 6-8 frames via existing `crop_to_content`, then send to the quiz LLM. Trivial token cost, within limits.
+- **Split across PROVIDERS, not two same-account keys:** Groq for crop/board-detection → Gemini for quiz text. (Two Groq keys only help if from separate accounts.)
+- **Prefetch/lookahead:** generate first chapter's quiz upfront; as the learner crosses each checkpoint, background-generate the next 1-2 chapters' quizzes so there's always a buffer (no wait on arrival).
+- **Optional scoping:** enable the (heavier) vision-quiz path only for a **teacher-selected set of lectures** to keep cost bounded and predictable.
+
+**Open question:** whether to raise the 8-chapter cap for very long videos (tighter chapters → smaller frame windows → more focused quizzes, but more chapters/quizzes).
+
+---
+
+## 13. Chapter placement: use YouTube creator chapters + progressive sizing + semantic drop
+**Status:** PARTIAL — progressive sizing DONE 2026-07-15; YouTube-chapters + semantic-drop PROPOSED
+
+**DONE (2026-07-15):**
+- **Progressive chapter length** replaced the old hard 8-cap (`min(8, round(min/12))`). New `_compute_chapter_count`: 2-hr video = **12-min** chapters, **+3 min per extra hour** (3 hr→15, 4 hr→18, 7 hr→27), bounded 1..30. Result: 7.2-hr video → **16 chapters (~27 min)** instead of 8 giant 54-min chapters.
+
+**PROPOSED — use creator (YouTube) chapters when available:**
+- Currently `segment_chapters` ALWAYS splits evenly by time; YouTube's own chapters are **ignored** (`has_youtube_chapters` is hardcoded `False`; nothing reads yt-dlp `info["chapters"]`).
+- Desired: during ingest (we already run yt-dlp for the video), read `info["chapters"]` (list of `{start_time, end_time, title}`). If present → use those as chapter boundaries (semantically perfect, creator-authored). Else → fall back to the progressive formula above.
+- Wire `has_youtube_chapters` / count into `/api/video-preview` too (currently placeholder).
+
+**Long-chapter handling (mostly already works):**
+- A long creator chapter (e.g., 30 min) does NOT need artificial splitting — `_compute_mid_recall_count` already scales mid-recalls with chapter length (30 min → 2 mid-recalls, so pretest + 2 mid + end = 4 quiz sets inside it). Respect the creator boundary as ONE chapter; let mid-recall scaling add internal quizzes. Tune thresholds if needed.
+
+**Unified chapter segmentation algorithm (final design, 2026-07-15):**
+1. **Boundaries:** if yt-dlp `info["chapters"]` present → use them (real creator titles); else → progressive formula (`_compute_chapter_count`: 2 hr = 12 min, +3 min/hr, bounded 1..30).
+2. **Subdivide long segments:** any resulting chapter **> ~20 min** (whether creator- or formula-derived) is split into `ceil(len / target)` equal sub-chapters of **~15-18 min** each. Sub-chapters inherit the parent title + " (Part N)".
+3. Each final segment gets the pretest / mid_recall / end_recall cycle.
+- **Proven on `Vfo5le26IhY` (2026-07-15):** yt-dlp returned **10 real YouTube chapters** (Introduction, Statistics vs ML, Types of Statistics, Types of Data, Correlation, Covariance, …) BUT they are very uneven — the "Types of Statistics" chapter spans 09:05→110:45 (**~100 min**). So subdivision is genuinely required: that one chapter → ~5-6 sub-chapters. Net for the 7-hr video ≈ 15-16 semantically-anchored segments, all ≤ 20 min.
+
+
+**Semantic checkpoint system — DROP / CONSOLIDATE (evidence-backed):**
+- Proven on 7-hr video `Vfo5le26IhY`: production `place_checkpoints` is called **without embeddings** in BOTH paths (`backend/app.py:1055`, `tools/local_ingest.py:204`) → silently falls back to `_length_shift` (text char-count delta), **NOT** the cosine-distance semantic code (which is dead). Ran true-semantic (embedding_v2, 217 chunks) vs length-delta: same count (22 — both budget-capped by the 20-min interval, semantics never sets the count) but **only 6/22 timestamps overlap** → current placement is ~73% "wrong" vs topic. And this smooth lecture has weak natural boundaries anyway (max cosine 0.262). Conclusion: the "semantic checkpoint" layer is not actually semantic, doesn't decide the count, and adds a redundant 2nd quiz system → **drop it; make chapters the single quiz structure** (optionally feed embeddings into chapter placement for real semantic boundaries). Ties to item #5.
+
+**Embedding columns note:** new videos write chunk embeddings to **`embedding_v2`** (3072-dim, native Gemini); the old **`embedding`** column (1024-dim) is legacy and only old videos have it. Reader prefers v2, falls back to v1.
+
+
+

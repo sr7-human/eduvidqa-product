@@ -985,8 +985,21 @@ def _compute_mid_recall_count(chapter_minutes: float) -> int:
 
 
 def _compute_chapter_count(duration_minutes: float) -> int:
-    """Compute target chapter count from video duration. Cap at 8."""
-    return max(1, min(8, round(duration_minutes / 12)))
+    """Target chapter count from video duration, with a PROGRESSIVE chapter
+    length that widens for longer videos.
+
+    Baseline: a 2-hour video uses **12-minute** chapters; for every extra hour
+    the chapter length grows by **3 minutes** (2 hr → 12 min, 3 hr → 15, 4 hr →
+    18, 7 hr → 27 …). Videos under 2 hours use the 12-minute baseline.
+
+    Bounded to 1..30 chapters so very long videos stay manageable.
+
+    NOTE: this is the fallback for videos WITHOUT creator-provided (YouTube)
+    chapters. When YouTube chapters exist, use those timestamps instead.
+    """
+    hours = duration_minutes / 60.0
+    chapter_len = 12.0 + 3.0 * max(0.0, hours - 2.0)
+    return max(1, min(30, round(duration_minutes / chapter_len)))
 
 
 def generate_chapter_quizzes(

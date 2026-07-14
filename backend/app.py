@@ -1095,17 +1095,20 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
         else:
             logger.info("Checkpoint quiz pre-gen skipped for %s (on-demand via Test me)", video_id)
 
-        # Step 7.5: Chapters + PRETESTS ONLY at ingest. mid_recall / end_recall
-        # are generated on-demand when the learner reaches them (keeps ingest
-        # cheap). Override with INGEST_CHAPTER_QUIZ_TYPES="pretest,mid_recall,end_recall".
+        # Step 7.5: Build CHAPTERS at ingest, but generate NO quizzes here.
+        # Pretests / mid_recall / end_recall are ALL generated on-demand when the
+        # learner first reaches each chapter (get_chapter_quiz → _ensure_chapter_quiz).
+        # This keeps ingest fast and — critically — spreads LLM calls across actual
+        # watching, so ingesting many lectures at once never exhausts the API quota.
+        # Override with INGEST_CHAPTER_QUIZ_TYPES="pretest" to pre-generate at ingest.
         try:
             from pipeline.chapters import build_chapters_and_quizzes
 
             video_duration = chunks[-1].get("end_time", 0) if chunks else 0
             if chunks and video_duration:
-                _set_progress(video_id, "quizzes", 90, "Generating chapter pretests…")
+                _set_progress(video_id, "quizzes", 90, "Organising chapters…")
                 qtypes = [
-                    t.strip() for t in os.getenv("INGEST_CHAPTER_QUIZ_TYPES", "pretest").split(",")
+                    t.strip() for t in os.getenv("INGEST_CHAPTER_QUIZ_TYPES", "").split(",")
                     if t.strip()
                 ]
                 res = build_chapters_and_quizzes(
@@ -1113,10 +1116,11 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
                 )
                 logger.info(
                     "Chapters for %s: %d chapters, %d chapter-quiz questions (%s)",
-                    video_id, res.get("chapters", 0), res.get("questions", 0), ",".join(qtypes),
+                    video_id, res.get("chapters", 0), res.get("questions", 0),
+                    ",".join(qtypes) or "lazy/on-demand",
                 )
         except Exception as exc:
-            logger.warning("Chapter quiz build failed (non-fatal): %s", exc)
+            logger.warning("Chapter build failed (non-fatal): %s", exc)
 
         # Step 8: Delete .mp4
         try:
@@ -1314,10 +1318,14 @@ async def ask_question(
     live_frame = _decode_user_image(body.image_b64)
     if live_frame is None and not range_mode and not whole_video:
         try:
-            live_frame = extract_live_frame(
-                video_id=video_id,
-                timestamp=body.timestamp,
-                data_dir=os.path.join(settings.DATA_DIR, "processed"),
+            # Offload to a thread — extract_live_frame does a blocking yt-dlp
+            # download (~seconds) and must NOT block the async event loop, or
+            # the whole single-worker server freezes (health checks included).
+            live_frame = await run_in_threadpool(
+                extract_live_frame,
+                video_id,
+                body.timestamp,
+                os.path.join(settings.DATA_DIR, "processed"),
             )
         except Exception as exc:
             logger.warning("live_frame extraction failed (non-fatal): %s", exc)
@@ -1343,9 +1351,12 @@ async def ask_question(
     try:
         with _ScopedAPIKeys(user_id, allow_server_fallback=is_demo):
             # Crop this one frame to its board/slide content (1 vision call).
+            # Offloaded — it's a blocking network call to Groq.
             if live_frame:
                 from pipeline.live_frame import crop_to_content
-                live_frame = crop_to_content(live_frame, os.getenv("GROQ_API_KEY") or None)
+                live_frame = await run_in_threadpool(
+                    crop_to_content, live_frame, os.getenv("GROQ_API_KEY") or None
+                )
             result = generate_answer(
                 question=body.question,
                 video_id=video_id,

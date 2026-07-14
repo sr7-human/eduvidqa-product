@@ -9,7 +9,7 @@ const STEPS: { key: string; label: string }[] = [
   { key: 'keyframes', label: 'Extracting keyframes' },
   { key: 'digest', label: 'Summarising lecture' },
   { key: 'checkpoints', label: 'Placing checkpoints' },
-  { key: 'quizzes', label: 'Generating pretests' },
+  { key: 'quizzes', label: 'Organising chapters' },
   { key: 'ready', label: 'Ready to watch' },
 ];
 
