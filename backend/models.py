@@ -68,6 +68,12 @@ class ProcessRequest(BaseModel):
         description="Keyframe quality preset: 'auto' (720p), 'handheld' (1080p), "
         "'slides' (480p) or 'animation' (360p). Ignored in podcast mode.",
     )
+    defer: bool = Field(
+        default=False,
+        description="If true, only add the video to the library as a stub (title "
+        "+ thumbnail) WITHOUT starting any processing. The user triggers ingest "
+        "later from the video page.",
+    )
 
     @field_validator("youtube_url")
     @classmethod

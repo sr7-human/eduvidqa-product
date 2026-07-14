@@ -15,6 +15,7 @@ export interface ProcessRequest {
   youtube_url: string;
   mode?: 'lecture' | 'podcast';
   video_type?: VideoQualityType;
+  defer?: boolean;
 }
 
 export type VideoQualityType = 'auto' | 'handheld' | 'slides' | 'animation';

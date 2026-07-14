@@ -172,8 +172,8 @@ export function Library() {
   const handleConfirmAdd = async () => {
     setPreview(null);
     setAdding(true);    try {
-      const res = (await processVideo({ youtube_url: urlInput, mode, video_type: mode === 'lecture' ? videoType : undefined })) as unknown as Record<string, unknown>;
-      toast.success(String(res.message ?? 'Video submitted'));
+      const res = (await processVideo({ youtube_url: urlInput, mode, video_type: mode === 'lecture' ? videoType : undefined, defer: true })) as unknown as Record<string, unknown>;
+      toast.success(String(res.message ?? 'Added to library — open it to start processing'));
       setUrlInput('');
       // Reload library so any new videos (single or playlist) show up
       try {

@@ -16,6 +16,7 @@ import {
   whoami,
   adminRegenerateQuiz,
   saveWatchProgress,
+  startIngest,
   VideoProcessingError,
 } from '../api/client';
 import type { ChatMessage, Checkpoint, QuizQuestion, QuizScheduleEvent, QuizSchedule, YTPlayer } from '../types';
@@ -465,6 +466,27 @@ export function Watch() {
       .catch(() => setIsAdmin(false));
   }, []);
 
+  // Initial status on load — so we can show the right ingest buttons for a
+  // deferred/stub video (added to library but not yet processed).
+  useEffect(() => {
+    if (!videoId) return;
+    getVideoStatus(videoId).then(({ status }) => setProcessingStatus(status)).catch(() => {});
+  }, [videoId]);
+
+  const [ingesting, setIngesting] = useState(false);
+  const handleStartIngest = useCallback(async (phase: 'all' | 'transcript' | 'visuals') => {
+    setIngesting(true);
+    try {
+      await startIngest(videoId, youtubeUrl, phase);
+      setProcessingStatus('processing');
+      toast.success(phase === 'visuals' ? 'Adding visual understanding…' : 'Ingest started…');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not start ingest');
+    } finally {
+      setIngesting(false);
+    }
+  }, [videoId, youtubeUrl]);
+
   // Timeline markers: use real (legacy) checkpoints if the video has them,
   // otherwise derive markers from CHAPTER starts (pretest events). Semantic
   // checkpoints are no longer created — chapters are the single quiz structure —
@@ -676,9 +698,50 @@ export function Watch() {
             ⏳ Preparing transcript…
           </span>
         )}
+        {processingStatus === 'stub' && (
+          <span className="ml-4 inline-flex flex-wrap gap-2 items-center">
+            <span className="text-gray-600">Not processed yet.</span>
+            <button
+              onClick={() => handleStartIngest('transcript')}
+              disabled={ingesting}
+              className="px-3 py-1 rounded-full bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 text-xs"
+              title="Fast: index the transcript so you can ask questions (no video download)"
+            >
+              ▶️ Ingest (Q&A ready)
+            </button>
+            <button
+              onClick={() => handleStartIngest('all')}
+              disabled={ingesting}
+              className="px-3 py-1 rounded-full border border-blue-600 text-blue-700 hover:bg-blue-50 disabled:opacity-50 text-xs"
+              title="Full: transcript + keyframes + chapters + visual quizzes"
+            >
+              🎬 Full ingest (Q&A + visuals)
+            </button>
+          </span>
+        )}
         {processingStatus === 'transcript_ready' && (
-          <span className="ml-4 text-blue-700">
-            📝 Transcript ready — visual analysis still loading. Answers may not reference on-screen visuals yet.
+          <span className="ml-4 inline-flex flex-wrap gap-2 items-center">
+            <span className="text-blue-700">📝 Transcript ready — Q&A works.</span>
+            <button
+              onClick={() => handleStartIngest('visuals')}
+              disabled={ingesting}
+              className="px-3 py-1 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 text-xs"
+              title="Download the video, extract keyframes, and build visual (board-reading) chapter quizzes"
+            >
+              🖼️ Add visual understanding
+            </button>
+          </span>
+        )}
+        {processingStatus === 'failed' && (
+          <span className="ml-4 inline-flex gap-2 items-center">
+            <span className="text-red-700">⚠️ Processing failed.</span>
+            <button
+              onClick={() => handleStartIngest('all')}
+              disabled={ingesting}
+              className="px-3 py-1 rounded-full bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 text-xs"
+            >
+              🔄 Resume / retry
+            </button>
           </span>
         )}
       </div>

@@ -350,6 +350,25 @@ export async function suggestVideoType(youtubeUrl: string): Promise<{ video_type
   });
 }
 
+/** Start (or resume) ingest for a specific phase — powers the deferred
+ *  "Ingest (Q&A)" / "Add visual understanding" / "Resume" buttons. */
+export async function startIngest(
+  videoId: string,
+  youtubeUrl: string,
+  phase: 'all' | 'transcript' | 'visuals',
+  opts?: { mode?: 'lecture' | 'podcast'; video_type?: import('../types').VideoQualityType },
+): Promise<{ video_id: string; status: string; phase: string; message: string }> {
+  return request(`/api/videos/${videoId}/ingest`, {
+    method: 'POST',
+    body: JSON.stringify({
+      youtube_url: youtubeUrl,
+      phase,
+      mode: opts?.mode ?? 'lecture',
+      video_type: opts?.video_type ?? 'auto',
+    }),
+  });
+}
+
 export interface VideoPreview {
   video_id: string;
   title: string;

@@ -303,8 +303,12 @@ def _pooled_connect(dsn=None, *args, **kwargs):
 psycopg2.connect = _pooled_connect
 
 
-def _register_video(video_id: str, mode: str = "lecture") -> None:
-    """Insert pending video row. Idempotent."""
+def _register_video(video_id: str, mode: str = "lecture", status: str = "pending") -> None:
+    """Insert pending video row. Idempotent.
+
+    ``status='stub'`` adds the video to the library WITHOUT starting any
+    processing (deferred ingest — the user triggers it later).
+    """
     import uuid
     conn = psycopg2.connect(_get_db_url())
     try:
@@ -312,10 +316,10 @@ def _register_video(video_id: str, mode: str = "lecture") -> None:
             cur.execute(
                 """
                 INSERT INTO videos (id, video_id, pipeline_version, status, ingest_mode)
-                VALUES (%s, %s, 1, 'pending', %s)
+                VALUES (%s, %s, 1, %s, %s)
                 ON CONFLICT (video_id, pipeline_version) DO UPDATE SET ingest_mode = EXCLUDED.ingest_mode
                 """,
-                (str(uuid.uuid4()), video_id, mode),
+                (str(uuid.uuid4()), video_id, status, mode),
             )
         conn.commit()
     finally:
@@ -734,6 +738,19 @@ async def process_video(
     if status == "processing":
         return {"video_id": video_id, "status": "processing", "message": "Already being processed"}
 
+    # Deferred add: just create a library stub (title/thumbnail) and stop — the
+    # user starts ingest later from the video page. No API key needed yet.
+    if body.defer:
+        _register_video(video_id, body.mode, status="stub")
+        _link_user_video(user_id, video_id)
+        try:
+            title = _fetch_video_title(video_id)
+            if title:
+                _set_video_title(video_id, title)
+        except Exception:  # noqa: BLE001
+            pass
+        return {"video_id": video_id, "status": "stub", "message": "Added to library"}
+
     # BYOK: non-demo videos require the user's own key (we won't burn server quota)
     if video_id != DEMO_VIDEO_ID and not _user_has_any_key(user_id):
         raise HTTPException(
@@ -748,8 +765,44 @@ async def process_video(
     return {"video_id": video_id, "status": "processing", "message": "Processing started"}
 
 
-class _SuggestTypeBody(BaseModel):
+class _IngestPhaseBody(BaseModel):
     youtube_url: str = Field(..., max_length=200)
+    phase: str = Field(default="all", description="all | transcript | visuals")
+    mode: str = Field(default="lecture")
+    video_type: str = Field(default="auto")
+
+
+@app.post("/api/videos/{video_id}/ingest")
+@limiter.limit("10/minute")
+async def start_ingest(
+    request: Request,
+    video_id: str,
+    body: _IngestPhaseBody,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(require_auth),
+):
+    """Start (or continue) ingest for a specific phase — powers the deferred
+    "Ingest (Q&A)" and "Add visual understanding" buttons on the video page,
+    and "Resume" for a stuck video.
+
+    * phase=``transcript`` → Phase 1 only (fast, enables Q&A).
+    * phase=``visuals``    → Phase 2 (download + keyframes + chapters).
+    * phase=``all``        → both.
+    """
+    if body.phase not in ("all", "transcript", "visuals"):
+        raise HTTPException(status_code=400, detail="phase must be all, transcript or visuals")
+    if video_id != DEMO_VIDEO_ID and not _user_has_any_key(user_id):
+        raise HTTPException(
+            status_code=402,
+            detail="Add a Gemini or Groq API key in Settings before processing videos.",
+        )
+    _register_video(video_id, body.mode)  # ensure a row exists (status untouched if present)
+    _link_user_video(user_id, video_id)
+    background_tasks.add_task(
+        _ingest_video_bg, video_id, body.youtube_url, user_id, body.mode, body.video_type, body.phase,
+    )
+    return {"video_id": video_id, "status": "processing", "phase": body.phase, "message": "Started"}
+
 
 
 @app.post("/api/suggest-video-type")
@@ -881,8 +934,15 @@ def _persist_playlist(user_id: str, playlist_id: str, title: str, video_ids: lis
         conn.close()
 
 
-def _ingest_video_bg(video_id: str, youtube_url: str, user_id: str, mode: str = "lecture", video_type: str = "auto") -> None:
+def _ingest_video_bg(video_id: str, youtube_url: str, user_id: str, mode: str = "lecture", video_type: str = "auto", phase: str = "all") -> None:
     """Background ingest — runs in a thread via FastAPI BackgroundTasks.
+
+    ``phase`` controls how much runs:
+      * ``"all"``        — Phase 1 (transcript) then Phase 2 (visuals). Default.
+      * ``"transcript"`` — Phase 1 only → stops at ``transcript_ready`` (fast,
+        Q&A works; no video download / keyframes).
+      * ``"visuals"``    — Phase 2 only (download → keyframes → chapters) on a
+        video whose transcript is already indexed → ``ready``.
 
     Two-phase flow for instant UX:
     PHASE 1 (~10–20s): chunk transcript → embed → mark `transcript_ready`
@@ -900,7 +960,7 @@ def _ingest_video_bg(video_id: str, youtube_url: str, user_id: str, mode: str = 
     is_demo = (video_id == DEMO_VIDEO_ID)
     if not _durable_jobs_enabled():
         with _ScopedAPIKeys(user_id or None, allow_server_fallback=is_demo):
-            _ingest_video_bg_inner(video_id, youtube_url, user_id, mode, video_type)
+            _ingest_video_bg_inner(video_id, youtube_url, user_id, mode, video_type, phase)
         return
 
     from backend.processing_jobs import (
@@ -919,7 +979,7 @@ def _ingest_video_bg(video_id: str, youtube_url: str, user_id: str, mode: str = 
     try:
         with maintain_lease(lease), use_job_lease(lease):
             with _ScopedAPIKeys(user_id or None, allow_server_fallback=is_demo):
-                _ingest_video_bg_inner(video_id, youtube_url, user_id, mode, video_type)
+                _ingest_video_bg_inner(video_id, youtube_url, user_id, mode, video_type, phase)
         if not complete_job(lease):
             raise LeaseLostError(f"Lost ingest lease before completing {video_id}")
     except LeaseLostError:
@@ -929,8 +989,9 @@ def _ingest_video_bg(video_id: str, youtube_url: str, user_id: str, mode: str = 
         logger.exception("Durable ingest attempt failed for %s", video_id)
 
 
-def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: str = "lecture", video_type: str = "auto") -> None:
+def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: str = "lecture", video_type: str = "auto", phase: str = "all") -> None:
     podcast_mode = (mode == "podcast")
+    do_transcript = phase in ("all", "transcript")
     try:
         _update_video_status(video_id, "processing")
         _set_progress(video_id, "starting", 5, "Fetching transcript…")
@@ -957,7 +1018,7 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
             keyframe_manifest=[],  # no keyframes yet — link them in phase 2
         )
 
-        if chunks:
+        if chunks and do_transcript:
             _set_progress(video_id, "embedding", 15,
                           f"Creating embeddings for {len(chunks)} chunks (Gemini)…")
             index.index_video(
@@ -975,8 +1036,17 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
                 "Phase 1 done for %s: %d chunks indexed (transcript_ready)",
                 video_id, len(chunks),
             )
-        else:
+        elif not chunks:
             logger.warning("No transcript available for %s — skipping phase 1", video_id)
+
+        # Stop here if only the transcript (Phase 1) was requested — the video is
+        # answerable now; visuals/keyframes can be added later on demand.
+        if phase == "transcript":
+            _set_progress(video_id, "transcript_ready", 100, "Transcript ready — Q&A enabled")
+            _update_video_status(video_id, "transcript_ready")
+            _link_user_video(user_id, video_id)
+            logger.info("Ingest phase=transcript complete for %s", video_id)
+            return
 
         # ════════════ PHASE 2: Video download + keyframes (slow) ════════════
 
