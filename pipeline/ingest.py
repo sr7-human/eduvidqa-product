@@ -124,8 +124,39 @@ def get_cookie_ydl_opts() -> dict:
     return opts
 
 
-def build_transcript_api():
-    """Build a YouTubeTranscriptApi, using admin cookies if configured."""
+def get_youtube_chapters(video_id: str) -> list[dict]:
+    """Return the creator-defined YouTube chapters for a video, if any.
+
+    Reads yt-dlp's ``info["chapters"]`` (populated when the uploader added
+    timestamps / chapters). Returns a list of ``{start_time, end_time, title}``
+    sorted by start time, or ``[]`` when the video has no chapters or the probe
+    fails (best-effort — never raises).
+    """
+    try:
+        import yt_dlp
+    except ImportError:
+        return []
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    opts = {"quiet": True, "no_warnings": True, "skip_download": True, **get_cookie_ydl_opts()}
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False) or {}
+    except Exception as exc:  # noqa: BLE001
+        logger.info("YouTube chapter probe failed for %s (non-fatal): %s", video_id, str(exc)[:120])
+        return []
+    raw = info.get("chapters") or []
+    out: list[dict] = []
+    for ch in raw:
+        try:
+            st = float(ch.get("start_time", 0) or 0)
+            en = float(ch.get("end_time") or 0)
+        except (TypeError, ValueError):
+            continue
+        if en <= st:
+            continue
+        out.append({"start_time": st, "end_time": en, "title": (ch.get("title") or "").strip()})
+    out.sort(key=lambda c: c["start_time"])
+    return out
     from youtube_transcript_api import YouTubeTranscriptApi
 
     cf = get_cookiefile()

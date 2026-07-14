@@ -195,7 +195,7 @@ Legend: **DONE** = shipped · **PARTIAL** = some code exists but incomplete · *
 ---
 
 ## 13. Chapter placement: use YouTube creator chapters + progressive sizing + semantic drop
-**Status:** PARTIAL — progressive sizing DONE 2026-07-15; YouTube-chapters + semantic-drop PROPOSED
+**Status:** progressive sizing DONE 2026-07-15 · YouTube-chapters + subdivision **DONE 2026-07-15** · semantic-drop PROPOSED
 
 **DONE (2026-07-15):**
 - **Progressive chapter length** replaced the old hard 8-cap (`min(8, round(min/12))`). New `_compute_chapter_count`: 2-hr video = **12-min** chapters, **+3 min per extra hour** (3 hr→15, 4 hr→18, 7 hr→27), bounded 1..30. Result: 7.2-hr video → **16 chapters (~27 min)** instead of 8 giant 54-min chapters.

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import uuid
 
@@ -29,6 +30,12 @@ from pipeline.quiz_gen import (
 logger = logging.getLogger(__name__)
 
 CHAPTER_PROMPT_VERSION = 2
+
+# A chapter longer than this (minutes) is subdivided into ~_SUBDIVIDE_TARGET_MIN
+# sub-chapters. Only applied to creator (YouTube) chapters — the progressive
+# formula already sizes its own segments.
+_MAX_CHAPTER_MIN = 20.0
+_SUBDIVIDE_TARGET_MIN = 16.0
 
 
 def _db_url() -> str:
@@ -92,25 +99,98 @@ def _title_segments(segments: list[dict], chunks: list[dict]) -> list[str]:
     return out
 
 
-def segment_chapters(video_id: str, chunks: list[dict], duration_s: float) -> list[dict]:
-    """Split a video into evenly-timed, LLM-titled chapters.
+def segment_chapters(
+    video_id: str,
+    chunks: list[dict],
+    duration_s: float,
+    youtube_chapters: list[dict] | None = None,
+) -> list[dict]:
+    """Split a video into chapters and return {idx, start_time, end_time, title}.
 
-    Returns a list of {idx, start_time, end_time, title} (no DB writes).
+    Boundary source (in order):
+    1. **Creator YouTube chapters** (``youtube_chapters`` from yt-dlp) — real,
+       semantically-authored. Used as-is, then any chapter longer than
+       ``_MAX_CHAPTER_MIN`` is subdivided into ~``_SUBDIVIDE_TARGET_MIN`` sub-
+       chapters (sub-parts inherit the parent title + " (Part N)").
+    2. **Progressive time formula** (``_compute_chapter_count``) when there are
+       no creator chapters — already sized, so not further subdivided.
+
+    Chapters without a title (formula path, or untitled creator chapters) are
+    titled by one LLM call.
     """
     if not chunks or duration_s <= 0:
         return []
-    n = _compute_chapter_count(duration_s / 60.0)
-    span = duration_s / n
-    segments = []
-    for i in range(n):
-        start = i * span
-        end = duration_s if i == n - 1 else (i + 1) * span
-        segments.append({"idx": i, "start_time": start, "end_time": end})
 
-    titles = _title_segments(segments, chunks)
-    for seg, title in zip(segments, titles):
-        seg["title"] = title
+    base = _base_segments_from_youtube(youtube_chapters, duration_s)
+    if base is not None:
+        # Creator chapters → subdivide the over-long ones.
+        segments: list[dict] = []
+        for seg in base:
+            segments.extend(_subdivide_segment(seg))
+    else:
+        # No creator chapters → progressive even split (already sized).
+        n = _compute_chapter_count(duration_s / 60.0)
+        span = duration_s / n
+        segments = [
+            {"start_time": i * span,
+             "end_time": duration_s if i == n - 1 else (i + 1) * span,
+             "title": None}
+            for i in range(n)
+        ]
+
+    for i, seg in enumerate(segments):
+        seg["idx"] = i
+
+    # Title any segment that doesn't already have one (single LLM call).
+    need = [s for s in segments if not s.get("title")]
+    if need:
+        titles = _title_segments(need, chunks)
+        for s, t in zip(need, titles):
+            s["title"] = t
+    for i, s in enumerate(segments):
+        if not s.get("title"):
+            s["title"] = f"Part {i + 1}"
     return segments
+
+
+def _base_segments_from_youtube(
+    youtube_chapters: list[dict] | None, duration_s: float
+) -> list[dict] | None:
+    """Turn yt-dlp chapters into base segments, or None if none usable."""
+    if not youtube_chapters:
+        return None
+    segs: list[dict] = []
+    for ch in youtube_chapters:
+        try:
+            st = float(ch.get("start_time", 0) or 0)
+            en = float(ch.get("end_time") or 0)
+        except (TypeError, ValueError):
+            continue
+        en = min(en, duration_s)
+        if en <= st:
+            continue
+        segs.append({"start_time": st, "end_time": en,
+                     "title": (ch.get("title") or "").strip() or None})
+    return segs or None
+
+
+def _subdivide_segment(seg: dict) -> list[dict]:
+    """Split a segment into ~equal sub-segments if it exceeds _MAX_CHAPTER_MIN."""
+    length_min = (seg["end_time"] - seg["start_time"]) / 60.0
+    if length_min <= _MAX_CHAPTER_MIN:
+        return [dict(seg)]
+    parts = max(2, math.ceil(length_min / _SUBDIVIDE_TARGET_MIN))
+    span = (seg["end_time"] - seg["start_time"]) / parts
+    base_title = seg.get("title")
+    out: list[dict] = []
+    for j in range(parts):
+        s = seg["start_time"] + j * span
+        e = seg["end_time"] if j == parts - 1 else seg["start_time"] + (j + 1) * span
+        out.append({
+            "start_time": s, "end_time": e,
+            "title": f"{base_title} (Part {j + 1})" if base_title else None,
+        })
+    return out
 
 
 def _persist_chapters(video_id: str, segments: list[dict]) -> list[dict]:
@@ -173,6 +253,7 @@ def _insert_chapter_questions(video_id: str, questions: list[dict], ts_bucket: i
 def build_chapters_and_quizzes(
     video_id: str, chunks: list[dict], duration_s: float, log=None,
     quiz_types: list[str] | None = None,
+    youtube_chapters: list[dict] | None = None,
 ) -> dict:
     """Full pipeline: segment chapters → persist → generate the requested chapter
     quiz types (default: all — pretest / mid_recall / end_recall) → store
@@ -180,6 +261,8 @@ def build_chapters_and_quizzes(
 
     Pass ``quiz_types=["pretest"]`` to generate ONLY pretests at ingest and defer
     the rest to on-demand generation (keeps ingest cheap on LLM quota).
+    Pass ``youtube_chapters`` (from ``ingest.get_youtube_chapters``) to use the
+    creator's real chapter boundaries instead of the time formula.
 
     Idempotent: replaces prior auto chapters + their quizzes on re-run.
     Returns {"chapters": n, "questions": n}.
@@ -189,7 +272,7 @@ def build_chapters_and_quizzes(
     def _log(msg: str) -> None:
         (log or logger.info)(msg)
 
-    segments = segment_chapters(video_id, chunks, duration_s)
+    segments = segment_chapters(video_id, chunks, duration_s, youtube_chapters=youtube_chapters)
     if not segments:
         _log("  chapters: no segments (missing chunks/duration)")
         return {"chapters": 0, "questions": 0}

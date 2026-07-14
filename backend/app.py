@@ -1111,8 +1111,18 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
                     t.strip() for t in os.getenv("INGEST_CHAPTER_QUIZ_TYPES", "").split(",")
                     if t.strip()
                 ]
+                # Prefer the creator's real YouTube chapters when the video has
+                # them (semantically authored); fall back to the time formula.
+                try:
+                    from pipeline.ingest import get_youtube_chapters
+                    yt_chapters = get_youtube_chapters(video_id)
+                except Exception:
+                    yt_chapters = []
+                if yt_chapters:
+                    logger.info("Using %d YouTube chapters for %s", len(yt_chapters), video_id)
                 res = build_chapters_and_quizzes(
                     video_id, chunks, float(video_duration), quiz_types=qtypes,
+                    youtube_chapters=yt_chapters or None,
                 )
                 logger.info(
                     "Chapters for %s: %d chapters, %d chapter-quiz questions (%s)",
