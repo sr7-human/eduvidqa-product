@@ -1,0 +1,70 @@
+name: Deploy
+
+# Auto-deploys BOTH parts of EduVidQA on every push to main:
+#   • Backend  → Hugging Face Space (Docker)
+#   • Frontend → Vercel (production)
+# You no longer need to deploy by hand — just `git push`.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}   # allow a manual "Run workflow" from the Actions tab
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Backend → Hugging Face Space ──────────────────────────────────────
+  # The Space rejects files >10MB, and the repo tracks a ~13MB local vector DB
+  # (data/chroma — only for offline experiments; production uses Supabase).
+  # So we push a fresh single-commit tree with that folder stripped out.
+  backend-hf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Push slim tree to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::HF_TOKEN secret is not set — cannot deploy backend."
+            exit 1
+          fi
+          rm -rf data/chroma           # too big for HF; not used in production
+          rm -rf .git                  # fresh history → no large-file history
+          git init -q
+          git checkout -q -b main
+          git config user.email "ci@eduvidqa"
+          git config user.name "eduvidqa-ci"
+          git add -A
+          git commit -qm "CI deploy ${GITHUB_SHA::7}"
+          git push --force "https://${HF_TOKEN}@huggingface.co/spaces/inquisitiveidiot/eduvidqa" main
+          echo "✅ Backend pushed to HF Space — it will rebuild automatically."
+
+  # ── Frontend → Vercel (production) ────────────────────────────────────
+  frontend-vercel:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Deploy to Vercel
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::error::VERCEL_TOKEN secret is not set — cannot deploy frontend."
+            exit 1
+          fi
+          npm i -g vercel@latest
+          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          vercel build --prod --token="$VERCEL_TOKEN"
+          vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+          echo "✅ Frontend deployed to Vercel."
