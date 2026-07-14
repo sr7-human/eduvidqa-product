@@ -2091,18 +2091,41 @@ def _ensure_chapter_quiz(video_id: str, chapter_id: str, quiz_type: str) -> None
     start_f, end_f = float(start), float(end)
     chapter = {"id": chapter_id, "idx": idx, "start_time": start_f, "end_time": end_f, "title": title}
 
+    # Fetch this chapter's on-screen keyframes so the quiz can be grounded in the
+    # board/slide content (vision). Empty for podcasts / not-yet-downloaded
+    # videos → generate_chapter_quizzes falls back to transcript text.
+    keyframes: list[dict] = []
+    try:
+        kf_conn = psycopg2.connect(_get_db_url())
+        try:
+            with kf_conn.cursor() as kf_cur:
+                kf_cur.execute(
+                    "SELECT timestamp_seconds, storage_path FROM keyframe_embeddings "
+                    "WHERE video_id = %s AND timestamp_seconds BETWEEN %s AND %s "
+                    "ORDER BY timestamp_seconds",
+                    (video_id, start_f, end_f),
+                )
+                keyframes = [{"timestamp": float(r[0]), "file": r[1]} for r in kf_cur.fetchall() if r[1]]
+        finally:
+            kf_conn.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Keyframe fetch for chapter quiz failed (non-fatal): %s", str(exc)[:100])
+
     from pipeline.quiz_gen import generate_chapter_quizzes
     from pipeline.chapters import _insert_chapter_questions
 
     if quiz_type == "mid_recall":
         mid_ts = start_f + (end_f - start_f) / 2.0
-        qs = generate_chapter_quizzes(video_id, chapter, chunks, "mid_recall", count=3, mid_recall_timestamp=mid_ts)
+        qs = generate_chapter_quizzes(video_id, chapter, chunks, "mid_recall", count=3,
+                                      mid_recall_timestamp=mid_ts, keyframes=keyframes or None)
         bucket = int(mid_ts // 30)
     elif quiz_type == "end_recall":
-        qs = generate_chapter_quizzes(video_id, chapter, chunks, "end_recall", count=4)
+        qs = generate_chapter_quizzes(video_id, chapter, chunks, "end_recall", count=4,
+                                      keyframes=keyframes or None)
         bucket = int(end_f // 30)
     else:  # pretest
-        qs = generate_chapter_quizzes(video_id, chapter, chunks, "pretest", count=4)
+        qs = generate_chapter_quizzes(video_id, chapter, chunks, "pretest", count=4,
+                                      keyframes=keyframes or None)
         bucket = int(start_f // 30)
     if qs:
         _insert_chapter_questions(video_id, qs, bucket)

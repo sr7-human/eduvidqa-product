@@ -420,6 +420,28 @@ def _select_keyframes(
     return [str(k["file"]) for k in near if k.get("file")]
 
 
+def _select_keyframes_span(
+    keyframes: list[dict], start: float, end: float, max_frames: int = 8
+) -> list[str]:
+    """Return up to ``max_frames`` keyframe paths evenly spanning [start, end].
+
+    Used for end_recall quizzes that synthesise a whole chapter, so the model
+    sees representative frames from across the chapter (not just one point).
+    """
+    if not keyframes:
+        return []
+    inside = sorted(
+        (k for k in keyframes if start <= float(k.get("timestamp", 0)) <= end),
+        key=lambda k: float(k.get("timestamp", 0)),
+    )
+    if not inside:
+        return []
+    if len(inside) > max_frames:
+        step = len(inside) / max_frames
+        inside = [inside[int(i * step)] for i in range(max_frames)]
+    return [str(k["file"]) for k in inside if k.get("file")]
+
+
 def _call_gemini_vision(prompt: str, image_paths: list[str], api_key: str,
                         max_tokens: int = 8000) -> str:
     """Multimodal Gemini call: prompt + keyframe images."""
@@ -1009,6 +1031,7 @@ def generate_chapter_quizzes(
     quiz_type: str,
     count: int = 5,
     mid_recall_timestamp: float | None = None,
+    keyframes: list[dict] | None = None,
 ) -> list[dict]:
     """Generate quiz questions for a single chapter + quiz_type.
 
@@ -1048,12 +1071,13 @@ def generate_chapter_quizzes(
     context = _assemble_context(selected)
     bloom_counts = _get_bloom_counts(quiz_type, count)
 
-    prompt = _MATH_RULE + "\n\n" + CHAPTER_QUIZ_PROMPTS[quiz_type].format(
+    base_prompt = CHAPTER_QUIZ_PROMPTS[quiz_type].format(
         chapter_title=title,
         context=context,
         count=count,
         **bloom_counts,
     )
+    prompt = _MATH_RULE + "\n\n" + base_prompt
 
     groq_key = os.getenv("GROQ_API_KEY", "").strip()
     gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
@@ -1062,9 +1086,36 @@ def generate_chapter_quizzes(
     raw = ""
     max_tokens = max(8000, 1500 * count)
 
+    # ── Vision path ────────────────────────────────────────────────
+    # If keyframes exist for this chapter, ground the quiz in the on-screen
+    # board/slide content. mid_recall → frames near the recall point;
+    # end_recall → frames spanning the chapter; pretest → frames near the start
+    # (the very first pretest usually has none yet → falls through to text).
+    image_paths: list[str] = []
+    if keyframes:
+        if quiz_type == "mid_recall" and mid_recall_timestamp is not None:
+            image_paths = _select_keyframes(keyframes, mid_recall_timestamp, window=90, max_frames=4)
+        elif quiz_type == "end_recall":
+            image_paths = _select_keyframes_span(keyframes, start, end, max_frames=8)
+        else:  # pretest
+            image_paths = _select_keyframes(keyframes, start, window=120, max_frames=4)
+    if image_paths:
+        vision_prompt = _MATH_RULE + "\n\n" + VISION_QUIZ_PREAMBLE + base_prompt
+        if gemini_key:
+            try:
+                raw = _call_vision_backoff(_call_gemini_vision, vision_prompt, image_paths, gemini_key, max_tokens)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Gemini vision chapter quiz failed: %s", str(exc)[:120])
+        if not raw and or_key:
+            try:
+                raw = _call_vision_backoff(_call_openrouter_vision, vision_prompt, image_paths, or_key, max_tokens)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("OpenRouter vision chapter quiz failed: %s", str(exc)[:120])
+
+    # ── Text path (fallback / when no keyframes) ───────────────────
     # Stable chain: Gemini (free) → Groq (free) → OpenRouter (paid), each with
     # proactive throttle + 429 backoff so chapter quizzes never cascade-fail.
-    if gemini_key:
+    if not raw and gemini_key:
         try:
             raw = _call_llm_backoff(_call_gemini, prompt, gemini_key, max_tokens)
         except Exception as exc:  # noqa: BLE001

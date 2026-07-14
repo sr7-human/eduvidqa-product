@@ -170,7 +170,7 @@ Legend: **DONE** = shipped · **PARTIAL** = some code exists but incomplete · *
 ---
 
 ## 12. Vision-grounded chapter quizzes (keyframe-aware) + lazy prefetch
-**Status:** PROPOSED (partly designed 2026-07-14) · **decision: NOT sure yet — capture only**
+**Status:** vision-grounded chapter quizzes **DONE 2026-07-15** · lazy prefetch PROPOSED
 
 **Observed (user):** "The whole point of keyframes is that quizzes should look at the board/visuals and generate from what's actually written — right now chapter quizzes ignore the frames. Also we could use two Groq keys (one to detect the whiteboard region, one for quiz gen), or pre-crop all frames. And maybe only enable this for a teacher-selected set of lectures."
 
