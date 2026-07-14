@@ -137,7 +137,8 @@ def get_youtube_chapters(video_id: str) -> list[dict]:
     except ImportError:
         return []
     url = f"https://www.youtube.com/watch?v={video_id}"
-    opts = {"quiet": True, "no_warnings": True, "skip_download": True, **get_cookie_ydl_opts()}
+    opts = {"quiet": True, "no_warnings": True, "skip_download": True,
+            "socket_timeout": 15, "extractor_retries": 1, **get_cookie_ydl_opts()}
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False) or {}
@@ -157,6 +158,10 @@ def get_youtube_chapters(video_id: str) -> list[dict]:
         out.append({"start_time": st, "end_time": en, "title": (ch.get("title") or "").strip()})
     out.sort(key=lambda c: c["start_time"])
     return out
+
+
+def build_transcript_api():
+    """Build a YouTubeTranscriptApi, using admin cookies if configured."""
     from youtube_transcript_api import YouTubeTranscriptApi
 
     cf = get_cookiefile()
