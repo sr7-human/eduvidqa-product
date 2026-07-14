@@ -1119,7 +1119,8 @@ def generate_chapter_quizzes(
     # proactive throttle + 429 backoff so chapter quizzes never cascade-fail.
     if not raw and gemini_key:
         try:
-            raw = _call_llm_backoff(_call_gemini, prompt, gemini_key, max_tokens)
+            # retries=1: fail fast to Groq (separate quota) if Gemini free tier is exhausted.
+            raw = _call_llm_backoff(_call_gemini, prompt, gemini_key, max_tokens, retries=1)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Gemini chapter quiz failed: %s", str(exc)[:120])
     if not raw and groq_key:
