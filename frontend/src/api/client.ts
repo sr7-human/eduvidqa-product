@@ -483,6 +483,22 @@ export async function getQuizSchedule(videoId: string): Promise<QuizSchedule> {
   return request<QuizSchedule>(`/api/videos/${videoId}/quiz-schedule`);
 }
 
+export interface ActivityEvent {
+  seq: number;
+  ts: number;
+  provider: string;
+  model: string;
+  purpose: string;
+  status: string; // 'ok' | 'rate_limited' | 'error'
+  ms: number | null;
+  detail: string;
+}
+
+/** Live feed of recent external API calls (LLM providers) — for the activity monitor. */
+export async function getActivity(since = 0): Promise<{ events: ActivityEvent[] }> {
+  return request<{ events: ActivityEvent[] }>(`/api/activity?since=${since}`);
+}
+
 export async function getChapterQuiz(
   videoId: string,
   chapterId: string,

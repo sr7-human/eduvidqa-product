@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { getVideoStatus, type VideoProgress } from '../api/client';
+import { getVideoStatus, getActivity, type VideoProgress, type ActivityEvent } from '../api/client';
 
 const STEPS: { key: string; label: string }[] = [
   { key: 'starting', label: 'Fetching transcript' },
@@ -28,6 +28,25 @@ export function ProcessingModal({ videoId, title, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const lastChangeRef = useRef<number>(Date.now());
   const lastKeyRef = useRef<string>('');
+  const [activity, setActivity] = useState<ActivityEvent[]>([]);
+  const activitySeqRef = useRef<number>(0);
+
+  // Poll the live API-activity feed so a "stuck" step is legible (which
+  // provider is being called, whether it's rate-limited, how long it took).
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const { events } = await getActivity(activitySeqRef.current);
+        if (cancelled || events.length === 0) return;
+        activitySeqRef.current = events[events.length - 1].seq;
+        setActivity((prev) => [...prev, ...events].slice(-20));
+      } catch { /* ignore */ }
+    };
+    poll();
+    const id = setInterval(poll, 1500);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -111,6 +130,37 @@ export function ProcessingModal({ videoId, title, onClose }: Props) {
             );
           })}
         </ol>
+
+        {/* Live API-activity feed — shows which provider is being called so a
+            "stuck" step is legible instead of a frozen bar. */}
+        {activity.length > 0 && (
+          <div className="mb-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-2">
+            <p className="text-[11px] uppercase tracking-wide text-gray-400 mb-1">Live API activity</p>
+            <div className="max-h-28 overflow-y-auto space-y-0.5 font-mono text-[11px]">
+              {activity.slice().reverse().map((e) => {
+                const icon = e.status === 'ok' ? '✅' : e.status === 'rate_limited' ? '⏳' : '❌';
+                const color = e.status === 'ok'
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : e.status === 'rate_limited'
+                  ? 'text-amber-600 dark:text-amber-400'
+                  : 'text-red-600 dark:text-red-400';
+                const t = new Date(e.ts * 1000).toLocaleTimeString();
+                return (
+                  <div key={e.seq} className={`flex items-center gap-1.5 ${color}`}>
+                    <span>{icon}</span>
+                    <span className="text-gray-400">{t}</span>
+                    <span className="font-semibold">{e.provider}</span>
+                    <span className="text-gray-500">{e.purpose}</span>
+                    {e.status === 'rate_limited' && <span>rate-limited</span>}
+                    {typeof e.ms === 'number' && e.status === 'ok' && (
+                      <span className="text-gray-400">{(e.ms / 1000).toFixed(1)}s</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {isFailed && (
           <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-300">

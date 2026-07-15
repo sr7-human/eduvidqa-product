@@ -2419,6 +2419,15 @@ async def list_models(user_id: str = Depends(require_auth)):
     return out
 
 
+@app.get("/api/activity")
+async def get_activity_feed(since: int = 0, user_id: str = Depends(require_auth)):
+    """Live feed of recent external API calls (LLM providers) — powers the
+    activity monitor so a 'stuck' ingest is legible. Pass ``since`` = the last
+    seen event seq to get only newer events."""
+    from pipeline.activity import get_activity
+    return {"events": get_activity(since_seq=since)}
+
+
 
 @app.get("/api/users/me/model-prefs")
 async def get_model_prefs(user_id: str = Depends(require_auth)):

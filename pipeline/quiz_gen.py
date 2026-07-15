@@ -308,13 +308,22 @@ def _call_llm_backoff(fn, prompt: str, key: str, max_tokens: int, retries: int =
     """Call an LLM with proactive throttling + 429/rate-limit backoff-retry."""
     import re
 
+    from pipeline.activity import record_activity
+    provider = getattr(fn, "__name__", "llm").replace("_call_", "").split("_")[0]
+
     for attempt in range(retries):
         _throttle()
+        t0 = _time.time()
         try:
-            return fn(prompt, key, max_tokens=max_tokens)
+            out = fn(prompt, key, max_tokens=max_tokens)
+            record_activity(provider, "", "quiz/title", "ok", (_time.time() - t0) * 1000)
+            return out
         except Exception as exc:  # noqa: BLE001
             s = str(exc)
             is_rate = "429" in s or "RESOURCE_EXHAUSTED" in s or "rate limit" in s.lower()
+            record_activity(provider, "", "quiz/title",
+                            "rate_limited" if is_rate else "error",
+                            (_time.time() - t0) * 1000, s[:80])
             if is_rate and "gemini" in getattr(fn, "__name__", ""):
                 _record_rate_limit("gemini", s[:120])
             if is_rate and attempt < retries - 1:
@@ -544,13 +553,22 @@ def _call_vision_backoff(fn, prompt: str, images: list[str], key: str,
     """Like ``_call_llm_backoff`` but for multimodal (image-bearing) calls."""
     import re
 
+    from pipeline.activity import record_activity
+    provider = getattr(fn, "__name__", "llm").replace("_call_", "").split("_")[0]
+
     for attempt in range(retries):
         _throttle()
+        t0 = _time.time()
         try:
-            return fn(prompt, images, key, max_tokens=max_tokens)
+            out = fn(prompt, images, key, max_tokens=max_tokens)
+            record_activity(provider, "", "vision-quiz", "ok", (_time.time() - t0) * 1000)
+            return out
         except Exception as exc:  # noqa: BLE001
             s = str(exc)
             is_rate = "429" in s or "RESOURCE_EXHAUSTED" in s or "rate limit" in s.lower()
+            record_activity(provider, "", "vision-quiz",
+                            "rate_limited" if is_rate else "error",
+                            (_time.time() - t0) * 1000, s[:80])
             if is_rate and attempt < retries - 1:
                 m = re.search(r"retry in ([0-9.]+)s", s)
                 delay = min(65.0, (float(m.group(1)) + 2) if m else 20.0 * (attempt + 1))
