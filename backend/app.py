@@ -1420,8 +1420,11 @@ async def ask_question(
 
     index = _get_index()
 
-    # 2. Auto-ingest if not indexed — return 202 and queue background work
-    if not index.is_indexed(video_id):
+    # 2. Auto-ingest if not indexed — return 202 and queue background work.
+    # Exception: if the user pasted a screenshot we can still answer from that
+    # single frame alone, even while the video is being processed.
+    has_pasted_image = bool(body.image_b64)
+    if not index.is_indexed(video_id) and not has_pasted_image:
         status = _get_video_status(video_id)
         if status == "processing":
             raise HTTPException(status_code=202, detail="Video is still being processed. Try again shortly.")

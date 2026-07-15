@@ -60,16 +60,17 @@ class LectureIndex:
     # ── Indexing ─────────────────────────────────────────────────
 
     def is_indexed(self, video_id: str) -> bool:
-        """True if a `transcript_ready` or `ready` row exists for this video_id.
+        """True if this video has queryable transcript chunks embedded.
 
-        Both states have transcript chunks indexed and can answer questions
-        (transcript_ready = no keyframes yet, ready = full multimodal index).
+        Checks for actual embedded chunks rather than the ``status`` column,
+        so Q&A keeps working even after Phase 2 (visual understanding) flips
+        the status back to ``processing`` — the transcript is already there.
         """
         try:
             with self._connect() as conn, conn.cursor() as cur:
                 cur.execute(
-                    "SELECT EXISTS(SELECT 1 FROM videos "
-                    "WHERE video_id = %s AND status IN ('transcript_ready','ready'))",
+                    "SELECT EXISTS(SELECT 1 FROM video_chunks "
+                    "WHERE video_id = %s AND embedding_v2 IS NOT NULL)",
                     (video_id,),
                 )
                 return bool(cur.fetchone()[0])
