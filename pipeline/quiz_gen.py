@@ -293,7 +293,7 @@ import time as _time  # noqa: E402
 
 _LAST_LLM_CALL = 0.0
 # ~5 req/min → 1 every 12s. Tunable via env; set 0 on paid tiers.
-_MIN_LLM_INTERVAL = float(os.getenv("QUIZ_LLM_MIN_INTERVAL", "13"))
+_MIN_LLM_INTERVAL = float(os.getenv("QUIZ_LLM_MIN_INTERVAL", "3"))
 
 
 def _throttle() -> None:
@@ -512,6 +512,31 @@ def _call_openrouter_vision(prompt: str, image_paths: list[str], api_key: str,
             logger.info("OpenRouter vision %s failed (%s) — trying next", m, str(exc)[:60])
             continue
     return ""
+
+
+def _call_groq_vision(prompt: str, image_paths: list[str], api_key: str,
+                      max_tokens: int = 8000) -> str:
+    """Multimodal Groq call (llama-4-scout, vision). Fast + separate quota from
+    Gemini, so it's the primary provider for on-demand chapter quizzes. Groq
+    caps images per request, so we send at most 5."""
+    import base64
+
+    from groq import Groq
+    client = Groq(api_key=api_key)
+    content: list[dict] = [{"type": "text", "text": prompt}]
+    for p in image_paths[:5]:
+        data = _read_image_bytes(p)
+        if data:
+            b64 = base64.b64encode(data).decode()
+            content.append({"type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
+    resp = client.chat.completions.create(
+        model="meta-llama/llama-4-scout-17b-16e-instruct",
+        messages=[{"role": "user", "content": content}],
+        temperature=0.6,
+        max_tokens=max_tokens,
+    )
+    return resp.choices[0].message.content or ""
 
 
 def _call_vision_backoff(fn, prompt: str, images: list[str], key: str,
@@ -1101,10 +1126,17 @@ def generate_chapter_quizzes(
             image_paths = _select_keyframes(keyframes, start, window=120, max_frames=4)
     if image_paths:
         vision_prompt = _MATH_RULE + "\n\n" + VISION_QUIZ_PREAMBLE + base_prompt
-        if gemini_key:
+        # Groq (llama-4-scout) FIRST — fast, vision-capable, separate quota, so
+        # it works even when the Gemini free tier is exhausted.
+        if groq_key:
             try:
-                # retries=1: on a 429, fail fast to OpenRouter vision / the text
-                # chain instead of waiting minutes on Gemini's free-tier backoff.
+                raw = _call_vision_backoff(_call_groq_vision, vision_prompt, image_paths, groq_key, max_tokens, retries=1)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Groq vision chapter quiz failed: %s", str(exc)[:120])
+        if not raw and gemini_key:
+            try:
+                # retries=1: on a 429, fail fast to the next provider instead of
+                # waiting minutes on Gemini's free-tier backoff.
                 raw = _call_vision_backoff(_call_gemini_vision, vision_prompt, image_paths, gemini_key, max_tokens, retries=1)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Gemini vision chapter quiz failed: %s", str(exc)[:120])
@@ -1117,17 +1149,17 @@ def generate_chapter_quizzes(
     # ── Text path (fallback / when no keyframes) ───────────────────
     # Stable chain: Gemini (free) → Groq (free) → OpenRouter (paid), each with
     # proactive throttle + 429 backoff so chapter quizzes never cascade-fail.
-    if not raw and gemini_key:
-        try:
-            # retries=1: fail fast to Groq (separate quota) if Gemini free tier is exhausted.
-            raw = _call_llm_backoff(_call_gemini, prompt, gemini_key, max_tokens, retries=1)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Gemini chapter quiz failed: %s", str(exc)[:120])
     if not raw and groq_key:
         try:
             raw = _call_llm_backoff(_call_groq, prompt, groq_key, max_tokens)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Groq chapter quiz failed: %s", str(exc)[:120])
+    if not raw and gemini_key:
+        try:
+            # retries=1: fail fast to OpenRouter if Gemini free tier is exhausted.
+            raw = _call_llm_backoff(_call_gemini, prompt, gemini_key, max_tokens, retries=1)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Gemini chapter quiz failed: %s", str(exc)[:120])
     if not raw and or_key:
         try:
             raw = _call_llm_backoff(_call_openrouter, prompt, or_key, max_tokens)
