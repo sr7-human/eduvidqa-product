@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { getVideoStatus, getActivity, type VideoProgress, type ActivityEvent } from '../api/client';
+import { getVideoStatus, getActivity, humanizeError, type VideoProgress, type ActivityEvent } from '../api/client';
 
 const STEPS: { key: string; label: string }[] = [
   { key: 'starting', label: 'Fetching transcript' },
@@ -104,7 +104,7 @@ export function ProcessingModal({ videoId, title, onClose }: Props) {
           />
         </div>
         <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-          {isFailed ? 'Failed' : isDone ? 'Complete' : `${pct}%`} · {detail ?? '…'}
+          {isFailed ? 'Failed' : isDone ? 'Complete' : `${pct}%`} · {isFailed ? humanizeError(detail) : (detail ?? '…')}
         </p>
 
         {/* Step list */}
@@ -164,7 +164,7 @@ export function ProcessingModal({ videoId, title, onClose }: Props) {
 
         {isFailed && (
           <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-300">
-            ⚠️ Processing failed. {detail}
+            ⚠️ {humanizeError(detail)}
           </div>
         )}
         {stuck && (

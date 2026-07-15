@@ -499,6 +499,25 @@ export async function getActivity(since = 0): Promise<{ events: ActivityEvent[] 
   return request<{ events: ActivityEvent[] }>(`/api/activity?since=${since}`);
 }
 
+/** Turn a raw/technical error string into a plain-English, actionable message.
+ *  Safety net for errors stored before the backend started humanizing them. */
+export function humanizeError(raw?: string | null): string {
+  const low = (raw ?? '').toLowerCase();
+  if (!low) return 'Something went wrong. Click Resume to try again.';
+  if (/(no transcript|transcriptsdisabled|no captions|could not retrieve a transcript|subtitles are disabled|no element found|transcript not available)/.test(low))
+    return 'This YouTube video has no captions/subtitles, so there is no text to read. Try a video with captions, or use “Podcast” mode which listens to the audio.';
+  if (/(429|rate.?limit|resource_exhausted|quota|too many requests)/.test(low))
+    return 'The AI service is temporarily rate-limited (free-tier quota). Wait a few minutes, then click Resume.';
+  if (/(sign in to confirm|http error 403|403 forbidden|unable to download|video unavailable|private video|requested format is not available)/.test(low))
+    return 'YouTube blocked the download for this video (bot check or availability). Try again later, or try a different video.';
+  if (/(cannot import name|no module named|importerror)/.test(low))
+    return 'The app was just updated and the server needs a quick restart. Please try again in a moment.';
+  if (/(timeout|timed out|connection|temporarily unavailable)/.test(low))
+    return 'A network hiccup interrupted processing. Click Resume to continue.';
+  const short = raw!.trim().split('\n')[0].slice(0, 140);
+  return `Processing stopped: ${short}. Click Resume to retry.`;
+}
+
 export async function getChapterQuiz(
   videoId: string,
   chapterId: string,

@@ -341,6 +341,45 @@ def _durable_jobs_enabled() -> bool:
     return os.getenv("DURABLE_JOBS_V1", "0") == "1"
 
 
+def _humanize_error(raw: str) -> str:
+    """Turn a raw Python/exception string into a plain-English message a
+    non-technical user can act on. The raw error is still stored separately
+    (in the videos.error column) for debugging."""
+    low = (raw or "").lower()
+    if not low:
+        return "Something went wrong. Click Resume to try again."
+    # Missing captions / transcript on YouTube
+    if any(k in low for k in ("no transcript", "transcriptsdisabled", "no captions",
+                              "could not retrieve a transcript", "subtitles are disabled",
+                              "no element found", "transcript not available")):
+        return ("This YouTube video has no captions/subtitles, so there's no text to "
+                "read. Pick a video that has captions, or use “Podcast” mode which "
+                "listens to the audio instead.")
+    # Rate limit / quota exhausted
+    if any(k in low for k in ("429", "rate limit", "rate-limit", "resource_exhausted",
+                              "quota", "too many requests")):
+        return ("The AI service is temporarily rate-limited (free-tier quota). "
+                "Wait a few minutes, then click Resume.")
+    # YouTube blocking the download
+    if any(k in low for k in ("sign in to confirm", "bot", "http error 403", "403 forbidden",
+                              "unable to download", "video unavailable", "private video",
+                              "requested format is not available")):
+        return ("YouTube blocked the download for this video (bot check or region/"
+                "availability). Try again in a little while, or try a different video.")
+    # Our own code just got updated and the server needs a restart
+    if any(k in low for k in ("cannot import name", "module", "attribute", "no module named",
+                              "importerror")):
+        return ("The app was just updated and the server needs a quick restart. "
+                "Please try again in a moment.")
+    # Network / DB blips
+    if any(k in low for k in ("timeout", "timed out", "connection", "temporarily unavailable")):
+        return ("A network hiccup interrupted processing. Click Resume to continue "
+                "from where it stopped.")
+    # Fallback: short, non-scary
+    short = raw.strip().splitlines()[0][:140]
+    return f"Processing stopped: {short}. Click Resume to retry."
+
+
 def _update_video_status(video_id: str, status: str, detail: str | None = None) -> None:
     if _durable_jobs_enabled():
         from backend.processing_jobs import (
@@ -1234,7 +1273,7 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
         logger.exception("Ingest failed for %s", video_id)
         try:
             _update_video_status(video_id, "failed", str(exc)[:500])
-            _set_progress(video_id, "failed", None, str(exc)[:200])
+            _set_progress(video_id, "failed", None, _humanize_error(str(exc)))
         except Exception:
             pass
 
