@@ -50,7 +50,13 @@ def _title_segments(segments: list[dict], chunks: list[dict]) -> list[str]:
 
     Falls back to generic "Part N" titles if the LLM is unavailable/fails.
     """
-    from pipeline.quiz_gen import _assemble_context, _call_gemini, _call_llm_backoff, _call_openrouter
+    from pipeline.quiz_gen import (
+        _assemble_context,
+        _call_gemini,
+        _call_groq,
+        _call_llm_backoff,
+        _call_openrouter,
+    )
 
     blocks = []
     for i, seg in enumerate(segments, 1):
@@ -70,16 +76,22 @@ def _title_segments(segments: list[dict], chunks: list[dict]) -> list[str]:
         'in order, e.g. ["Intro to X", "How Y works", ...].'
     )
 
+    groq_key = os.getenv("GROQ_API_KEY", "").strip()
     gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
     or_key = os.getenv("OPENROUTER_API_KEY", "").strip()
     raw = ""
-    try:
-        if gemini_key:
-            raw = _call_llm_backoff(_call_gemini, prompt, gemini_key, 2000)
-        elif or_key:
-            raw = _call_llm_backoff(_call_openrouter, prompt, or_key, 2000)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Chapter titling failed: %s", str(exc)[:120])
+    # Titling is non-critical (falls back to "Part N"), so each provider gets
+    # retries=1 and Groq goes first — this must NEVER hang the ingest at
+    # "Organising chapters" on an exhausted Gemini free tier.
+    for name, key, fn in (("groq", groq_key, _call_groq),
+                          ("gemini", gemini_key, _call_gemini),
+                          ("openrouter", or_key, _call_openrouter)):
+        if raw or not key:
+            continue
+        try:
+            raw = _call_llm_backoff(fn, prompt, key, 2000, retries=1)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Chapter titling via %s failed: %s", name, str(exc)[:100])
 
     titles: list[str] = []
     if raw:
