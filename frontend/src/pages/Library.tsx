@@ -553,11 +553,9 @@ export function Library() {
                 return (
                   <div
                     key={v.video_id}
-                    onClick={() => !isFailed && navigate(`/watch/${v.video_id}`)}
-                    className={`relative bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden transition group ${
-                      isFailed
-                        ? 'opacity-60 cursor-default'
-                        : 'cursor-pointer hover:shadow-lg hover:border-blue-400 dark:hover:border-blue-500'
+                    onClick={() => navigate(`/watch/${v.video_id}`)}
+                    className={`relative bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden transition group cursor-pointer hover:shadow-lg hover:border-blue-400 dark:hover:border-blue-500 ${
+                      isFailed ? 'opacity-80' : ''
                     }`}
                   >
                     {/* Remove (✕) button — top-left, shown on hover */}
@@ -585,8 +583,8 @@ export function Library() {
                           (e.currentTarget as HTMLImageElement).style.display = 'none';
                         }}
                       />
-                      {/* Play icon overlay on hover (only if not failed) */}
-                      {!isFailed && (
+                      {/* Play icon overlay on hover (open the video for any status) */}
+                      {(
                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition bg-black/30">
                           <div className="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center text-blue-600 text-2xl">
                             ▶
