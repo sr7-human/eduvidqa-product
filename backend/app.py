@@ -432,6 +432,13 @@ def _set_progress(video_id: str, step: str, pct: int | None = None, detail: str 
         "detail": detail,
         "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     })
+    # Mirror into the live activity feed so pipeline steps (download, keyframes,
+    # digest…) show up alongside LLM calls in the activity monitor.
+    try:
+        from pipeline.activity import record_activity
+        record_activity("pipeline", "", step, "ok", None, (detail or "")[:120])
+    except Exception:
+        pass
     try:
         conn = psycopg2.connect(_get_db_url())
         try:
@@ -1114,10 +1121,21 @@ def _ingest_video_bg_inner(video_id: str, youtube_url: str, user_id: str, mode: 
 
             if video_path:
                 try:
+                    _set_progress(video_id, "keyframes", 45,
+                                  "Extracting keyframes… (long videos take a few minutes)")
+
+                    def _kf_progress(sec: int, dur: int, kept: int, _vid=video_id) -> None:
+                        mm, ss = divmod(int(sec), 60)
+                        dmm, dss = divmod(int(dur), 60)
+                        pct = 45 + int(5 * (sec / dur)) if dur else 45
+                        _set_progress(_vid, "keyframes", pct,
+                                      f"Extracting keyframes… {mm}:{ss:02d} / {dmm}:{dss:02d} ({kept} frames)")
+
                     kf_manifest = extract_keyframes(
                         video_path=video_path,
                         video_id=video_id,
                         output_dir=processed_dir,
+                        progress_cb=_kf_progress,
                     )
                     _set_progress(video_id, "keyframes", 50,
                                   f"Extracted {len(kf_manifest)} keyframes")

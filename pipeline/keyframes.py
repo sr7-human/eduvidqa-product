@@ -44,6 +44,7 @@ def extract_keyframes(
     output_dir: str = "data/processed",
     threshold: float = 0.92,
     adaptive: bool = True,
+    progress_cb=None,
 ) -> list[dict]:
     """Extract unique keyframes from *video_path* using SSIM deduplication.
 
@@ -75,7 +76,7 @@ def extract_keyframes(
                 "ssim_score": 0.847
             }
     """
-    kept, duration_s = _extract_pass(video_path, video_id, output_dir, threshold)
+    kept, duration_s = _extract_pass(video_path, video_id, output_dir, threshold, progress_cb=progress_cb)
     duration_min = duration_s / 60.0 if duration_s > 0 else 1.0
     kf_per_min = len(kept) / duration_min
 
@@ -93,6 +94,7 @@ def extract_keyframes(
             video_path, video_id, output_dir,
             threshold=0.50,
             resize_for_ssim=True,
+            progress_cb=progress_cb,
         )
         kept = _cap_per_chunk(kept, chunk_seconds=10, max_per_chunk=_MAX_KF_PER_CHUNK)
         kf_dir = Path(output_dir) / video_id / "keyframes"
@@ -156,6 +158,7 @@ def _extract_pass(
     output_dir: str,
     threshold: float,
     resize_for_ssim: bool = False,
+    progress_cb=None,
 ) -> tuple[list[dict], int]:
     """Single extraction pass. Returns (kept_frames, duration_seconds)."""
     cap = cv2.VideoCapture(video_path)
@@ -178,6 +181,14 @@ def _extract_pass(
         ret, frame = cap.read()
         if not ret:
             continue
+
+        # Heartbeat every ~30s of video so the UI shows live progress on long
+        # videos (best-effort, never breaks extraction).
+        if progress_cb is not None and sec % 30 == 0:
+            try:
+                progress_cb(sec, duration_s, len(kept))
+            except Exception:
+                pass
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         cmp_gray = _resize_for_ssim(gray) if resize_for_ssim else gray

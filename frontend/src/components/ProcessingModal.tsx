@@ -131,12 +131,16 @@ export function ProcessingModal({ videoId, title, onClose }: Props) {
           })}
         </ol>
 
-        {/* Live API-activity feed — shows which provider is being called so a
-            "stuck" step is legible instead of a frozen bar. */}
-        {activity.length > 0 && (
+        {/* Live API-activity feed — shows which provider/step is running so a
+            "stuck" step is legible instead of a frozen bar. Always visible while
+            processing so the user knows exactly where the pipeline is. */}
+        {!isDone && (
           <div className="mb-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-2">
-            <p className="text-[11px] uppercase tracking-wide text-gray-400 mb-1">Live API activity</p>
+            <p className="text-[11px] uppercase tracking-wide text-gray-400 mb-1">Live activity</p>
             <div className="max-h-28 overflow-y-auto space-y-0.5 font-mono text-[11px]">
+              {activity.length === 0 && (
+                <div className="text-gray-400">Waiting for the next step… (downloads &amp; keyframes are CPU work, not API calls)</div>
+              )}
               {activity.slice().reverse().map((e) => {
                 const icon = e.status === 'ok' ? '✅' : e.status === 'rate_limited' ? '⏳' : '❌';
                 const color = e.status === 'ok'
@@ -151,8 +155,11 @@ export function ProcessingModal({ videoId, title, onClose }: Props) {
                     <span className="text-gray-400">{t}</span>
                     <span className="font-semibold">{e.provider}</span>
                     <span className="text-gray-500">{e.purpose}</span>
+                    {e.detail && e.provider === 'pipeline' && (
+                      <span className="text-gray-400 truncate">{e.detail}</span>
+                    )}
                     {e.status === 'rate_limited' && <span>rate-limited</span>}
-                    {typeof e.ms === 'number' && e.status === 'ok' && (
+                    {typeof e.ms === 'number' && e.status === 'ok' && e.provider !== 'pipeline' && (
                       <span className="text-gray-400">{(e.ms / 1000).toFixed(1)}s</span>
                     )}
                   </div>
