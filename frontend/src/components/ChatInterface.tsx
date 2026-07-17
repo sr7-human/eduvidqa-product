@@ -44,10 +44,14 @@ function SourceLinks({
   sources: { start_time: number; end_time: number; relevance_score: number }[];
   onSeek: (seconds: number) => void;
 }) {
-  if (!sources.length) return null;
+  // Only show sources the retriever actually scored as relevant. Zero-relevance
+  // chips (poor retrieval) look broken, so we hide them rather than confuse the
+  // learner with a "(0%)" badge.
+  const shown = sources.filter((s) => (s.relevance_score ?? 0) > 0.01);
+  if (!shown.length) return null;
   return (
     <div className="flex flex-wrap gap-1.5 mt-2">
-      {sources.map((src, i) => (
+      {shown.map((src, i) => (
         <button
           key={i}
           onClick={() => onSeek(src.start_time)}
@@ -55,9 +59,6 @@ function SourceLinks({
         >
           <span className="text-gray-300 group-hover:text-accent transition-colors">
             📎 {formatTime(src.start_time)}–{formatTime(src.end_time)}
-          </span>
-          <span className="text-gray-500">
-            ({Math.round(src.relevance_score * 100)}%)
           </span>
         </button>
       ))}

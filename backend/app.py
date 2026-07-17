@@ -2290,8 +2290,15 @@ async def get_chapter_quiz(
         is_demo = (video_id == DEMO_VIDEO_ID)
         if is_demo or _user_has_any_key(user_id):
             try:
-                with _ScopedAPIKeys(user_id, allow_server_fallback=is_demo):
-                    _ensure_chapter_quiz(video_id, chapter_id, quiz_type)
+                # Offload the blocking LLM generation to a worker thread — on the
+                # single-worker server a direct call here would freeze the whole
+                # event loop for 10–40s, making every other request (status
+                # polls, other quizzes) fail with "Cannot reach the backend".
+                def _gen() -> None:
+                    with _ScopedAPIKeys(user_id, allow_server_fallback=is_demo):
+                        _ensure_chapter_quiz(video_id, chapter_id, quiz_type)
+
+                await run_in_threadpool(_gen)
                 rows = _fetch_chapter_quiz_rows(video_id, chapter_id, quiz_type)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
