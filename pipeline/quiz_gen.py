@@ -113,6 +113,26 @@ def _assemble_context(chunks: list[dict]) -> str:
     return "\n".join(parts)
 
 
+def _sanitize_json_backslashes(text: str) -> str:
+    """Escape LaTeX/stray backslashes that aren't valid JSON string escapes.
+
+    LLMs love to emit LaTeX like ``\\frac``, ``\\cdot``, ``\\theta``, ``\\beta``,
+    ``\\nu``, ``\\rho``, ``\\tan`` inside JSON strings. The tricky ones start
+    with a letter that IS a valid JSON escape (``\\f \\t \\b \\n \\r``): those
+    parse "successfully" but silently mangle the LaTeX into control characters
+    (``\\frac`` → form-feed + ``rac``). So we double *every* backslash that
+    isn't a structural JSON escape (``\\" \\\\ \\/``) or a real ``\\uXXXX``
+    unicode escape, keeping the LaTeX literal.
+    """
+    # Protect genuine \uXXXX unicode escapes so we don't touch them.
+    text = re.sub(r'\\u([0-9a-fA-F]{4})', '\x00U\x00\\1', text)
+    # Double any backslash not already starting \\, \" or \/.
+    text = re.sub(r'\\(?!["\\/])', r'\\\\', text)
+    # Restore the protected unicode escapes.
+    text = text.replace('\x00U\x00', '\\u')
+    return text
+
+
 def _parse_json_array(text: str) -> list[dict]:
     """Try direct json.loads, fallback to regex extraction. Tolerates truncation."""
     text = (text or "").strip()
@@ -120,22 +140,29 @@ def _parse_json_array(text: str) -> list[dict]:
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
-    try:
-        result = json.loads(text)
-        if isinstance(result, list):
-            return result
-    except json.JSONDecodeError:
-        pass
-    match = re.search(r"\[.*\]", text, re.DOTALL)
-    if match:
+    # LaTeX backslashes (\frac, \cdot…) are invalid JSON escapes and break
+    # json.loads — repair them before every parse attempt. Try the sanitized
+    # form FIRST so LaTeX survives intact (the raw form may parse but silently
+    # mangle \frac/\theta into control chars).
+    candidates = [_sanitize_json_backslashes(text), text]
+    for candidate in candidates:
         try:
-            result = json.loads(match.group(0))
+            result = json.loads(candidate)
             if isinstance(result, list):
                 return result
         except json.JSONDecodeError:
             pass
+        match = re.search(r"\[.*\]", candidate, re.DOTALL)
+        if match:
+            try:
+                result = json.loads(match.group(0))
+                if isinstance(result, list):
+                    return result
+            except json.JSONDecodeError:
+                pass
 
     # Truncation recovery: extract complete `{...}` objects one at a time
+    text = _sanitize_json_backslashes(text)
     objs: list[dict] = []
     depth = 0
     start = -1
